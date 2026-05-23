@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
+import { LayoutService } from './layout.service';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.ADMIN]:   'Administrador',
@@ -20,8 +21,19 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
   standalone: true,
   imports: [],
   template: `
-    <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 z-10">
-      <h2 class="text-base font-semibold text-gray-700">Panel de Control</h2>
+    <header class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center gap-3 justify-between shrink-0 z-10">
+      <!-- Hamburger — solo visible en móvil -->
+      <button
+        (click)="layoutService.toggle()"
+        class="md:hidden p-2 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors shrink-0"
+        aria-label="Abrir menú"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+
+      <h2 class="text-base font-semibold text-gray-700 flex-1 md:flex-none">Panel de Control</h2>
 
       <div class="relative">
         <button
@@ -72,6 +84,7 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
 export class HeaderComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
+  readonly layoutService = inject(LayoutService);
 
   currentUser = this.authService.currentUser;
   dropdownOpen = signal(false);

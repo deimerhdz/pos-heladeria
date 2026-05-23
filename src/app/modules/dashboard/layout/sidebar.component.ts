@@ -2,13 +2,21 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { NAV_ITEMS } from '../../../core/config/navigation.config';
+import { LayoutService } from './layout.service';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
   imports: [RouterLink, RouterLinkActive],
   template: `
-    <aside class="w-60 bg-indigo-900 text-white flex flex-col shrink-0 h-full">
+    <aside
+      class="w-60 bg-indigo-900 text-white flex flex-col shrink-0 h-full
+             fixed inset-y-0 left-0 z-40
+             transition-transform duration-300 ease-in-out
+             md:relative md:translate-x-0"
+      [class.-translate-x-full]="!layoutService.sidebarOpen()"
+      [class.translate-x-0]="layoutService.sidebarOpen()"
+    >
       <div class="px-6 py-5 border-b border-indigo-700">
         <div class="flex items-center gap-3">
           <span class="text-2xl">🍦</span>
@@ -41,6 +49,7 @@ import { NAV_ITEMS } from '../../../core/config/navigation.config';
 })
 export class SidebarComponent {
   private authService = inject(AuthService);
+  readonly layoutService = inject(LayoutService);
 
   visibleItems = computed(() => {
     const role = this.authService.currentUser()?.role;
