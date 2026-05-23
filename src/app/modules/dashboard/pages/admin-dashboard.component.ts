@@ -1,14 +1,11 @@
-import { Component } from '@angular/core';
+import { DecimalPipe, SlicePipe } from '@angular/common';
+import { Component, OnInit, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { MOCK_ORDERS, MOCK_PRODUCTS, MOCK_USERS } from '../../../shared/data/mock-data';
-
-interface StatCard {
-  label: string;
-  value: string | number;
-  icon: string;
-  bgClass: string;
-  change: string;
-}
+import { OrderStatus } from '../../orders/interfaces/order.interface';
+import { OrdersService } from '../../orders/services/orders.service';
+import { ProductService } from '../../products/services/product.service';
+import { ReportsService } from '../../reports/services/reports.service';
+import { UsersService } from '../../users/services/users.service';
 
 interface QuickAction {
   label: string;
@@ -20,7 +17,7 @@ interface QuickAction {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, SlicePipe, DecimalPipe],
   template: `
     <div class="space-y-6">
       <div>
@@ -30,25 +27,65 @@ interface QuickAction {
 
       <!-- Stat cards -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        @for (card of stats; track card.label) {
-          <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">{{ card.label }}</p>
-                <p class="text-2xl font-bold text-gray-900 mt-1">{{ card.value }}</p>
-                <p class="text-xs text-green-600 mt-1">{{ card.change }}</p>
-              </div>
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" [class]="card.bgClass">
-                {{ card.icon }}
-              </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Usuarios</p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">
+                {{ usersService.error() ? '–' : usersService.totalCount() }}
+              </p>
+              <p class="text-xs text-green-600 mt-1">en el sistema</p>
             </div>
+            <div class="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl">👥</div>
           </div>
-        }
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Productos</p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">{{ activeProductsCount() }}</p>
+              <p class="text-xs text-green-600 mt-1">activos en stock</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center text-xl">🍦</div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Órdenes activas</p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">{{ ordersService.activeOrdersCount() }}</p>
+              <p class="text-xs text-green-600 mt-1">en proceso</p>
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl">📋</div>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Ingresos hoy</p>
+              @if (reportsService.isLoading()) {
+                <p class="text-2xl font-bold text-gray-300 mt-1 animate-pulse">–</p>
+              } @else if (reportsService.error() || !reportsService.salesSummary()) {
+                <p class="text-2xl font-bold text-gray-900 mt-1">–</p>
+              } @else {
+                <p class="text-2xl font-bold text-gray-900 mt-1">
+                  S/ {{ reportsService.salesSummary()!.total | number:'1.2-2' }}
+                </p>
+                <p class="text-xs text-green-600 mt-1">
+                  {{ reportsService.salesSummary()!.count }} cobros hoy
+                </p>
+              }
+            </div>
+            <div class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-xl">💰</div>
+          </div>
+        </div>
       </div>
 
       <!-- Quick actions -->
       <div>
-        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Accesos rápidos</h2>
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          Accesos rápidos
+        </h2>
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
           @for (action of quickActions; track action.route) {
             <a
@@ -71,70 +108,94 @@ interface QuickAction {
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
         <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-gray-800">Órdenes recientes</h2>
-          <span class="text-xs text-indigo-600 font-medium">Ver todas →</span>
+          <a routerLink="/dashboard/orders" class="text-xs text-indigo-600 font-medium hover:underline">
+            Ver todas →
+          </a>
         </div>
-        <div class="divide-y divide-gray-50">
-          @for (order of recentOrders; track order.id) {
-            <div class="px-5 py-3 flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
-                  {{ order.tableNumber }}
+        @if (ordersService.error()) {
+          <div class="px-5 py-4 text-sm text-red-600">No se pudieron cargar las órdenes</div>
+        } @else if (ordersService.isLoading()) {
+          <div class="px-5 py-4 text-sm text-gray-400 animate-pulse">Cargando órdenes...</div>
+        } @else if (recentOrders().length === 0) {
+          <div class="px-5 py-4 text-sm text-gray-400">No hay órdenes aún</div>
+        } @else {
+          <div class="divide-y divide-gray-50">
+            @for (order of recentOrders(); track order.id) {
+              <a [routerLink]="['/dashboard/orders', order.id]" class="px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                    {{ order.table_name.charAt(0) }}
+                  </div>
+                  <div>
+                    <p class="text-sm font-medium text-gray-800">{{ order.id | slice:0:8 }}...</p>
+                    <p class="text-xs text-gray-400">{{ order.table_name }}</p>
+                  </div>
                 </div>
-                <div>
-                  <p class="text-sm font-medium text-gray-800">{{ order.id }}</p>
-                  <p class="text-xs text-gray-400">Mesa {{ order.tableNumber }} · {{ order.items[0] }}</p>
+                <div class="flex items-center gap-3">
+                  <span class="text-sm font-semibold text-gray-700">S/ {{ order.total.toFixed(2) }}</span>
+                  <span
+                    class="text-xs px-2 py-1 rounded-full font-medium"
+                    [class]="getStatusClass(order.status)"
+                  >
+                    {{ getStatusLabel(order.status) }}
+                  </span>
                 </div>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="text-sm font-semibold text-gray-700">S/ {{ order.total.toFixed(2) }}</span>
-                <span class="text-xs px-2 py-1 rounded-full font-medium" [class]="getStatusClass(order.status)">
-                  {{ getStatusLabel(order.status) }}
-                </span>
-              </div>
-            </div>
-          }
-        </div>
+              </a>
+            }
+          </div>
+        }
       </div>
     </div>
   `,
 })
-export class AdminDashboardComponent {
-  readonly stats: StatCard[] = [
-    { label: 'Usuarios',          value: MOCK_USERS.length,                                               icon: '👥', bgClass: 'bg-purple-50', change: '+0 hoy' },
-    { label: 'Productos',         value: MOCK_PRODUCTS.length,                                            icon: '🍦', bgClass: 'bg-pink-50',   change: 'en stock' },
-    { label: 'Órdenes activas',   value: MOCK_ORDERS.filter(o => o.status !== 'delivered').length,        icon: '📋', bgClass: 'bg-amber-50',  change: 'en proceso' },
-    { label: 'Ingresos hoy',      value: 'S/ 1,240',                                                      icon: '💰', bgClass: 'bg-green-50',  change: '+12% vs ayer' },
-  ];
+export class AdminDashboardComponent implements OnInit {
+  readonly ordersService = inject(OrdersService);
+  readonly usersService = inject(UsersService);
+  readonly reportsService = inject(ReportsService);
+  private readonly productService = inject(ProductService);
+
+  readonly recentOrders = computed(() => this.ordersService.orders().slice(0, 5));
+
+  readonly activeProductsCount = computed(() =>
+    this.productService.products().filter(p => p.is_active).length,
+  );
 
   readonly quickActions: QuickAction[] = [
-    { label: 'Gestionar Usuarios',  icon: '👥', route: '/dashboard/users',      description: 'Roles y accesos' },
-    { label: 'Gestionar Productos', icon: '🍦', route: '/dashboard/products',   description: 'Inventario y precios' },
-    { label: 'Ver Órdenes',         icon: '📋', route: '/dashboard/orders',     description: 'Activas e historial' },
-    { label: 'Gestión de Caja',     icon: '💰', route: '/dashboard/caja',       description: 'Apertura y cierre' },
-    { label: 'Ver Reportes',        icon: '📊', route: '/dashboard/reports',    description: 'Estadísticas del día' },
-    { label: 'Gestionar Mesas',     icon: '🪑', route: '/dashboard/tables',     description: 'Estado y QR' },
+    { label: 'Gestionar Usuarios', icon: '👥', route: '/dashboard/users', description: 'Roles y accesos' },
+    { label: 'Gestionar Productos', icon: '🍦', route: '/dashboard/products', description: 'Inventario y precios' },
+    { label: 'Ver Órdenes', icon: '📋', route: '/dashboard/orders', description: 'Activas e historial' },
+    { label: 'Gestión de Caja', icon: '💰', route: '/dashboard/caja', description: 'Apertura y cierre' },
+    { label: 'Ver Reportes', icon: '📊', route: '/dashboard/reports', description: 'Estadísticas del día' },
+    { label: 'Gestionar Mesas', icon: '🪑', route: '/dashboard/tables', description: 'Estado y QR' },
   ];
 
-  readonly recentOrders = MOCK_ORDERS;
+  ngOnInit(): void {
+    this.ordersService.loadOrders();
+    this.usersService.loadUsers();
+    this.reportsService.loadTodayRevenue();
+    if (this.productService.products().length === 0) {
+      this.productService.loadProducts();
+    }
+  }
 
-  getStatusLabel(status: string): string {
-    const labels: Record<string, string> = {
-      pending:   'Pendiente',
+  getStatusLabel(status: OrderStatus): string {
+    const labels: Record<OrderStatus, string> = {
+      pending: 'Pendiente',
       preparing: 'Preparando',
-      ready:     'Listo',
-      delivered: 'Entregado',
-      cancelled: 'Cancelado',
+      ready: 'Listo',
+      bill_requested: 'Cuenta solicitada',
+      paid: 'Pagado',
     };
     return labels[status] ?? status;
   }
 
-  getStatusClass(status: string): string {
-    const classes: Record<string, string> = {
-      pending:   'bg-amber-100 text-amber-700',
+  getStatusClass(status: OrderStatus): string {
+    const classes: Record<OrderStatus, string> = {
+      pending: 'bg-amber-100 text-amber-700',
       preparing: 'bg-blue-100 text-blue-700',
-      ready:     'bg-green-100 text-green-700',
-      delivered: 'bg-gray-100 text-gray-500',
-      cancelled: 'bg-red-100 text-red-600',
+      ready: 'bg-green-100 text-green-700',
+      bill_requested: 'bg-orange-100 text-orange-700',
+      paid: 'bg-gray-100 text-gray-500',
     };
     return classes[status] ?? 'bg-gray-100 text-gray-500';
   }

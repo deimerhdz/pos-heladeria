@@ -8,6 +8,7 @@ export class CategoryService {
 
   readonly categories = signal<Category[]>([]);
   readonly loading = signal(false);
+  readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
 
   async loadCategories(): Promise<void> {
@@ -29,42 +30,53 @@ export class CategoryService {
   }
 
   async createCategory(data: CategoryForm): Promise<void> {
-    this.loading.set(true);
+    this.isSubmitting.set(true);
     this.error.set(null);
 
     const { error } = await this.supabase.client
       .from('categories')
-      .insert({ ...data, is_active: true });
+      .insert({
+        name: data.name,
+        description: data.description || null,
+        image_url: data.image_url || null,
+        is_active: true,
+      });
 
     if (error) {
       this.error.set(error.message);
-      this.loading.set(false);
+      this.isSubmitting.set(false);
       return;
     }
 
     await this.loadCategories();
+    this.isSubmitting.set(false);
   }
 
   async updateCategory(id: string, data: CategoryForm): Promise<void> {
-    this.loading.set(true);
+    this.isSubmitting.set(true);
     this.error.set(null);
 
     const { error } = await this.supabase.client
       .from('categories')
-      .update(data)
+      .update({
+        name: data.name,
+        description: data.description || null,
+        image_url: data.image_url || null,
+      })
       .eq('id', id);
 
     if (error) {
       this.error.set(error.message);
-      this.loading.set(false);
+      this.isSubmitting.set(false);
       return;
     }
 
     await this.loadCategories();
+    this.isSubmitting.set(false);
   }
 
   async toggleActive(id: string, current: boolean): Promise<void> {
-    this.loading.set(true);
+    this.isSubmitting.set(true);
     this.error.set(null);
 
     const { error } = await this.supabase.client
@@ -74,10 +86,10 @@ export class CategoryService {
 
     if (error) {
       this.error.set(error.message);
-      this.loading.set(false);
-      return;
+    } else {
+      await this.loadCategories();
     }
 
-    await this.loadCategories();
+    this.isSubmitting.set(false);
   }
 }

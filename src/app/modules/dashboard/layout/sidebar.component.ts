@@ -1,6 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
-import { MockUserService } from '../../../core/services/mock-user.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { NAV_ITEMS } from '../../../core/config/navigation.config';
 
 @Component({
@@ -34,15 +34,17 @@ import { NAV_ITEMS } from '../../../core/config/navigation.config';
       </nav>
 
       <div class="px-4 py-4 border-t border-indigo-700">
-        <p class="text-indigo-400 text-xs text-center">v1.0 · Modo Demo</p>
+        <p class="text-indigo-400 text-xs text-center">v1.0</p>
       </div>
     </aside>
   `,
 })
 export class SidebarComponent {
-  private userService = inject(MockUserService);
+  private authService = inject(AuthService);
 
-  visibleItems = computed(() =>
-    NAV_ITEMS.filter(item => item.roles.includes(this.userService.currentUser().role))
-  );
+  visibleItems = computed(() => {
+    const role = this.authService.currentUser()?.role;
+    if (!role) return [];
+    return NAV_ITEMS.filter(item => item.roles.includes(role));
+  });
 }

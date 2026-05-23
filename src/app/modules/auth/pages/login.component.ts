@@ -1,13 +1,8 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MockUserService } from '../../../core/services/mock-user.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   'Administrador — Acceso total al sistema',
-  [UserRole.CASHIER]: 'Cajero — Caja, órdenes y pagos',
-  [UserRole.STAFF]:   'Personal de Cocina — Cola de preparación',
-};
 
 const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.ADMIN]:   '/dashboard/admin',
@@ -15,16 +10,10 @@ const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.STAFF]:   '/dashboard/cocina',
 };
 
-const ROLE_ICON: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   '👑',
-  [UserRole.CASHIER]: '💳',
-  [UserRole.STAFF]:   '🍳',
-};
-
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [],
+  imports: [ReactiveFormsModule],
   template: `
     <div class="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4">
       <div class="w-full max-w-sm">
@@ -34,56 +23,125 @@ const ROLE_ICON: Record<UserRole, string> = {
             <span class="text-4xl">🍦</span>
           </div>
           <h1 class="text-3xl font-bold text-white">Heladería</h1>
-          <p class="text-indigo-300 mt-1 text-sm">Sistema de Gestión · Demo</p>
+          <p class="text-indigo-300 mt-1 text-sm">Sistema de Gestión</p>
         </div>
 
-        <!-- User selection card -->
+        <!-- Login card -->
         <div class="bg-white rounded-3xl shadow-2xl overflow-hidden">
-          <div class="px-6 pt-6 pb-4">
-            <h2 class="text-lg font-bold text-gray-900">Seleccionar usuario</h2>
-            <p class="text-gray-400 text-sm mt-1">Elige un perfil para acceder al sistema</p>
+          <div class="px-6 pt-6 pb-2">
+            <h2 class="text-lg font-bold text-gray-900">Iniciar sesión</h2>
+            <p class="text-gray-400 text-sm mt-1">Ingresa tus credenciales para acceder</p>
           </div>
-          <div class="px-4 pb-6 space-y-2">
-            @for (user of mockUsers; track user.id) {
-              <button
-                (click)="login(user.id)"
-                class="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-gray-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-left group"
-              >
-                <div class="w-12 h-12 rounded-xl bg-indigo-600 group-hover:bg-indigo-700 flex items-center justify-center text-xl transition-colors shrink-0">
-                  {{ getRoleIcon(user.role) }}
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="font-semibold text-gray-900 group-hover:text-indigo-800">{{ user.name }}</p>
-                  <p class="text-xs text-gray-400 mt-0.5 truncate">{{ getRoleLabel(user.role) }}</p>
-                </div>
-                <svg
-                  class="w-5 h-5 text-gray-300 group-hover:text-indigo-400 transition-colors shrink-0"
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                </svg>
-              </button>
-            }
-          </div>
-        </div>
 
-        <p class="text-center text-indigo-400 text-xs mt-6">Modo demo · Sin autenticación real</p>
+          <form [formGroup]="form" (ngSubmit)="submit()" class="px-6 pb-6 pt-4 space-y-4">
+            <!-- Error message -->
+            @if (errorMessage()) {
+              <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+                {{ errorMessage() }}
+              </div>
+            }
+
+            <!-- Email -->
+            <div>
+              <label for="email" class="block text-sm font-medium text-gray-700 mb-1.5">
+                Correo electrónico
+              </label>
+              <input
+                id="email"
+                type="email"
+                formControlName="email"
+                placeholder="tu@correo.com"
+                autocomplete="email"
+                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-gray-900 placeholder-gray-400 text-sm transition"
+                [class.border-red-300]="emailInvalid"
+              />
+              @if (emailInvalid) {
+                <p class="text-red-500 text-xs mt-1">Ingresa un correo válido</p>
+              }
+            </div>
+
+            <!-- Password -->
+            <div>
+              <label for="password" class="block text-sm font-medium text-gray-700 mb-1.5">
+                Contraseña
+              </label>
+              <input
+                id="password"
+                type="password"
+                formControlName="password"
+                placeholder="••••••••"
+                autocomplete="current-password"
+                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-gray-900 placeholder-gray-400 text-sm transition"
+                [class.border-red-300]="passwordInvalid"
+              />
+              @if (passwordInvalid) {
+                <p class="text-red-500 text-xs mt-1">La contraseña es requerida</p>
+              }
+            </div>
+
+            <!-- Submit -->
+            <button
+              type="submit"
+              [disabled]="isLoading()"
+              class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
+            >
+              @if (isLoading()) {
+                <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Ingresando...
+              } @else {
+                Iniciar sesión
+              }
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   `,
 })
 export class LoginComponent {
-  private userService = inject(MockUserService);
+  private authService = inject(AuthService);
   private router = inject(Router);
 
-  readonly mockUsers = this.userService.mockUsers;
+  readonly isLoading = signal(false);
+  readonly errorMessage = signal<string | null>(null);
 
-  getRoleLabel(role: UserRole): string { return ROLE_LABELS[role]; }
-  getRoleIcon(role: UserRole): string  { return ROLE_ICON[role]; }
+  readonly form = new FormGroup({
+    email: new FormControl('', [Validators.required, Validators.email]),
+    password: new FormControl('', [Validators.required]),
+  });
 
-  login(userId: string): void {
-    this.userService.switchUser(userId);
-    const user = this.userService.currentUser();
-    this.router.navigate([ROLE_HOME[user.role]]);
+  get emailInvalid(): boolean {
+    const ctrl = this.form.get('email')!;
+    return ctrl.invalid && ctrl.touched;
+  }
+
+  get passwordInvalid(): boolean {
+    const ctrl = this.form.get('password')!;
+    return ctrl.invalid && ctrl.touched;
+  }
+
+  async submit(): Promise<void> {
+    this.form.markAllAsTouched();
+    if (this.form.invalid) return;
+
+    this.isLoading.set(true);
+    this.errorMessage.set(null);
+
+    const { email, password } = this.form.value;
+    const { error } = await this.authService.login(email!, password!);
+
+    if (error) {
+      this.errorMessage.set(error);
+      this.isLoading.set(false);
+      return;
+    }
+
+    const user = this.authService.currentUser();
+    if (user) {
+      this.router.navigate([ROLE_HOME[user.role]]);
+    }
   }
 }

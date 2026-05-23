@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   EventEmitter,
   Input,
@@ -21,6 +22,7 @@ import { CategoryService } from '../services/category.service';
   selector: 'app-category-form',
   standalone: true,
   imports: [ReactiveFormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
@@ -37,7 +39,7 @@ import { CategoryService } from '../services/category.service';
           </button>
         </div>
 
-        <form [formGroup]="form" (ngSubmit)="onSubmit()" class="px-6 py-5 space-y-4">
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="px-6 py-5 space-y-4">
           <!-- Name -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -78,7 +80,7 @@ import { CategoryService } from '../services/category.service';
               URL de imagen <span class="text-gray-400 font-normal">(opcional)</span>
             </label>
             <input
-              type="url"
+              type="text"
               formControlName="image_url"
               placeholder="https://..."
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -103,10 +105,10 @@ import { CategoryService } from '../services/category.service';
             </button>
             <button
               type="submit"
-              [disabled]="categoryService.loading()"
+              [disabled]="categoryService.isSubmitting()"
               class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {{ categoryService.loading() ? 'Guardando...' : 'Guardar' }}
+              {{ categoryService.isSubmitting() ? 'Guardando...' : 'Guardar' }}
             </button>
           </div>
         </form>
@@ -135,6 +137,7 @@ export class CategoryFormComponent implements OnChanges {
   }
 
   ngOnChanges(): void {
+    this.categoryService.error.set(null);
     if (this.category) {
       this.form.setValue({
         name: this.category.name,
@@ -144,21 +147,16 @@ export class CategoryFormComponent implements OnChanges {
     } else {
       this.form.reset();
     }
-    this.nameControl.setValidators([
-      Validators.required,
-      this.uniqueNameValidator(),
-    ]);
+    this.nameControl.setValidators([Validators.required, this.uniqueNameValidator()]);
     this.nameControl.updateValueAndValidity();
   }
 
   private uniqueNameValidator() {
     return (control: AbstractControl): ValidationErrors | null => {
       const value = (control.value as string).trim().toLowerCase();
-      const exists = this.categoryService.categories().some(
-        cat =>
-          cat.name.toLowerCase() === value &&
-          cat.id !== this.category?.id
-      );
+      const exists = this.categoryService
+        .categories()
+        .some((cat) => cat.name.toLowerCase() === value && cat.id !== this.category?.id);
       return exists ? { duplicateName: true } : null;
     };
   }

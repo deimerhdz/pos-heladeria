@@ -1,5 +1,3 @@
-import { User, UserRole } from '../../core/interfaces/user.interface';
-
 export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled';
 export type TableStatus = 'available' | 'occupied';
 
@@ -26,12 +24,6 @@ export interface Table {
   status: TableStatus;
   capacity: number;
 }
-
-export const MOCK_USERS: User[] = [
-  { id: '1', name: 'Ana García',   email: 'admin@heladeria.com',   role: UserRole.ADMIN },
-  { id: '2', name: 'Carlos López', email: 'cajero@heladeria.com',  role: UserRole.CASHIER },
-  { id: '3', name: 'María Torres', email: 'cocina@heladeria.com',  role: UserRole.STAFF },
-];
 
 export const MOCK_ORDERS: Order[] = [
   { id: 'ORD-001', tableNumber: 3, items: ['Sundae Fresa', 'Agua Mineral'],      status: 'pending',   total: 18.50, createdAt: '10:15' },

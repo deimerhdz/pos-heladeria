@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { Router, type CanActivateFn } from '@angular/router';
-import { MockUserService } from '../services/mock-user.service';
+import { map, take } from 'rxjs';
+import { AuthService } from '../services/auth.service';
 import { UserRole } from '../interfaces/user.interface';
 
 const ROLE_DEFAULT_ROUTES: Record<UserRole, string> = {
@@ -11,13 +12,16 @@ const ROLE_DEFAULT_ROUTES: Record<UserRole, string> = {
 
 export const roleGuard = (allowedRoles: UserRole[]): CanActivateFn =>
   () => {
-    const userService = inject(MockUserService);
+    const authService = inject(AuthService);
     const router = inject(Router);
-    const user = userService.currentUser();
 
-    if (allowedRoles.includes(user.role)) {
-      return true;
-    }
-
-    return router.createUrlTree([ROLE_DEFAULT_ROUTES[user.role]]);
+    return authService.authReady$.pipe(
+      take(1),
+      map(() => {
+        const user = authService.currentUser();
+        if (!user) return router.createUrlTree(['/login']);
+        if (allowedRoles.includes(user.role)) return true;
+        return router.createUrlTree([ROLE_DEFAULT_ROUTES[user.role]]);
+      }),
+    );
   };
