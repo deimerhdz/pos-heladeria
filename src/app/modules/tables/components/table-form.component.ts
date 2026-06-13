@@ -56,7 +56,7 @@ import { TableService } from '../services/table.service';
           <!-- Capacity -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
-              Capacidad <span class="text-gray-400 font-normal">(opcional)</span>
+              Capacidad <span class="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -67,13 +67,16 @@ import { TableService } from '../services/table.service';
               [class.border-red-400]="capacityControl.invalid && capacityControl.touched"
               [class.border-gray-200]="!(capacityControl.invalid && capacityControl.touched)"
             />
+            @if (capacityControl.touched && capacityControl.errors?.['required']) {
+              <p class="text-red-500 text-xs mt-1">La capacidad es requerida</p>
+            }
             @if (capacityControl.touched && capacityControl.errors?.['min']) {
               <p class="text-red-500 text-xs mt-1">La capacidad debe ser mayor a 0</p>
             }
           </div>
 
           @if (table) {
-            <p class="text-xs text-gray-400">Código QR: <span class="font-mono font-medium text-gray-600">{{ table.code }}</span> (inmutable)</p>
+            <p class="text-xs text-gray-400">Código QR: <span class="font-mono font-medium text-gray-600">{{ table.qr_code }}</span> (inmutable)</p>
           }
 
           <!-- Service error -->
@@ -114,7 +117,9 @@ export class TableFormComponent implements OnChanges {
 
   readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    capacity: new FormControl<number | null>(null, { validators: [Validators.min(1)] }),
+    capacity: new FormControl<number | null>(null, {
+      validators: [Validators.required, Validators.min(1)],
+    }),
   });
 
   get nameControl(): AbstractControl { return this.form.controls.name; }
@@ -138,7 +143,7 @@ export class TableFormComponent implements OnChanges {
 
     const data: TableForm = {
       name: this.form.controls.name.value.trim(),
-      capacity: this.form.controls.capacity.value ?? null,
+      capacity: this.form.controls.capacity.value!,
     };
 
     if (this.table) {

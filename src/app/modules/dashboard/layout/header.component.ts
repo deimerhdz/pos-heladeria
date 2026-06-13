@@ -5,15 +5,17 @@ import { UserRole } from '../../../core/interfaces/user.interface';
 import { LayoutService } from './layout.service';
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   'Administrador',
+  [UserRole.SUPER_ADMIN]: 'Administrador',
+  [UserRole.ADMIN]: 'Administrador',
   [UserRole.CASHIER]: 'Cajero',
-  [UserRole.STAFF]:   'Personal de Cocina',
+  [UserRole.STAFF]: 'Personal de Cocina',
 };
 
 const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   'bg-purple-100 text-purple-700',
+  [UserRole.SUPER_ADMIN]: 'bg-purple-100 text-purple-700',
+  [UserRole.ADMIN]: 'bg-purple-100 text-purple-700',
   [UserRole.CASHIER]: 'bg-blue-100 text-blue-700',
-  [UserRole.STAFF]:   'bg-green-100 text-green-700',
+  [UserRole.STAFF]: 'bg-green-100 text-green-700',
 };
 
 @Component({
@@ -21,7 +23,9 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
   standalone: true,
   imports: [],
   template: `
-    <header class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center gap-3 justify-between shrink-0 z-10">
+    <header
+      class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center gap-3 justify-between shrink-0 z-10"
+    >
       <!-- Hamburger — solo visible en móvil -->
       <button
         (click)="layoutService.toggle()"
@@ -29,7 +33,12 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
         aria-label="Abrir menú"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 6h16M4 12h16M4 18h16"
+          />
         </svg>
       </button>
 
@@ -40,7 +49,9 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
           (click)="toggleDropdown()"
           class="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200"
         >
-          <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+          <div
+            class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0"
+          >
             {{ userInitial() }}
           </div>
           <div class="text-left">
@@ -52,14 +63,23 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
           <svg
             class="w-4 h-4 text-gray-400 transition-transform"
             [class.rotate-180]="dropdownOpen()"
-            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         </button>
 
         @if (dropdownOpen()) {
-          <div class="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 z-50">
+          <div
+            class="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-gray-100 z-50"
+          >
             <div class="px-4 py-3 border-b border-gray-100">
               <p class="text-xs text-gray-500 truncate">{{ currentUser()?.email }}</p>
             </div>
@@ -69,8 +89,12 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
                 class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors text-sm font-medium"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                  />
                 </svg>
                 Cerrar sesión
               </button>
@@ -89,7 +113,7 @@ export class HeaderComponent {
   currentUser = this.authService.currentUser;
   dropdownOpen = signal(false);
 
-  userInitial = computed(() => this.currentUser()?.name[0]?.toUpperCase() ?? '?');
+  userInitial = computed(() => this.currentUser()?.name?.[0]?.toUpperCase() ?? '?');
   roleLabel = computed(() => {
     const role = this.currentUser()?.role;
     return role ? ROLE_LABELS[role] : '';
@@ -100,7 +124,7 @@ export class HeaderComponent {
   });
 
   toggleDropdown(): void {
-    this.dropdownOpen.update(v => !v);
+    this.dropdownOpen.update((v) => !v);
   }
 
   async logout(): Promise<void> {

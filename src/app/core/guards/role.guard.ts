@@ -5,12 +5,14 @@ import { AuthService } from '../services/auth.service';
 import { UserRole } from '../interfaces/user.interface';
 
 const ROLE_DEFAULT_ROUTES: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   '/dashboard/admin',
+  [UserRole.SUPER_ADMIN]: '/dashboard/admin',
+  [UserRole.ADMIN]: '/dashboard/admin',
   [UserRole.CASHIER]: '/dashboard/caja',
-  [UserRole.STAFF]:   '/dashboard/cocina',
+  [UserRole.STAFF]: '/dashboard/cocina',
 };
 
-export const roleGuard = (allowedRoles: UserRole[]): CanActivateFn =>
+export const roleGuard =
+  (allowedRoles: UserRole[]): CanActivateFn =>
   () => {
     const authService = inject(AuthService);
     const router = inject(Router);

@@ -26,3 +26,11 @@ export interface OrderItem {
 export interface OrderWithItems extends Order {
   items: OrderItem[];
 }
+
+export interface ManualOrderItem {
+  product_id: string;
+  product_name: string;
+  unit_price: number;
+  quantity: number;
+  subtotal: number;
+}

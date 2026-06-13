@@ -2,8 +2,9 @@ import { DatePipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { OrderWithItems } from '../../orders/interfaces/order.interface';
+import { ManualOrderItem, OrderWithItems } from '../../orders/interfaces/order.interface';
 import { OrdersService } from '../../orders/services/orders.service';
+import { ManualOrderFormComponent } from '../components/manual-order-form.component';
 import { PaymentModalComponent } from '../components/payment-modal.component';
 import { PaymentFormData } from '../interfaces/payment.interface';
 import { CashRegisterService } from '../services/cash-register.service';
@@ -11,7 +12,7 @@ import { CashRegisterService } from '../services/cash-register.service';
 @Component({
   selector: 'app-cash-register-page',
   standalone: true,
-  imports: [FormsModule, DatePipe, PaymentModalComponent],
+  imports: [FormsModule, DatePipe, PaymentModalComponent, ManualOrderFormComponent],
   template: `
     <div class="space-y-6">
       <div>
@@ -124,12 +125,20 @@ import { CashRegisterService } from '../services/cash-register.service';
         <!-- Órdenes por cobrar -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
           <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-gray-800">Órdenes por cobrar</h2>
-            @if (collectableOrders().length > 0) {
-              <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold animate-pulse">
-                {{ collectableOrders().length }} pendiente(s)
-              </span>
-            }
+            <div class="flex items-center gap-3">
+              <h2 class="text-sm font-semibold text-gray-800">Órdenes por cobrar</h2>
+              @if (collectableOrders().length > 0) {
+                <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold animate-pulse">
+                  {{ collectableOrders().length }} pendiente(s)
+                </span>
+              }
+            </div>
+            <button
+              (click)="showManualOrderForm.set(true)"
+              class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              + Nueva venta
+            </button>
           </div>
 
           @if (ordersService.isLoading()) {
@@ -178,7 +187,7 @@ import { CashRegisterService } from '../services/cash-register.service';
                 <div class="px-5 py-3 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center text-sm">
-                      {{ payment.payment_method === 'cash' ? '💵' : '💳' }}
+                      {{ payment.payment_method === 'cash' ? '💵' : '🏦' }}
                     </div>
                     <div>
                       <p class="text-sm font-semibold text-gray-800">{{ payment.table_name }}</p>
@@ -194,11 +203,19 @@ import { CashRegisterService } from '../services/cash-register.service';
       }
     </div>
 
+    <!-- Manual Order Form -->
+    @if (showManualOrderForm()) {
+      <app-manual-order-form
+        (proceed)="onManualOrderProceed($event)"
+        (cancelled)="showManualOrderForm.set(false)"
+      />
+    }
+
     <!-- Payment Modal -->
     @if (activeOrder()) {
       <app-payment-modal
         [order]="activeOrder()!"
-        (confirmed)="onPaymentConfirmed($event)"
+        (confirmed)="isManualOrder() ? onManualPaymentConfirmed($event) : onPaymentConfirmed($event)"
         (cancelled)="closeModal()"
       />
     }
@@ -212,7 +229,10 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
   readonly confirmingClose = signal(false);
   readonly activeOrder = signal<OrderWithItems | null>(null);
   readonly loadingOrderId = signal<string | null>(null);
-  readonly paymentError = signal<string | null>(null);
+  readonly showManualOrderForm = signal(false);
+  readonly isManualOrder = signal(false);
+  readonly pendingManualItems = signal<ManualOrderItem[]>([]);
+  readonly manualPaymentError = signal<string | null>(null);
 
   private realtimeChannel: RealtimeChannel | null = null;
 
@@ -250,7 +270,53 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
     const order = await this.ordersService.loadOrderWithItems(orderId);
     this.loadingOrderId.set(null);
     if (order) {
+      this.isManualOrder.set(false);
       this.activeOrder.set(order);
+    }
+  }
+
+  onManualOrderProceed(items: ManualOrderItem[]): void {
+    this.showManualOrderForm.set(false);
+    this.pendingManualItems.set(items);
+    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+    const virtualOrder: OrderWithItems = {
+      id: '',
+      table_id: '',
+      table_name: 'Venta directa',
+      status: 'ready',
+      notes: null,
+      customer_name: null,
+      total,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      items: items.map((i, idx) => ({
+        id: String(idx),
+        order_id: '',
+        product_id: i.product_id,
+        product_name: i.product_name,
+        unit_price: i.unit_price,
+        quantity: i.quantity,
+        subtotal: i.subtotal,
+        created_at: new Date().toISOString(),
+      })),
+    };
+    this.isManualOrder.set(true);
+    this.activeOrder.set(virtualOrder);
+  }
+
+  async onManualPaymentConfirmed(data: PaymentFormData): Promise<void> {
+    this.cashService.error.set(null);
+    const orderId = await this.ordersService.createManualOrder(this.pendingManualItems());
+    if (!orderId) {
+      this.cashService.error.set(this.ordersService.error() ?? 'Error al registrar la orden');
+      return;
+    }
+    await this.cashService.processPayment({ ...data, orderId });
+    if (!this.cashService.error()) {
+      this.activeOrder.set(null);
+      this.isManualOrder.set(false);
+      this.pendingManualItems.set([]);
+      await this.ordersService.loadOrders();
     }
   }
 
@@ -264,6 +330,8 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
 
   closeModal(): void {
     this.activeOrder.set(null);
+    this.isManualOrder.set(false);
+    this.pendingManualItems.set([]);
     this.cashService.error.set(null);
   }
 }

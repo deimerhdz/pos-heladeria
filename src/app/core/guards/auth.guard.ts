@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { Router, type CanActivateFn } from '@angular/router';
 import { map, take } from 'rxjs';
 import { AuthService } from '../services/auth.service';
+import { TenantContextService } from '../tenant/tenant-context.service';
 
 export const authGuard: CanActivateFn = () => {
   const authService = inject(AuthService);
@@ -18,6 +19,7 @@ export const authGuard: CanActivateFn = () => {
 
 export const redirectIfAuthGuard: CanActivateFn = () => {
   const authService = inject(AuthService);
+  const tenant = inject(TenantContextService);
   const router = inject(Router);
 
   const ROLE_HOME: Record<string, string> = {
@@ -31,6 +33,9 @@ export const redirectIfAuthGuard: CanActivateFn = () => {
     map(() => {
       const user = authService.currentUser();
       if (!user) return true;
+      // Destination depends on the domain context, not just the role:
+      // the root domain lands on the Super Admin area, subdomains on the POS.
+      if (tenant.isSuperAdmin()) return router.createUrlTree(['/super-admin']);
       return router.createUrlTree([ROLE_HOME[user.role] ?? '/dashboard']);
     }),
   );

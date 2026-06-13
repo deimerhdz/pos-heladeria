@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { SupabaseService } from '../../../core/services/supabase.service';
 import { CartItem, MenuProduct, SessionItem, TableSession, TableSessionStorage } from '../interfaces/table.interface';
 import { TableSessionService } from './table-session.service';
@@ -9,6 +10,7 @@ const SESSION_STORAGE_KEY = 'tableSession';
 export class CartService {
   private readonly supabase = inject(SupabaseService);
   private readonly tableSessionService = inject(TableSessionService);
+  private realtimeChannel: RealtimeChannel | null = null;
 
   readonly items = signal<CartItem[]>([]);
   readonly tableId = signal<string>('');
@@ -18,6 +20,7 @@ export class CartService {
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
   readonly orderConfirmed = signal(false);
+  readonly orderStatus = signal<string | null>(null);
 
   // Session state
   readonly activeSession = signal<TableSession | null>(null);
@@ -69,6 +72,8 @@ export class CartService {
       this.isRejoin.set(true);
       this.billRequested.set(session.orderStatus === 'bill_requested');
       this.lastOrderId.set(session.orderId);
+      this.orderStatus.set(session.orderStatus);
+      this.subscribeToOrderStatus(session.orderId);
       const confirmed = await this.tableSessionService.loadMemberItems(session.orderId, stored.memberId);
       this.myConfirmedItems.set(confirmed);
       return;
@@ -127,7 +132,22 @@ export class CartService {
   async placeOrder(notes?: string): Promise<void> {
     if (this.items().length === 0 || this.isSubmitting()) return;
 
-    const session = this.activeSession();
+    // Re-check for active session — another comensal may have created one
+    // between when we loaded the menu and when we're placing the order now
+    let session = this.activeSession();
+    if (!session) {
+      const freshSession = await this.tableSessionService.getActiveSession(this.tableId());
+      if (freshSession) {
+        this.activeSession.set(freshSession);
+        const joined = await this.joinSession();
+        if (!joined) {
+          this.error.set('No se pudo unir a la sesión de la mesa');
+          return;
+        }
+        session = this.activeSession();
+      }
+    }
+
     if (session) {
       await this.placeOrderInSession(session, notes);
     } else {
@@ -184,17 +204,16 @@ export class CartService {
       return;
     }
 
-    // Get table capacity to create session
+    // null capacity → treat as unlimited (sentinel 99)
     const { data: tableData } = await this.supabase.client
       .from('tables')
       .select('capacity')
       .eq('id', tableId)
       .single();
 
-    const capacity = (tableData as { capacity: number | null } | null)?.capacity ?? 1;
+    const capacity = (tableData as { capacity: number | null } | null)?.capacity ?? 99;
     await this.tableSessionService.createSession(tableId, orderId, capacity);
 
-    // Update local session state
     const newSession = await this.tableSessionService.getActiveSession(tableId);
     if (newSession) {
       this.activeSession.set(newSession);
@@ -202,6 +221,8 @@ export class CartService {
     }
 
     this.lastOrderId.set(orderId);
+    this.orderStatus.set('pending');
+    this.subscribeToOrderStatus(orderId);
     this.myConfirmedItems.update(prev => [
       ...prev,
       ...this.items().map(item => ({
@@ -257,6 +278,8 @@ export class CartService {
 
     this.activeSession.update(s => s ? { ...s, total: s.total + delta } : s);
     this.lastOrderId.set(session.orderId);
+    this.orderStatus.set(session.orderStatus ?? 'pending');
+    this.subscribeToOrderStatus(session.orderId);
     this.myConfirmedItems.update(prev => [
       ...prev,
       ...this.items().map(item => ({
@@ -269,6 +292,34 @@ export class CartService {
     this.items.set([]);
     this.orderConfirmed.set(true);
     this.isSubmitting.set(false);
+  }
+
+  private subscribeToOrderStatus(orderId: string): void {
+    if (this.realtimeChannel) {
+      this.supabase.client.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+
+    this.realtimeChannel = this.supabase.client
+      .channel(`order-status-${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${orderId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as { status: string }).status;
+          this.orderStatus.set(newStatus);
+          if (newStatus === 'bill_requested') {
+            this.billRequested.set(true);
+            this.activeSession.update(s => s ? { ...s, orderStatus: 'bill_requested' } : s);
+          }
+        }
+      )
+      .subscribe();
   }
 
   async requestBill(): Promise<void> {
@@ -287,6 +338,7 @@ export class CartService {
       this.error.set(error.message);
     } else {
       this.billRequested.set(true);
+      this.orderStatus.set('bill_requested');
       this.activeSession.update(s => s ? { ...s, orderStatus: 'bill_requested' } : s);
     }
 
@@ -308,5 +360,10 @@ export class CartService {
 
   private clearSessionStorage(): void {
     localStorage.removeItem(SESSION_STORAGE_KEY);
+    if (this.realtimeChannel) {
+      this.supabase.client.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+    this.orderStatus.set(null);
   }
 }

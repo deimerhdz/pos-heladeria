@@ -48,6 +48,14 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
+        path: 'unit-measures',
+        loadComponent: () =>
+          import('../unit-measures/pages/unit-measures-page.component').then(
+            (m) => m.UnitMeasuresPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
         path: 'tables',
         loadComponent: () =>
           import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
@@ -66,12 +74,17 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
       },
       {
-        path: 'inventario',
+        path: 'insumos',
         loadComponent: () =>
-          import('../inventory/pages/inventory-page.component').then(
-            (m) => m.InventoryPageComponent,
+          import('../ingredients/pages/ingredients-page.component').then(
+            (m) => m.IngredientsPageComponent,
           ),
         canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'inventario',
+        redirectTo: 'insumos',
+        pathMatch: 'full',
       },
       {
         path: 'users',

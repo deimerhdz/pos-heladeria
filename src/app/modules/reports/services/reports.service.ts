@@ -3,7 +3,7 @@ import { SupabaseService } from '../../../core/services/supabase.service';
 import {
   CashSession,
   DailySale,
-  LowStockProduct,
+  LowStockIngredient,
   ReportPeriod,
   SalesSummary,
   TopProduct,
@@ -14,18 +14,19 @@ export class ReportsService {
   private readonly supabase = inject(SupabaseService);
 
   readonly period = signal<ReportPeriod>('today');
+  readonly selectedDate = signal<string>(new Date().toLocaleDateString('en-CA'));
   readonly salesSummary = signal<SalesSummary | null>(null);
   readonly dailySales = signal<DailySale[]>([]);
   readonly topProducts = signal<TopProduct[]>([]);
   readonly cashSessions = signal<CashSession[]>([]);
-  readonly lowStockProducts = signal<LowStockProduct[]>([]);
+  readonly lowStockIngredients = signal<LowStockIngredient[]>([]);
   readonly isLoading = signal(false);
   readonly error = signal<string | null>(null);
 
   private getDateRange(period: ReportPeriod): { from: string; to: string } {
     const now = new Date();
-    const to = now.toISOString();
-    let from: Date;
+    let from: Date = now;
+    let to: Date = now;
 
     switch (period) {
       case 'today':
@@ -41,9 +42,37 @@ export class ReportsService {
         from.setDate(from.getDate() - 29);
         from.setHours(0, 0, 0, 0);
         break;
+      case 'specific-date': {
+        const [y, m, d] = this.selectedDate().split('-').map(Number);
+        from = new Date(y, m - 1, d, 0, 0, 0, 0);
+        to = new Date(y, m - 1, d, 23, 59, 59, 999);
+        break;
+      }
+      case 'year':
+        from = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+        to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        break;
     }
 
-    return { from: from.toISOString(), to };
+    return { from: from.toISOString(), to: to.toISOString() };
+  }
+
+  private groupByMonth(rows: { paid_at: string; amount: number }[]): DailySale[] {
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const year = new Date().getFullYear();
+    const byMonth = Array.from({ length: 12 }, () => ({ count: 0, total: 0 }));
+
+    for (const row of rows) {
+      const monthIndex = new Date(row.paid_at).getMonth();
+      byMonth[monthIndex].count += 1;
+      byMonth[monthIndex].total += row.amount;
+    }
+
+    return byMonth.map((data, i) => ({
+      date: `${monthNames[i]} ${year}`,
+      count: data.count,
+      total: data.total,
+    }));
   }
 
   async loadAll(): Promise<void> {
@@ -102,6 +131,12 @@ export class ReportsService {
     if (error) { this.error.set(error.message); return; }
 
     const rows = (data ?? []) as { paid_at: string; amount: number }[];
+
+    if (this.period() === 'year') {
+      this.dailySales.set(this.groupByMonth(rows));
+      return;
+    }
+
     const byDay = new Map<string, { count: number; total: number }>();
 
     for (const row of rows) {
@@ -170,14 +205,15 @@ export class ReportsService {
 
   private async loadLowStock(): Promise<void> {
     const { data, error } = await this.supabase.client
-      .from('products')
-      .select('id, name, stock, category_id')
-      .lte('stock', 5)
-      .order('stock', { ascending: true });
+      .from('ingredients')
+      .select('id, name, unit, current_stock, min_stock, reorder_point, category')
+      .eq('is_active', true)
+      .order('current_stock', { ascending: true });
 
     if (error) { this.error.set(error.message); return; }
 
-    this.lowStockProducts.set((data ?? []) as LowStockProduct[]);
+    const all = (data ?? []) as LowStockIngredient[];
+    this.lowStockIngredients.set(all.filter(i => i.current_stock <= i.reorder_point));
   }
 
   async loadTodayRevenue(): Promise<void> {
@@ -190,6 +226,11 @@ export class ReportsService {
 
   async setPeriod(period: ReportPeriod): Promise<void> {
     this.period.set(period);
+    await this.loadAll();
+  }
+
+  async setSelectedDate(date: string): Promise<void> {
+    this.selectedDate.set(date);
     await this.loadAll();
   }
 }

@@ -89,15 +89,11 @@ import { CategoryFormComponent } from '../components/category-form.component';
               </thead>
               <tbody class="divide-y divide-gray-50">
                 @for (cat of filteredCategories(); track cat.id) {
-                  <tr [class.opacity-50]="!cat.is_active" class="hover:bg-gray-50 transition-colors">
+                  <tr [class.opacity-50]="!cat.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
-                        @if (cat.image_url) {
-                          <img [src]="cat.image_url" [alt]="cat.name" class="w-9 h-9 rounded-lg object-cover shrink-0" />
-                        } @else {
-                          <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">📂</div>
-                        }
-                        <span class="text-sm font-medium" [class.text-gray-400]="!cat.is_active" [class.text-gray-900]="cat.is_active">
+                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">📂</div>
+                        <span class="text-sm font-medium" [class.text-gray-400]="!cat.active" [class.text-gray-900]="cat.active">
                           {{ cat.name }}
                         </span>
                       </div>
@@ -106,7 +102,7 @@ import { CategoryFormComponent } from '../components/category-form.component';
                       <span class="text-sm text-gray-500 line-clamp-1">{{ cat.description || '—' }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (cat.is_active) {
+                      @if (cat.active) {
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
                           Activa
                         </span>
@@ -127,13 +123,13 @@ import { CategoryFormComponent } from '../components/category-form.component';
                         </button>
                         <button
                           (click)="onToggle(cat)"
-                          [title]="cat.is_active ? 'Desactivar' : 'Activar'"
+                          [title]="cat.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
-                          [class]="cat.is_active
+                          [class]="cat.active
                             ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                             : 'text-gray-400 hover:text-green-600 hover:bg-green-50'"
                         >
-                          {{ cat.is_active ? '🔴' : '🟢' }}
+                          {{ cat.active ? '🔴' : '🟢' }}
                         </button>
                       </div>
                     </td>
@@ -175,8 +171,8 @@ export class CategoriesPageComponent implements OnInit {
       const matchesSearch = !term || cat.name.toLowerCase().includes(term);
       const matchesStatus =
         status === 'all' ||
-        (status === 'active' && cat.is_active) ||
-        (status === 'inactive' && !cat.is_active);
+        (status === 'active' && cat.active) ||
+        (status === 'inactive' && !cat.active);
       return matchesSearch && matchesStatus;
     });
   });
@@ -196,7 +192,7 @@ export class CategoriesPageComponent implements OnInit {
   }
 
   async onToggle(category: Category): Promise<void> {
-    await this.categoryService.toggleActive(category.id, category.is_active);
+    await this.categoryService.toggleActive(category.id, category.active);
   }
 
   onSaved(): void {

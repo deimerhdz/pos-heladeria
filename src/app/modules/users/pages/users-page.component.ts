@@ -28,10 +28,7 @@ import { UsersService } from '../services/users.service';
 
       <!-- Formulario de creación -->
       @if (showForm()) {
-        <app-user-form
-          (saved)="onUserSaved()"
-          (cancelled)="showForm.set(false)"
-        />
+        <app-user-form (saved)="onUserSaved()" (cancelled)="showForm.set(false)" />
       }
 
       <!-- Error global -->
@@ -45,7 +42,9 @@ import { UsersService } from '../services/users.service';
       @if (usersService.isLoading()) {
         <div class="space-y-2">
           @for (i of [1, 2, 3]; track i) {
-            <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 animate-pulse flex items-center gap-4">
+            <div
+              class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 animate-pulse flex items-center gap-4"
+            >
               <div class="w-10 h-10 rounded-full bg-gray-200 shrink-0"></div>
               <div class="flex-1 space-y-2">
                 <div class="h-3 bg-gray-200 rounded w-1/3"></div>
@@ -56,7 +55,9 @@ import { UsersService } from '../services/users.service';
           }
         </div>
       } @else if (usersService.users().length === 0) {
-        <div class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400">
+        <div
+          class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400"
+        >
           <p class="text-4xl mb-3">👥</p>
           <p class="font-medium">No hay usuarios registrados</p>
         </div>
@@ -96,10 +97,18 @@ import { UsersService } from '../services/users.service';
 
                 <!-- Badges + acciones -->
                 <div class="flex items-center gap-2 shrink-0">
-                  <span class="text-xs px-2.5 py-1 rounded-full font-semibold" [class]="roleBadgeClass(user.role)">
+                  <span
+                    class="text-xs px-2.5 py-1 rounded-full font-semibold"
+                    [class]="roleBadgeClass(user.role)"
+                  >
                     {{ roleLabel(user.role) }}
                   </span>
-                  <span class="text-xs px-2 py-1 rounded-full font-medium" [class]="user.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'">
+                  <span
+                    class="text-xs px-2 py-1 rounded-full font-medium"
+                    [class]="
+                      user.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                    "
+                  >
                     {{ user.is_active ? 'Activo' : 'Inactivo' }}
                   </span>
 
@@ -151,6 +160,7 @@ export class UsersPageComponent implements OnInit {
 
   roleLabel(role: UserRole): string {
     const labels: Record<UserRole, string> = {
+      [UserRole.SUPER_ADMIN]: 'SuperAdmin',
       [UserRole.ADMIN]: 'Admin',
       [UserRole.CASHIER]: 'Cajero',
       [UserRole.STAFF]: 'Staff',
@@ -160,6 +170,7 @@ export class UsersPageComponent implements OnInit {
 
   roleBadgeClass(role: UserRole): string {
     const classes: Record<UserRole, string> = {
+      [UserRole.SUPER_ADMIN]: 'bg-indigo-100 text-indigo-700',
       [UserRole.ADMIN]: 'bg-indigo-100 text-indigo-700',
       [UserRole.CASHIER]: 'bg-green-100 text-green-700',
       [UserRole.STAFF]: 'bg-amber-100 text-amber-700',
@@ -169,6 +180,7 @@ export class UsersPageComponent implements OnInit {
 
   avatarClass(role: UserRole): string {
     const classes: Record<UserRole, string> = {
+      [UserRole.SUPER_ADMIN]: 'bg-indigo-100 text-indigo-700',
       [UserRole.ADMIN]: 'bg-indigo-100 text-indigo-700',
       [UserRole.CASHIER]: 'bg-green-100 text-green-700',
       [UserRole.STAFF]: 'bg-amber-100 text-amber-700',

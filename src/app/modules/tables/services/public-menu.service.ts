@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { SupabaseService } from '../../../core/services/supabase.service';
-import { Table, MenuCategory, MenuProduct } from '../interfaces/table.interface';
+import { PublicMenuTable, MenuCategory, MenuProduct } from '../interfaces/table.interface';
 
 export interface PublicMenuData {
-  table: Table;
+  table: PublicMenuTable;
   categories: MenuCategory[];
 }
 
@@ -20,7 +20,7 @@ export class PublicMenuService {
 
     if (tableError || !tableData) return null;
 
-    const table = tableData as Table;
+    const table = tableData as PublicMenuTable;
 
     const { data: productsData, error: productsError } = await this.supabase.client
       .from('products')

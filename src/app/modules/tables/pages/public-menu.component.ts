@@ -4,8 +4,9 @@ import { DecimalPipe } from '@angular/common';
 import { PublicMenuService, PublicMenuData } from '../services/public-menu.service';
 import { CartService } from '../services/cart.service';
 import { CartComponent } from '../components/cart.component';
+import { MenuCategory } from '../interfaces/table.interface';
 
-type MenuView = 'loading' | 'error' | 'name' | 'joining' | 'table-full' | 'active-session' | 'menu';
+type MenuView = 'loading' | 'error' | 'name' | 'joining' | 'table-full' | 'active-session' | 'categories' | 'products';
 
 @Component({
   selector: 'app-public-menu',
@@ -157,22 +158,20 @@ type MenuView = 'loading' | 'error' | 'name' | 'joining' | 'table-full' | 'activ
         </div>
       }
 
-      <!-- Menú público -->
-      @if (view() === 'menu' && menuData()) {
+      <!-- ══════════════════════════════════════ -->
+      <!-- PANTALLA: SELECCIÓN DE CATEGORÍA      -->
+      <!-- ══════════════════════════════════════ -->
+      @if (view() === 'categories' && menuData()) {
         <div class="max-w-5xl mx-auto px-4 py-8 md:flex md:gap-6 md:items-start">
 
-          <!-- Columna de productos -->
+          <!-- Columna principal -->
           <div class="flex-1 min-w-0">
+            <!-- Header -->
             <div class="text-center mb-8">
               <div class="text-4xl mb-2">🍦</div>
-              <h1 class="text-3xl font-bold text-gray-900">Menú</h1>
+              <h1 class="text-2xl font-bold text-gray-900">¿Qué deseas pedir?</h1>
               <p class="text-indigo-600 font-medium mt-1">{{ menuData()!.table.name }}</p>
               <p class="text-sm text-gray-400 mt-0.5">Hola, {{ cart.customerName() }} 👋</p>
-              @if (cart.activeSession()) {
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-600 mt-1">
-                  👥 {{ cart.activeSession()!.memberCount }} de {{ cart.activeSession()!.capacity }} en mesa
-                </span>
-              }
             </div>
 
             @if (menuData()!.categories.length === 0) {
@@ -180,63 +179,23 @@ type MenuView = 'loading' | 'error' | 'name' | 'joining' | 'table-full' | 'activ
                 <div class="text-5xl mb-4">📋</div>
                 <p class="text-gray-600 font-medium">El menú no tiene productos disponibles en este momento</p>
               </div>
-            }
-
-            @for (category of menuData()!.categories; track category.id) {
-              <div class="mb-8">
-                <h2 class="text-lg font-bold text-gray-800 mb-3 pb-2 border-b-2 border-indigo-100">
-                  {{ category.name }}
-                </h2>
-                <div class="space-y-3">
-                  @for (product of category.products; track product.id) {
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center gap-4">
-                      @if (product.image_url) {
-                        <img [src]="product.image_url" [alt]="product.name" class="w-16 h-16 rounded-lg object-cover shrink-0" />
-                      } @else {
-                        <div class="w-16 h-16 rounded-lg bg-indigo-50 flex items-center justify-center text-2xl shrink-0">🍦</div>
-                      }
-                      <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-gray-900 text-sm">{{ product.name }}</p>
-                        @if (product.description) {
-                          <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
-                        }
-                      </div>
-                      <div class="flex flex-col items-end gap-1.5 shrink-0">
-                        <p class="text-indigo-600 font-bold text-sm">$ {{ product.price | number:'1.2-2' }}</p>
-                        @if (cartQuantity(product.id) > 0) {
-                          <div class="flex items-center gap-1">
-                            <button
-                              (click)="cart.removeItem(product.id)"
-                              class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-700 hover:text-red-600 text-sm font-bold flex items-center justify-center transition-colors"
-                            >
-                              −
-                            </button>
-                            <span class="w-5 text-center text-sm font-semibold">{{ cartQuantity(product.id) }}</span>
-                            <button
-                              (click)="cart.addItem(product)"
-                              class="w-7 h-7 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-sm font-bold flex items-center justify-center transition-colors"
-                            >
-                              +
-                            </button>
-                          </div>
-                        } @else {
-                          <button
-                            (click)="cart.addItem(product)"
-                            class="w-7 h-7 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold flex items-center justify-center transition-colors"
-                          >
-                            +
-                          </button>
-                        }
-                      </div>
+            } @else {
+              <!-- Grilla de categorías -->
+              <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                @for (category of menuData()!.categories; track category.id) {
+                  <button
+                    (click)="selectCategory(category)"
+                    class="group bg-white rounded-2xl shadow-sm border border-gray-100 p-5 text-center hover:border-indigo-300 hover:shadow-md active:scale-95 transition-all"
+                  >
+                    <div class="w-14 h-14 mx-auto mb-3 rounded-xl bg-indigo-50 flex items-center justify-center text-3xl group-hover:bg-indigo-100 transition-colors">
+                      🍦
                     </div>
-                  }
-                </div>
+                    <p class="font-bold text-gray-900 text-sm leading-tight">{{ category.name }}</p>
+                    <p class="text-xs text-gray-400 mt-1">{{ category.products.length }} {{ category.products.length === 1 ? 'producto' : 'productos' }}</p>
+                  </button>
+                }
               </div>
             }
-
-            <p class="text-center text-xs text-gray-400 mt-8 mb-24 md:mb-8">
-              Consulta disponibilidad con nuestro personal
-            </p>
           </div>
 
           <!-- Panel carrito desktop -->
@@ -262,21 +221,139 @@ type MenuView = 'loading' | 'error' | 'name' | 'joining' | 'table-full' | 'activ
               }
             </button>
           }
-
           @if (cartDrawerOpen()) {
-            <div
-              class="fixed inset-0 bg-black/40 z-40"
-              (click)="cartDrawerOpen.set(false)"
-            ></div>
+            <div class="fixed inset-0 bg-black/40 z-40" (click)="cartDrawerOpen.set(false)"></div>
             <div class="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl z-50 p-5 max-h-[80vh] overflow-y-auto">
               <div class="flex items-center justify-between mb-4">
                 <span class="text-base font-bold text-gray-900">Carrito</span>
-                <button
-                  (click)="cartDrawerOpen.set(false)"
-                  class="text-gray-400 hover:text-gray-600 text-lg"
+                <button (click)="cartDrawerOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+              </div>
+              <app-cart />
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ══════════════════════════════════════ -->
+      <!-- PANTALLA: PRODUCTOS DE CATEGORÍA      -->
+      <!-- ══════════════════════════════════════ -->
+      @if (view() === 'products' && selectedCategory()) {
+        <div class="max-w-5xl mx-auto px-4 py-6 md:flex md:gap-6 md:items-start">
+
+          <!-- Columna principal -->
+          <div class="flex-1 min-w-0">
+            <!-- Header con volver -->
+            <div class="flex items-center gap-3 mb-6">
+              <button
+                (click)="view.set('categories')"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 font-medium text-sm transition-colors"
+              >
+                ← Categorías
+              </button>
+              <span class="text-gray-200 select-none">|</span>
+              <h1 class="text-lg font-bold text-gray-900 truncate">{{ selectedCategory()!.name }}</h1>
+            </div>
+
+            <!-- Grid de productos -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-28 md:pb-8">
+              @for (product of selectedCategory()!.products; track product.id) {
+                <div
+                  class="bg-white rounded-2xl shadow-sm border overflow-hidden transition-all"
+                  [class.border-indigo-300]="cartQuantity(product.id) > 0"
+                  [class.border-gray-100]="cartQuantity(product.id) === 0"
                 >
-                  ✕
-                </button>
+                  <!-- Imagen -->
+                  <div class="relative">
+                    @if (product.image_url) {
+                      <img
+                        [src]="product.image_url"
+                        [alt]="product.name"
+                        class="w-full aspect-square object-cover"
+                      />
+                    } @else {
+                      <div class="w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl">
+                        🍦
+                      </div>
+                    }
+                    <!-- Badge cantidad -->
+                    @if (cartQuantity(product.id) > 0) {
+                      <span class="absolute top-2 right-2 w-6 h-6 bg-indigo-600 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md">
+                        {{ cartQuantity(product.id) }}
+                      </span>
+                    }
+                  </div>
+
+                  <!-- Info + controles -->
+                  <div class="p-3">
+                    <p class="font-semibold text-gray-900 text-sm leading-tight">{{ product.name }}</p>
+                    @if (product.description) {
+                      <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
+                    }
+                    <div class="flex items-center justify-between mt-2.5">
+                      <p class="text-indigo-600 font-bold text-sm">$ {{ product.price | number:'1.2-2' }}</p>
+                      <!-- Controles carrito -->
+                      @if (cartQuantity(product.id) > 0) {
+                        <div class="flex items-center gap-1">
+                          <button
+                            (click)="cart.removeItem(product.id)"
+                            class="w-6 h-6 rounded-full bg-gray-100 hover:bg-red-100 text-gray-700 hover:text-red-600 text-sm font-bold flex items-center justify-center transition-colors"
+                          >
+                            −
+                          </button>
+                          <span class="w-5 text-center text-xs font-bold text-gray-900">
+                            {{ cartQuantity(product.id) }}
+                          </span>
+                          <button
+                            (click)="cart.addItem(product)"
+                            class="w-6 h-6 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-sm font-bold flex items-center justify-center transition-colors"
+                          >
+                            +
+                          </button>
+                        </div>
+                      } @else {
+                        <button
+                          (click)="cart.addItem(product)"
+                          class="w-7 h-7 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold flex items-center justify-center transition-colors"
+                        >
+                          +
+                        </button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Panel carrito desktop -->
+          <div class="hidden md:block w-80 shrink-0 sticky top-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 min-h-64">
+              <app-cart />
+            </div>
+          </div>
+        </div>
+
+        <!-- FAB carrito mobile -->
+        <div class="md:hidden">
+          @if (!cartDrawerOpen()) {
+            <button
+              (click)="cartDrawerOpen.set(true)"
+              class="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-indigo-700 transition-colors z-40"
+            >
+              🛒
+              @if (cart.totalItems() > 0) {
+                <span class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {{ cart.totalItems() }}
+                </span>
+              }
+            </button>
+          }
+          @if (cartDrawerOpen()) {
+            <div class="fixed inset-0 bg-black/40 z-40" (click)="cartDrawerOpen.set(false)"></div>
+            <div class="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl z-50 p-5 max-h-[80vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <span class="text-base font-bold text-gray-900">Carrito</span>
+                <button (click)="cartDrawerOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
               </div>
               <app-cart />
             </div>
@@ -299,6 +376,7 @@ export class PublicMenuComponent implements OnInit {
   readonly nameInput = signal<string>('');
   readonly nameError = signal<boolean>(false);
   readonly joining = signal(false);
+  readonly selectedCategory = signal<MenuCategory | null>(null);
 
   private readonly cartMap = computed(() => {
     const map = new Map<string, number>();
@@ -310,6 +388,11 @@ export class PublicMenuComponent implements OnInit {
 
   cartQuantity(productId: string): number {
     return this.cartMap().get(productId) ?? 0;
+  }
+
+  selectCategory(category: MenuCategory): void {
+    this.selectedCategory.set(category);
+    this.view.set('products');
   }
 
   async confirmName(): Promise<void> {
@@ -324,24 +407,20 @@ export class PublicMenuComponent implements OnInit {
     const session = this.cart.activeSession();
 
     if (!session) {
-      // No active session — go directly to menu
-      this.view.set('menu');
+      this.view.set('categories');
       return;
     }
 
-    // Check capacity before joining
     if (session.memberCount >= session.capacity) {
       this.view.set('table-full');
       return;
     }
 
-    // Join the session
     this.joining.set(true);
     const joined = await this.cart.joinSession();
     this.joining.set(false);
 
     if (!joined) {
-      // Table became full between check and join
       this.view.set('table-full');
       return;
     }
@@ -350,7 +429,7 @@ export class PublicMenuComponent implements OnInit {
   }
 
   goToMenu(): void {
-    this.view.set('menu');
+    this.view.set('categories');
   }
 
   async ngOnInit(): Promise<void> {
@@ -375,25 +454,21 @@ export class PublicMenuComponent implements OnInit {
     const session = this.cart.activeSession();
 
     if (this.cart.isRejoin()) {
-      // Already a member of this session — go straight to menu (or active-session if bill_requested)
       if (session?.orderStatus === 'bill_requested') {
         this.view.set('active-session');
       } else {
-        this.view.set('menu');
+        this.view.set('categories');
       }
       return;
     }
 
     if (session && session.memberCount >= session.capacity) {
-      // Table is full — block access
       this.view.set('table-full');
       return;
     }
 
-    // Check if user already has a name saved
     if (this.cart.customerName()) {
       if (session) {
-        // Has name, has session, not rejoin → join automatically
         if (session.memberCount >= session.capacity) {
           this.view.set('table-full');
           return;
@@ -408,12 +483,11 @@ export class PublicMenuComponent implements OnInit {
         }
         this.view.set('active-session');
       } else {
-        this.view.set('menu');
+        this.view.set('categories');
       }
       return;
     }
 
-    // No name yet — show name screen
     this.view.set('name');
   }
 }

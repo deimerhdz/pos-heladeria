@@ -3,11 +3,13 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
+import { TenantContextService } from '../../../core/tenant/tenant-context.service';
 
 const ROLE_HOME: Record<UserRole, string> = {
-  [UserRole.ADMIN]:   '/dashboard/admin',
+  [UserRole.SUPER_ADMIN]: '/dashboard/admin',
+  [UserRole.ADMIN]: '/dashboard/admin',
   [UserRole.CASHIER]: '/dashboard/caja',
-  [UserRole.STAFF]:   '/dashboard/cocina',
+  [UserRole.STAFF]: '/dashboard/cocina',
 };
 
 @Component({
@@ -15,15 +17,36 @@ const ROLE_HOME: Record<UserRole, string> = {
   standalone: true,
   imports: [ReactiveFormsModule],
   template: `
-    <div class="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4">
+    <div
+      class="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4"
+    >
       <div class="w-full max-w-sm">
         <!-- Logo -->
         <div class="text-center mb-8">
-          <div class="w-20 h-20 rounded-3xl bg-white/20 backdrop-blur flex items-center justify-center mx-auto mb-4 shadow-xl">
+          <div
+            class="w-20 h-20 rounded-3xl bg-white/20 backdrop-blur flex items-center justify-center mx-auto mb-4 shadow-xl"
+          >
             <span class="text-4xl">🍦</span>
           </div>
           <h1 class="text-3xl font-bold text-white">Heladería</h1>
           <p class="text-indigo-300 mt-1 text-sm">Sistema de Gestión</p>
+
+          <!-- Context banner: reflects the resolved tenant context (no manual selection) -->
+          @if (tenant.isSuperAdmin()) {
+            <span
+              class="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-100 text-xs font-semibold"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-300"></span>
+              Acceso Super Admin
+            </span>
+          } @else {
+            <span
+              class="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full bg-emerald-400/20 border border-emerald-300/40 text-emerald-100 text-xs font-semibold"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
+              {{ tenant.tenantSlug() }}
+            </span>
+          }
         </div>
 
         <!-- Login card -->
@@ -36,7 +59,9 @@ const ROLE_HOME: Record<UserRole, string> = {
           <form [formGroup]="form" (ngSubmit)="submit()" class="px-6 pb-6 pt-4 space-y-4">
             <!-- Error message -->
             @if (errorMessage()) {
-              <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+              <div
+                class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3"
+              >
                 {{ errorMessage() }}
               </div>
             }
@@ -87,8 +112,19 @@ const ROLE_HOME: Record<UserRole, string> = {
             >
               @if (isLoading()) {
                 <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  />
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
                 Ingresando...
               } @else {
@@ -104,6 +140,7 @@ const ROLE_HOME: Record<UserRole, string> = {
 export class LoginComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
+  readonly tenant = inject(TenantContextService);
 
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
@@ -141,7 +178,9 @@ export class LoginComponent {
 
     const user = this.authService.currentUser();
     if (user) {
-      this.router.navigate([ROLE_HOME[user.role]]);
+      // Root domain → Super Admin area; tenant subdomain → role-based POS home.
+      const target = this.tenant.isSuperAdmin() ? '/super-admin' : ROLE_HOME[user.role];
+      this.router.navigate([target]);
     }
   }
 }

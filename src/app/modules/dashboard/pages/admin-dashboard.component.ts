@@ -21,7 +21,7 @@ interface QuickAction {
   template: `
     <div class="space-y-6">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Bienvenida, Ana 👋</h1>
+        <h1 class="text-2xl font-bold text-gray-900">Bienvenido👋</h1>
         <p class="text-gray-500 text-sm mt-1">Resumen del día — vista de administrador</p>
       </div>
 
@@ -36,7 +36,9 @@ interface QuickAction {
               </p>
               <p class="text-xs text-green-600 mt-1">en el sistema</p>
             </div>
-            <div class="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl">👥</div>
+            <div class="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl">
+              👥
+            </div>
           </div>
         </div>
         <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -46,17 +48,25 @@ interface QuickAction {
               <p class="text-2xl font-bold text-gray-900 mt-1">{{ activeProductsCount() }}</p>
               <p class="text-xs text-green-600 mt-1">activos en stock</p>
             </div>
-            <div class="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center text-xl">🍦</div>
+            <div class="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center text-xl">
+              🍦
+            </div>
           </div>
         </div>
         <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <div class="flex items-start justify-between">
             <div>
-              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Órdenes activas</p>
-              <p class="text-2xl font-bold text-gray-900 mt-1">{{ ordersService.activeOrdersCount() }}</p>
+              <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">
+                Órdenes activas
+              </p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">
+                {{ ordersService.activeOrdersCount() }}
+              </p>
               <p class="text-xs text-green-600 mt-1">en proceso</p>
             </div>
-            <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl">📋</div>
+            <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl">
+              📋
+            </div>
           </div>
         </div>
         <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
@@ -69,14 +79,16 @@ interface QuickAction {
                 <p class="text-2xl font-bold text-gray-900 mt-1">–</p>
               } @else {
                 <p class="text-2xl font-bold text-gray-900 mt-1">
-                  S/ {{ reportsService.salesSummary()!.total | number:'1.2-2' }}
+                  S/ {{ reportsService.salesSummary()!.total | number: '1.2-2' }}
                 </p>
                 <p class="text-xs text-green-600 mt-1">
                   {{ reportsService.salesSummary()!.count }} cobros hoy
                 </p>
               }
             </div>
-            <div class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-xl">💰</div>
+            <div class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-xl">
+              💰
+            </div>
           </div>
         </div>
       </div>
@@ -92,7 +104,9 @@ interface QuickAction {
               [routerLink]="action.route"
               class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:border-indigo-200 hover:shadow-md transition-all group flex items-center gap-4"
             >
-              <div class="w-10 h-10 rounded-xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center text-xl transition-colors shrink-0">
+              <div
+                class="w-10 h-10 rounded-xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center text-xl transition-colors shrink-0"
+              >
                 {{ action.icon }}
               </div>
               <div class="min-w-0">
@@ -108,7 +122,10 @@ interface QuickAction {
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
         <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-sm font-semibold text-gray-800">Órdenes recientes</h2>
-          <a routerLink="/dashboard/orders" class="text-xs text-indigo-600 font-medium hover:underline">
+          <a
+            routerLink="/dashboard/orders"
+            class="text-xs text-indigo-600 font-medium hover:underline"
+          >
             Ver todas →
           </a>
         </div>
@@ -121,18 +138,27 @@ interface QuickAction {
         } @else {
           <div class="divide-y divide-gray-50">
             @for (order of recentOrders(); track order.id) {
-              <a [routerLink]="['/dashboard/orders', order.id]" class="px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+              <a
+                [routerLink]="['/dashboard/orders', order.id]"
+                class="px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+              >
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                  <div
+                    class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500"
+                  >
                     {{ order.table_name.charAt(0) }}
                   </div>
                   <div>
-                    <p class="text-sm font-medium text-gray-800">{{ order.id | slice:0:8 }}...</p>
+                    <p class="text-sm font-medium text-gray-800">
+                      {{ order.id | slice: 0 : 8 }}...
+                    </p>
                     <p class="text-xs text-gray-400">{{ order.table_name }}</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span class="text-sm font-semibold text-gray-700">S/ {{ order.total.toFixed(2) }}</span>
+                  <span class="text-sm font-semibold text-gray-700"
+                    >S/ {{ order.total.toFixed(2) }}</span
+                  >
                   <span
                     class="text-xs px-2 py-1 rounded-full font-medium"
                     [class]="getStatusClass(order.status)"
@@ -156,17 +182,47 @@ export class AdminDashboardComponent implements OnInit {
 
   readonly recentOrders = computed(() => this.ordersService.orders().slice(0, 5));
 
-  readonly activeProductsCount = computed(() =>
-    this.productService.products().filter(p => p.is_active).length,
+  readonly activeProductsCount = computed(
+    () => this.productService.products().filter((p) => p.is_active).length,
   );
 
   readonly quickActions: QuickAction[] = [
-    { label: 'Gestionar Usuarios', icon: '👥', route: '/dashboard/users', description: 'Roles y accesos' },
-    { label: 'Gestionar Productos', icon: '🍦', route: '/dashboard/products', description: 'Inventario y precios' },
-    { label: 'Ver Órdenes', icon: '📋', route: '/dashboard/orders', description: 'Activas e historial' },
-    { label: 'Gestión de Caja', icon: '💰', route: '/dashboard/caja', description: 'Apertura y cierre' },
-    { label: 'Ver Reportes', icon: '📊', route: '/dashboard/reports', description: 'Estadísticas del día' },
-    { label: 'Gestionar Mesas', icon: '🪑', route: '/dashboard/tables', description: 'Estado y QR' },
+    {
+      label: 'Gestionar Usuarios',
+      icon: '👥',
+      route: '/dashboard/users',
+      description: 'Roles y accesos',
+    },
+    {
+      label: 'Gestionar Productos',
+      icon: '🍦',
+      route: '/dashboard/products',
+      description: 'Inventario y precios',
+    },
+    {
+      label: 'Ver Órdenes',
+      icon: '📋',
+      route: '/dashboard/orders',
+      description: 'Activas e historial',
+    },
+    {
+      label: 'Gestión de Caja',
+      icon: '💰',
+      route: '/dashboard/caja',
+      description: 'Apertura y cierre',
+    },
+    {
+      label: 'Ver Reportes',
+      icon: '📊',
+      route: '/dashboard/reports',
+      description: 'Estadísticas del día',
+    },
+    {
+      label: 'Gestionar Mesas',
+      icon: '🪑',
+      route: '/dashboard/tables',
+      description: 'Estado y QR',
+    },
   ];
 
   ngOnInit(): void {

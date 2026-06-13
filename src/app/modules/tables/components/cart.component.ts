@@ -1,6 +1,14 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { CartService } from '../services/cart.service';
+
+const STATUS_MAP: Record<string, { label: string; classes: string; icon: string }> = {
+  pending:        { label: 'Orden recibida — esperando confirmación', classes: 'bg-amber-50 border-amber-200 text-amber-700',    icon: '⏳' },
+  preparing:      { label: 'En preparación',                           classes: 'bg-blue-50 border-blue-200 text-blue-700',       icon: '👨‍🍳' },
+  ready:          { label: '¡Tu orden está lista!',                    classes: 'bg-green-50 border-green-200 text-green-700',    icon: '✅' },
+  bill_requested: { label: 'Cuenta solicitada',                        classes: 'bg-gray-50 border-gray-300 text-gray-600',       icon: '🧾' },
+  paid:           { label: 'Pagado — ¡gracias!',                       classes: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: '✓' },
+};
 
 @Component({
   selector: 'app-cart',
@@ -53,6 +61,13 @@ import { CartService } from '../services/cart.service';
         <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-3 text-center">
           <p class="text-green-700 font-medium text-sm">¡Pedido enviado!</p>
           <p class="text-green-600 text-xs mt-0.5">El personal lo atenderá pronto</p>
+        </div>
+      }
+
+      <!-- Estado de la orden en tiempo real -->
+      @if (statusInfo()) {
+        <div class="border rounded-xl px-4 py-3 mb-3 text-center" [class]="statusInfo()!.classes">
+          <p class="font-semibold text-sm">{{ statusInfo()!.icon }} {{ statusInfo()!.label }}</p>
         </div>
       }
 
@@ -148,4 +163,9 @@ export class CartComponent {
 
   readonly billRequested = () =>
     this.cart.billRequested() || this.cart.activeSession()?.orderStatus === 'bill_requested';
+
+  readonly statusInfo = computed(() => {
+    const status = this.cart.orderStatus();
+    return status ? (STATUS_MAP[status] ?? null) : null;
+  });
 }

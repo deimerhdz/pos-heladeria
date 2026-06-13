@@ -1,5 +1,5 @@
 export type CashRegisterStatus = 'open' | 'closed';
-export type PaymentMethod = 'cash' | 'card';
+export type PaymentMethod = 'cash' | 'transfer';
 
 export interface CashRegister {
   id: string;

@@ -1,19 +1,49 @@
+/** Admin table model, mirrors the backend `TableResponse`. */
 export interface Table {
+  id: string;
+  name: string;
+  qr_code: string | null;
+  capacity: number;
+  status: string;
+  active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+/** Request body for `POST /tables` (`TableCreate`). */
+export interface TableCreatePayload {
+  name: string;
+  qr_code?: string | null;
+  capacity: number;
+  status?: string;
+}
+
+/** Request body for `PATCH /tables/{id}` (`TableUpdate`). */
+export interface TableUpdatePayload {
+  name?: string;
+  qr_code?: string | null;
+  capacity?: number;
+  status?: string;
+  active?: boolean;
+}
+
+export interface TableForm {
+  name: string;
+  capacity: number;
+}
+
+/**
+ * Shape of a table as read by the public QR menu flow directly from Supabase
+ * (`code`/`is_active`). Decoupled from the backend-aligned {@link Table} until
+ * the public-menu/sessions flow is migrated.
+ */
+export interface PublicMenuTable {
   id: string;
   name: string;
   code: string;
   capacity: number | null;
   is_active: boolean;
   created_at: string;
-}
-
-export interface TableWithOccupancy extends Table {
-  member_count: number | null;
-}
-
-export interface TableForm {
-  name: string;
-  capacity: number | null;
 }
 
 export interface MenuCategory {

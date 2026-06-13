@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Table, TableWithOccupancy } from '../interfaces/table.interface';
+import { Table } from '../interfaces/table.interface';
 import { TableService } from '../services/table.service';
 import { TableFormComponent } from '../components/table-form.component';
 import { TableQrComponent } from '../components/table-qr.component';
@@ -64,30 +64,25 @@ import { TableQrComponent } from '../components/table-qr.component';
               </thead>
               <tbody class="divide-y divide-gray-50">
                 @for (table of tableService.tables(); track table.id) {
-                  <tr [class.opacity-50]="!table.is_active" class="hover:bg-gray-50 transition-colors">
+                  <tr [class.opacity-50]="!table.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">🪑</div>
                         <div>
-                          <span class="text-sm font-medium" [class.text-gray-400]="!table.is_active" [class.text-gray-900]="table.is_active">
+                          <span class="text-sm font-medium" [class.text-gray-400]="!table.active" [class.text-gray-900]="table.active">
                             {{ table.name }}
                           </span>
-                          @if (table.member_count) {
-                            <span class="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                              👥 {{ table.member_count }}
-                            </span>
-                          }
                         </div>
                       </div>
                     </td>
                     <td class="px-5 py-4 hidden sm:table-cell">
-                      <span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">{{ table.code }}</span>
+                      <span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">{{ table.qr_code }}</span>
                     </td>
                     <td class="px-5 py-4 hidden md:table-cell">
-                      <span class="text-sm text-gray-500">{{ table.capacity ?? '—' }}</span>
+                      <span class="text-sm text-gray-500">{{ table.capacity }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (table.is_active) {
+                      @if (table.active) {
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Activa</span>
                       } @else {
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactiva</span>
@@ -111,13 +106,13 @@ import { TableQrComponent } from '../components/table-qr.component';
                         </button>
                         <button
                           (click)="onToggle(table)"
-                          [title]="table.is_active ? 'Desactivar' : 'Activar'"
+                          [title]="table.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
-                          [class]="table.is_active
+                          [class]="table.active
                             ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                             : 'text-gray-400 hover:text-green-600 hover:bg-green-50'"
                         >
-                          {{ table.is_active ? '🔴' : '🟢' }}
+                          {{ table.active ? '🔴' : '🟢' }}
                         </button>
                       </div>
                     </td>
@@ -152,9 +147,9 @@ export class TablesPageComponent implements OnInit {
   readonly tableService = inject(TableService);
 
   readonly showForm = signal(false);
-  readonly editingTable = signal<TableWithOccupancy | null>(null);
+  readonly editingTable = signal<Table | null>(null);
   readonly showQr = signal(false);
-  readonly qrTable = signal<TableWithOccupancy | null>(null);
+  readonly qrTable = signal<Table | null>(null);
 
   ngOnInit(): void {
     this.tableService.loadTables();
@@ -165,18 +160,18 @@ export class TablesPageComponent implements OnInit {
     this.showForm.set(true);
   }
 
-  openEdit(table: TableWithOccupancy): void {
+  openEdit(table: Table): void {
     this.editingTable.set(table);
     this.showForm.set(true);
   }
 
-  openQr(table: TableWithOccupancy): void {
+  openQr(table: Table): void {
     this.qrTable.set(table);
     this.showQr.set(true);
   }
 
-  async onToggle(table: TableWithOccupancy): Promise<void> {
-    await this.tableService.toggleActive(table.id, table.is_active);
+  async onToggle(table: Table): Promise<void> {
+    await this.tableService.toggleActive(table.id, table.active);
   }
 
   onSaved(): void {

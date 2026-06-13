@@ -1,12 +1,21 @@
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
-import { SupabaseService } from '../../../core/services/supabase.service';
-import { Table, TableForm, TableWithOccupancy } from '../interfaces/table.interface';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../../environments/environment';
+import { ApiErrorBody } from '../../../core/auth/auth.models';
+import {
+  Table,
+  TableCreatePayload,
+  TableForm,
+  TableUpdatePayload,
+} from '../interfaces/table.interface';
 
 @Injectable({ providedIn: 'root' })
 export class TableService {
-  private readonly supabase = inject(SupabaseService);
+  private readonly http = inject(HttpClient);
+  private readonly baseUrl = `${environment.apiBaseUrl}/tables`;
 
-  readonly tables = signal<TableWithOccupancy[]>([]);
+  readonly tables = signal<Table[]>([]);
   readonly loading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
@@ -15,103 +24,78 @@ export class TableService {
     this.loading.set(true);
     this.error.set(null);
 
-    // Load tables and active session member_count in one query
-    const { data: tablesData, error: tablesError } = await this.supabase.client
-      .from('tables')
-      .select('*')
-      .order('name');
-
-    if (tablesError) {
-      this.error.set(tablesError.message);
+    try {
+      const data = await firstValueFrom(this.http.get<Table[]>(this.baseUrl));
+      this.tables.set([...data].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
       this.loading.set(false);
-      return;
     }
-
-    const tables = tablesData as Table[];
-
-    // Load active sessions for all tables (orders not paid)
-    const { data: sessionsData } = await this.supabase.client
-      .from('table_sessions')
-      .select('table_id, member_count, order_id, orders!inner(status)')
-      .neq('orders.status', 'paid');
-
-    const sessionMap = new Map<string, number>();
-    if (sessionsData) {
-      for (const s of sessionsData as { table_id: string; member_count: number }[]) {
-        sessionMap.set(s.table_id, s.member_count);
-      }
-    }
-
-    this.tables.set(
-      tables.map(t => ({
-        ...t,
-        member_count: sessionMap.get(t.id) ?? null,
-      }))
-    );
-
-    this.loading.set(false);
   }
 
   async createTable(data: TableForm): Promise<void> {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    const code = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-
-    const { error } = await this.supabase.client.from('tables').insert({
+    // Auto-generate a short QR code so the public menu link (/menu/:code) keeps working.
+    const qr_code = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+    const payload: TableCreatePayload = {
       name: data.name,
-      code,
-      capacity: data.capacity ?? null,
-      is_active: true,
-    });
+      qr_code,
+      capacity: data.capacity,
+    };
 
-    if (error) {
-      this.error.set(error.message);
+    try {
+      await firstValueFrom(this.http.post<Table>(this.baseUrl, payload));
+      await this.loadTables();
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
       this.isSubmitting.set(false);
-      return;
     }
-
-    await this.loadTables();
-    this.isSubmitting.set(false);
   }
 
   async updateTable(id: string, data: TableForm): Promise<void> {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    const { error } = await this.supabase.client
-      .from('tables')
-      .update({
-        name: data.name,
-        capacity: data.capacity ?? null,
-      })
-      .eq('id', id);
+    const payload: TableUpdatePayload = {
+      name: data.name,
+      capacity: data.capacity,
+    };
 
-    if (error) {
-      this.error.set(error.message);
+    try {
+      await firstValueFrom(this.http.patch<Table>(`${this.baseUrl}/${id}`, payload));
+      await this.loadTables();
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
       this.isSubmitting.set(false);
-      return;
     }
-
-    await this.loadTables();
-    this.isSubmitting.set(false);
   }
 
   async toggleActive(id: string, current: boolean): Promise<void> {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    const { error } = await this.supabase.client
-      .from('tables')
-      .update({ is_active: !current })
-      .eq('id', id);
+    const payload: TableUpdatePayload = { active: !current };
 
-    if (error) {
-      this.error.set(error.message);
-    } else {
+    try {
+      await firstValueFrom(this.http.patch<Table>(`${this.baseUrl}/${id}`, payload));
       await this.loadTables();
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.isSubmitting.set(false);
     }
+  }
 
-    this.isSubmitting.set(false);
+  private extractError(err: unknown): string {
+    if (err instanceof HttpErrorResponse) {
+      const body = err.error as ApiErrorBody | null;
+      return body?.detail ?? body?.message ?? 'No se pudo completar la operación.';
+    }
+    return 'No se pudo completar la operación.';
   }
 }

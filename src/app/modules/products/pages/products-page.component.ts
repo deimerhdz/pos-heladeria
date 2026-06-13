@@ -86,7 +86,6 @@ import { ProductFormComponent } from '../components/product-form.component';
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Nombre</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Categoría</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Precio</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Stock</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Acciones</th>
                 </tr>
@@ -117,14 +116,6 @@ import { ProductFormComponent } from '../components/product-form.component';
                     <td class="px-5 py-4">
                       <span class="text-sm font-medium text-gray-900">
                         {{ product.price | number:'1.2-2' }}
-                      </span>
-                    </td>
-                    <td class="px-5 py-4 hidden md:table-cell">
-                      <span
-                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
-                        [class]="product.stock === 0 ? 'bg-red-100 text-red-600' : product.stock <= 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'"
-                      >
-                        {{ product.stock }}
                       </span>
                     </td>
                     <td class="px-5 py-4">

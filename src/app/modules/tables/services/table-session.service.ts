@@ -89,7 +89,7 @@ export class TableSessionService {
       table_id: tableId,
       order_id: orderId,
       member_count: 1,
-      capacity: capacity > 0 ? capacity : 1,
+      capacity: capacity > 0 ? capacity : 99,
     });
   }
 

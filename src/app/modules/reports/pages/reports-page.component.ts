@@ -11,24 +11,35 @@ import { ReportsService } from '../services/reports.service';
   imports: [DatePipe, RouterLink],
   template: `
     <div class="space-y-8">
-
       <!-- Header + período selector -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Informes</h1>
           <p class="text-gray-500 text-sm mt-1">Resumen de actividad del negocio</p>
         </div>
-        <div class="flex gap-2 bg-gray-100 rounded-xl p-1 self-start">
-          @for (opt of periodOptions; track opt.value) {
-            <button
-              (click)="reportsService.setPeriod(opt.value)"
-              class="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-              [class]="reportsService.period() === opt.value
-                ? 'bg-white text-indigo-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'"
-            >
-              {{ opt.label }}
-            </button>
+        <div class="flex flex-col items-start sm:items-end gap-2 self-start">
+          <div class="flex flex-wrap gap-2 bg-gray-100 rounded-xl p-1">
+            @for (opt of periodOptions; track opt.value) {
+              <button
+                (click)="reportsService.setPeriod(opt.value)"
+                class="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                [class]="
+                  reportsService.period() === opt.value
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                "
+              >
+                {{ opt.label }}
+              </button>
+            }
+          </div>
+          @if (reportsService.period() === 'specific-date') {
+            <input
+              type="date"
+              [value]="reportsService.selectedDate()"
+              (change)="onDateChange($event)"
+              class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full sm:w-auto"
+            />
           }
         </div>
       </div>
@@ -36,7 +47,9 @@ import { ReportsService } from '../services/reports.service';
       <!-- Loading -->
       @if (reportsService.isLoading()) {
         <div class="flex justify-center py-16">
-          <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div
+            class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"
+          ></div>
         </div>
       }
 
@@ -48,7 +61,6 @@ import { ReportsService } from '../services/reports.service';
       }
 
       @if (!reportsService.isLoading()) {
-
         <!-- ═══════════════════════════════════ -->
         <!-- SECCIÓN 1: RESUMEN DE INGRESOS      -->
         <!-- ═══════════════════════════════════ -->
@@ -58,9 +70,11 @@ import { ReportsService } from '../services/reports.service';
           </h2>
 
           @if (reportsService.salesSummary(); as s) {
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Total cobrado</p>
+                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">
+                  Total cobrado
+                </p>
                 <p class="text-2xl font-bold text-gray-900 mt-1">S/ {{ s.total.toFixed(2) }}</p>
               </div>
               <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -69,14 +83,14 @@ import { ReportsService } from '../services/reports.service';
               </div>
               <div class="bg-white rounded-2xl p-4 shadow-sm border border-green-100">
                 <p class="text-xs text-green-600 uppercase tracking-wide font-medium">Efectivo</p>
-                <p class="text-2xl font-bold text-green-700 mt-1">S/ {{ s.cashTotal.toFixed(2) }}</p>
-              </div>
-              <div class="bg-white rounded-2xl p-4 shadow-sm border border-blue-100">
-                <p class="text-xs text-blue-600 uppercase tracking-wide font-medium">Tarjeta</p>
-                <p class="text-2xl font-bold text-blue-700 mt-1">S/ {{ s.cardTotal.toFixed(2) }}</p>
+                <p class="text-2xl font-bold text-green-700 mt-1">
+                  S/ {{ s.cashTotal.toFixed(2) }}
+                </p>
               </div>
               <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Ticket prom.</p>
+                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">
+                  Ticket prom.
+                </p>
                 <p class="text-2xl font-bold text-gray-900 mt-1">S/ {{ s.average.toFixed(2) }}</p>
               </div>
             </div>
@@ -88,7 +102,8 @@ import { ReportsService } from '../services/reports.service';
         <!-- ═══════════════════════════════════ -->
         <section class="space-y-4">
           <h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
-            <span class="text-lg">📅</span> Ventas por día
+            <span class="text-lg">📅</span>
+            {{ reportsService.period() === 'year' ? 'Ventas por mes' : 'Ventas por día' }}
           </h2>
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             @if (reportsService.dailySales().length === 0) {
@@ -97,19 +112,37 @@ import { ReportsService } from '../services/reports.service';
               <table class="w-full">
                 <thead>
                   <tr class="border-b border-gray-100 bg-gray-50">
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Fecha</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Cobros</th>
-                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Total</th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      {{ reportsService.period() === 'year' ? 'Mes' : 'Fecha' }}
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Cobros
+                    </th>
+                    <th
+                      class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Total
+                    </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
                   @for (day of reportsService.dailySales(); track day.date) {
                     <tr class="hover:bg-gray-50 transition-colors">
                       <td class="px-5 py-3 text-sm font-medium text-gray-700">
-                        {{ day.date | date:'EEEE dd/MM/yyyy':'':'es' }}
+                        @if (reportsService.period() === 'year') {
+                          {{ day.date }}
+                        } @else {
+                          {{ day.date | date: 'EEEE dd/MM/yyyy' : '' : 'es' }}
+                        }
                       </td>
                       <td class="px-5 py-3 text-sm text-gray-500">{{ day.count }}</td>
-                      <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">S/ {{ day.total.toFixed(2) }}</td>
+                      <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">
+                        S/ {{ day.total.toFixed(2) }}
+                      </td>
                     </tr>
                   }
                 </tbody>
@@ -130,14 +163,20 @@ import { ReportsService } from '../services/reports.service';
               <button
                 (click)="productView.set('units')"
                 class="px-3 py-1 rounded-md text-xs font-semibold transition-all"
-                [class]="productView() === 'units' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500'"
+                [class]="
+                  productView() === 'units' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500'
+                "
               >
                 Por unidades
               </button>
               <button
                 (click)="productView.set('revenue')"
                 class="px-3 py-1 rounded-md text-xs font-semibold transition-all"
-                [class]="productView() === 'revenue' ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500'"
+                [class]="
+                  productView() === 'revenue'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-gray-500'
+                "
               >
                 Por ingresos
               </button>
@@ -166,7 +205,9 @@ import { ReportsService } from '../services/reports.service';
                         <p class="text-sm font-bold text-gray-900">{{ p.totalQty }} uds.</p>
                         <p class="text-xs text-gray-400">S/ {{ p.totalRevenue.toFixed(2) }}</p>
                       } @else {
-                        <p class="text-sm font-bold text-gray-900">S/ {{ p.totalRevenue.toFixed(2) }}</p>
+                        <p class="text-sm font-bold text-gray-900">
+                          S/ {{ p.totalRevenue.toFixed(2) }}
+                        </p>
                         <p class="text-xs text-gray-400">{{ p.totalQty }} uds.</p>
                       }
                     </div>
@@ -186,30 +227,72 @@ import { ReportsService } from '../services/reports.service';
           </h2>
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             @if (reportsService.cashSessions().length === 0) {
-              <p class="px-5 py-8 text-center text-sm text-gray-400">Sin sesiones de caja en este período</p>
+              <p class="px-5 py-8 text-center text-sm text-gray-400">
+                Sin sesiones de caja en este período
+              </p>
             } @else {
               <table class="w-full">
                 <thead>
                   <tr class="border-b border-gray-100 bg-gray-50">
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Fecha</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Apertura</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Cierre</th>
-                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Monto apertura</th>
-                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Total cobrado</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Fecha
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                    >
+                      Apertura
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                    >
+                      Cierre
+                    </th>
+                    <th
+                      class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                    >
+                      Monto apertura
+                    </th>
+                    <th
+                      class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Total cobrado
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Estado
+                    </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
                   @for (session of reportsService.cashSessions(); track session.id) {
                     <tr class="hover:bg-gray-50 transition-colors">
-                      <td class="px-5 py-3 text-sm text-gray-700">{{ session.openedAt | date:'dd/MM/yyyy' }}</td>
-                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">{{ session.openedAt | date:'HH:mm' }}</td>
-                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">{{ session.closedAt ? (session.closedAt | date:'HH:mm') : '—' }}</td>
-                      <td class="px-5 py-3 text-sm text-gray-700 text-right hidden md:table-cell">S/ {{ session.openingAmount.toFixed(2) }}</td>
-                      <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">S/ {{ session.totalCollected.toFixed(2) }}</td>
+                      <td class="px-5 py-3 text-sm text-gray-700">
+                        {{ session.openedAt | date: 'dd/MM/yyyy' }}
+                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
+                        {{ session.openedAt | date: 'HH:mm' }}
+                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
+                        {{ session.closedAt ? (session.closedAt | date: 'HH:mm') : '—' }}
+                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-700 text-right hidden md:table-cell">
+                        S/ {{ session.openingAmount.toFixed(2) }}
+                      </td>
+                      <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">
+                        S/ {{ session.totalCollected.toFixed(2) }}
+                      </td>
                       <td class="px-5 py-3">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
-                          [class]="session.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
+                        <span
+                          class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                          [class]="
+                            session.status === 'open'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-500'
+                          "
+                        >
                           {{ session.status === 'open' ? 'Abierta' : 'Cerrada' }}
                         </span>
                       </td>
@@ -230,17 +313,19 @@ import { ReportsService } from '../services/reports.service';
               <span class="text-lg">📦</span> Inventario bajo
             </h2>
             <a
-              routerLink="/dashboard/inventario"
+              routerLink="/dashboard/insumos"
               class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
             >
-              Gestionar inventario →
+              Gestionar insumos →
             </a>
           </div>
 
           <!-- Resumen cards -->
           <div class="grid grid-cols-3 gap-4">
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Con stock bajo</p>
+              <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">
+                Con stock bajo
+              </p>
               <p class="text-2xl font-bold text-yellow-600 mt-1">{{ lowStockCount() }}</p>
             </div>
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-red-100">
@@ -248,41 +333,102 @@ import { ReportsService } from '../services/reports.service';
               <p class="text-2xl font-bold text-red-600 mt-1">{{ outOfStockCount() }}</p>
             </div>
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Total críticos</p>
-              <p class="text-2xl font-bold text-gray-900 mt-1">{{ reportsService.lowStockProducts().length }}</p>
+              <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">
+                Total críticos
+              </p>
+              <p class="text-2xl font-bold text-gray-900 mt-1">
+                {{ reportsService.lowStockIngredients().length }}
+              </p>
             </div>
           </div>
 
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            @if (reportsService.lowStockProducts().length === 0) {
+            @if (reportsService.lowStockIngredients().length === 0) {
               <div class="px-5 py-8 text-center">
-                <p class="text-green-600 font-semibold text-sm">No hay productos con stock bajo</p>
-                <p class="text-xs text-gray-400 mt-1">Todos los productos tienen stock suficiente</p>
+                <p class="text-green-600 font-semibold text-sm">No hay insumos con stock bajo</p>
+                <p class="text-xs text-gray-400 mt-1">Todos los insumos tienen stock suficiente</p>
               </div>
             } @else {
               <table class="w-full">
                 <thead>
                   <tr class="border-b border-gray-100 bg-gray-50">
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Producto</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Stock</th>
-                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Insumo
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                    >
+                      Unidad
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Stock actual
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                    >
+                      Pto. reorden
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden lg:table-cell"
+                    >
+                      Categoría
+                    </th>
+                    <th
+                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                    >
+                      Estado
+                    </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
-                  @for (p of reportsService.lowStockProducts(); track p.id) {
+                  @for (i of reportsService.lowStockIngredients(); track i.id) {
                     <tr class="hover:bg-gray-50 transition-colors">
-                      <td class="px-5 py-3 text-sm font-medium text-gray-800">{{ p.name }}</td>
+                      <td class="px-5 py-3 text-sm font-medium text-gray-800">{{ i.name }}</td>
+                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
+                        {{ i.unit }}
+                      </td>
                       <td class="px-5 py-3">
-                        <span class="text-sm font-bold" [class]="p.stock === 0 ? 'text-red-600' : 'text-yellow-600'">
-                          {{ p.stock }}
+                        <span
+                          class="text-sm font-bold"
+                          [class]="
+                            i.current_stock <= 0
+                              ? 'text-red-600'
+                              : i.current_stock <= i.min_stock
+                                ? 'text-orange-600'
+                                : 'text-yellow-600'
+                          "
+                        >
+                          {{ i.current_stock }}
                         </span>
+                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
+                        {{ i.reorder_point }}
+                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-500 hidden lg:table-cell">
+                        {{ i.category || '—' }}
                       </td>
                       <td class="px-5 py-3">
                         <span
                           class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                          [class]="p.stock === 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'"
+                          [class]="
+                            i.current_stock <= 0
+                              ? 'bg-red-100 text-red-600'
+                              : i.current_stock <= i.min_stock
+                                ? 'bg-orange-100 text-orange-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                          "
                         >
-                          {{ p.stock === 0 ? 'Agotado' : 'Stock bajo' }}
+                          {{
+                            i.current_stock <= 0
+                              ? 'Agotado'
+                              : i.current_stock <= i.min_stock
+                                ? 'Crítico'
+                                : 'Stock bajo'
+                          }}
                         </span>
                       </td>
                     </tr>
@@ -292,7 +438,6 @@ import { ReportsService } from '../services/reports.service';
             }
           </div>
         </section>
-
       }
     </div>
   `,
@@ -307,6 +452,8 @@ export class ReportsPageComponent implements OnInit {
     { label: 'Hoy', value: 'today' },
     { label: '7 días', value: 'week' },
     { label: '30 días', value: 'month' },
+    { label: 'Fecha exacta', value: 'specific-date' },
+    { label: 'Año actual', value: 'year' },
   ];
 
   readonly sortedProducts = computed<TopProduct[]>(() => {
@@ -317,12 +464,15 @@ export class ReportsPageComponent implements OnInit {
     return products.sort((a, b) => b.totalQty - a.totalQty);
   });
 
-  readonly lowStockCount = computed(() =>
-    this.reportsService.lowStockProducts().filter(p => p.stock > 0).length
+  readonly lowStockCount = computed(
+    () =>
+      this.reportsService
+        .lowStockIngredients()
+        .filter((i) => i.current_stock > 0 && i.current_stock <= i.reorder_point).length,
   );
 
-  readonly outOfStockCount = computed(() =>
-    this.reportsService.lowStockProducts().filter(p => p.stock === 0).length
+  readonly outOfStockCount = computed(
+    () => this.reportsService.lowStockIngredients().filter((i) => i.current_stock <= 0).length,
   );
 
   ngOnInit(): void {
@@ -332,12 +482,20 @@ export class ReportsPageComponent implements OnInit {
     }
   }
 
+  onDateChange(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    if (value) {
+      this.reportsService.setSelectedDate(value);
+    }
+  }
+
   barWidth(product: TopProduct): number {
     const products = this.sortedProducts();
     if (products.length === 0) return 0;
-    const maxVal = this.productView() === 'units'
-      ? Math.max(...products.map(p => p.totalQty))
-      : Math.max(...products.map(p => p.totalRevenue));
+    const maxVal =
+      this.productView() === 'units'
+        ? Math.max(...products.map((p) => p.totalQty))
+        : Math.max(...products.map((p) => p.totalRevenue));
     if (maxVal === 0) return 0;
     const val = this.productView() === 'units' ? product.totalQty : product.totalRevenue;
     return Math.round((val / maxVal) * 100);

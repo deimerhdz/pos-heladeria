@@ -81,15 +81,15 @@ import { PaymentFormData } from '../interfaces/payment.interface';
                 💵 Efectivo
               </button>
               <button
-                (click)="setPaymentMethod('card')"
+                (click)="setPaymentMethod('transfer')"
                 class="py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
                 [class]="
-                  paymentMethod() === 'card'
+                  paymentMethod() === 'transfer'
                     ? 'bg-indigo-600 border-indigo-600 text-white'
                     : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300'
                 "
               >
-                💳 Tarjeta
+                🏦 Transferencia
               </button>
             </div>
           </div>
@@ -184,19 +184,19 @@ export class PaymentModalComponent implements OnInit {
   }
 
   canConfirm(): boolean {
-    if (this.paymentMethod() === 'card') return true;
+    if (this.paymentMethod() === 'transfer') return true;
     return this.amountReceived() >= this.order.total;
   }
 
   confirm(): void {
     if (!this.canConfirm()) return;
 
-    const isCard = this.paymentMethod() === 'card';
+    const isTransfer = this.paymentMethod() === 'transfer';
     this.confirmed.emit({
       orderId: this.order.id,
       amount: this.order.total,
       paymentMethod: this.paymentMethod(),
-      changeGiven: isCard ? 0 : this.change(),
+      changeGiven: isTransfer ? 0 : this.change(),
     });
   }
 

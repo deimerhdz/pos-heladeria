@@ -1,7 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
-import { NAV_ITEMS } from '../../../core/config/navigation.config';
+import { NAV_ITEMS, SUPER_ADMIN_NAV_ITEMS } from '../../../core/config/navigation.config';
 import { LayoutService } from './layout.service';
 
 @Component({
@@ -19,10 +19,14 @@ import { LayoutService } from './layout.service';
     >
       <div class="px-6 py-5 border-b border-indigo-700">
         <div class="flex items-center gap-3">
-          <span class="text-2xl">🍦</span>
+          <span class="text-2xl">{{ isSuperAdmin() ? '🛡️' : '🍦' }}</span>
           <div>
-            <h1 class="text-base font-bold leading-tight">Heladería</h1>
-            <p class="text-indigo-300 text-xs">Sistema de Gestión</p>
+            <h1 class="text-base font-bold leading-tight">
+              {{ isSuperAdmin() ? 'Super Admin' : 'Heladería' }}
+            </h1>
+            <p class="text-indigo-300 text-xs">
+              {{ isSuperAdmin() ? 'Panel de Plataforma' : 'Sistema de Gestión' }}
+            </p>
           </div>
         </div>
       </div>
@@ -51,9 +55,14 @@ export class SidebarComponent {
   private authService = inject(AuthService);
   readonly layoutService = inject(LayoutService);
 
+  readonly isSuperAdmin = computed(() => !!this.authService.currentUser()?.isSuperAdmin);
+
   visibleItems = computed(() => {
-    const role = this.authService.currentUser()?.role;
-    if (!role) return [];
-    return NAV_ITEMS.filter(item => item.roles.includes(role));
+    const user = this.authService.currentUser();
+    if (!user) return [];
+    // Un super admin se identifica por el flag, no por un rol de tenant: muestra
+    // su propia navegación (Tenants, Usuarios) en lugar de los ítems del POS.
+    if (user.isSuperAdmin) return SUPER_ADMIN_NAV_ITEMS;
+    return NAV_ITEMS.filter(item => item.roles.includes(user.role));
   });
 }

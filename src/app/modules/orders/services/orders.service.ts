@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { SupabaseService } from '../../../core/services/supabase.service';
-import { Order, OrderStatus, OrderWithItems } from '../interfaces/order.interface';
+import { ManualOrderItem, Order, OrderStatus, OrderWithItems } from '../interfaces/order.interface';
 
 @Injectable({ providedIn: 'root' })
 export class OrdersService {
@@ -39,7 +39,7 @@ export class OrdersService {
       (data ?? []).map((row: any) => ({
         id: row.id,
         table_id: row.table_id,
-        table_name: row.table?.name ?? 'Mesa desconocida',
+        table_name: row.table_id ? (row.table?.name ?? 'Mesa desconocida') : 'Venta directa',
         status: row.status as OrderStatus,
         notes: row.notes,
         total: row.total,
@@ -96,6 +96,42 @@ export class OrdersService {
       .channel('orders-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, callback)
       .subscribe();
+  }
+
+  async createManualOrder(items: ManualOrderItem[]): Promise<string | null> {
+    this.error.set(null);
+    const total = items.reduce((sum, item) => sum + item.subtotal, 0);
+
+    const { data: order, error: orderError } = await this.supabase.client
+      .from('orders')
+      .insert({ table_id: null, status: 'paid', notes: null, customer_name: null, total })
+      .select('id')
+      .single();
+
+    if (orderError || !order) {
+      this.error.set(orderError?.message ?? 'Error al crear la orden');
+      return null;
+    }
+
+    const orderId = (order as { id: string }).id;
+    const rows = items.map(item => ({
+      order_id: orderId,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      unit_price: item.unit_price,
+      quantity: item.quantity,
+      subtotal: item.subtotal,
+    }));
+
+    const { error: itemsError } = await this.supabase.client.from('order_items').insert(rows);
+
+    if (itemsError) {
+      await this.supabase.client.from('orders').delete().eq('id', orderId);
+      this.error.set(itemsError.message);
+      return null;
+    }
+
+    return orderId;
   }
 
   getNextStatus(current: OrderStatus): OrderStatus | null {

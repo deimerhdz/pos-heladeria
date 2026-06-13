@@ -1,4 +1,4 @@
-export type ReportPeriod = 'today' | 'week' | 'month';
+export type ReportPeriod = 'today' | 'week' | 'month' | 'specific-date' | 'year';
 
 export interface SalesSummary {
   total: number;
@@ -30,9 +30,12 @@ export interface CashSession {
   totalCollected: number;
 }
 
-export interface LowStockProduct {
+export interface LowStockIngredient {
   id: string;
   name: string;
-  stock: number;
-  category_id: string;
+  unit: string;
+  current_stock: number;
+  min_stock: number;
+  reorder_point: number;
+  category: string;
 }

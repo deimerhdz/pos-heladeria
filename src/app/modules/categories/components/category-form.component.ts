@@ -74,19 +74,6 @@ import { CategoryService } from '../services/category.service';
             ></textarea>
           </div>
 
-          <!-- Image URL -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
-              URL de imagen <span class="text-gray-400 font-normal">(opcional)</span>
-            </label>
-            <input
-              type="text"
-              formControlName="image_url"
-              placeholder="https://..."
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
-
           <!-- Service error -->
           @if (categoryService.error()) {
             <p class="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">
@@ -129,7 +116,6 @@ export class CategoryFormComponent implements OnChanges {
       validators: [Validators.required],
     }),
     description: new FormControl('', { nonNullable: true }),
-    image_url: new FormControl('', { nonNullable: true }),
   });
 
   get nameControl(): AbstractControl {
@@ -142,7 +128,6 @@ export class CategoryFormComponent implements OnChanges {
       this.form.setValue({
         name: this.category.name,
         description: this.category.description ?? '',
-        image_url: this.category.image_url ?? '',
       });
     } else {
       this.form.reset();
@@ -168,7 +153,6 @@ export class CategoryFormComponent implements OnChanges {
     const data: CategoryForm = {
       name: this.form.controls.name.value.trim(),
       description: this.form.controls.description.value.trim(),
-      image_url: this.form.controls.image_url.value.trim(),
     };
 
     if (this.category) {

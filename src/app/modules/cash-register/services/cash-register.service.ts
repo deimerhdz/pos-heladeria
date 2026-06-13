@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { SupabaseService } from '../../../core/services/supabase.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { OrdersService } from '../../orders/services/orders.service';
 import { CashRegister, Payment } from '../interfaces/cash-register.interface';
 import { PaymentFormData } from '../interfaces/payment.interface';
@@ -7,6 +8,7 @@ import { PaymentFormData } from '../interfaces/payment.interface';
 @Injectable({ providedIn: 'root' })
 export class CashRegisterService {
   private readonly supabase = inject(SupabaseService);
+  private readonly auth = inject(AuthService);
   private readonly ordersService = inject(OrdersService);
 
   readonly currentSession = signal<CashRegister | null>(null);
@@ -55,8 +57,7 @@ export class CashRegisterService {
     this.isLoading.set(true);
     this.error.set(null);
 
-    const user = await this.supabase.client.auth.getUser();
-    const userId = user.data.user?.id;
+    const userId = this.auth.currentUser()?.id;
     if (!userId) {
       this.error.set('No se pudo identificar al usuario.');
       this.isLoading.set(false);

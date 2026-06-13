@@ -58,7 +58,7 @@ export class TableQrComponent implements AfterViewInit {
   @ViewChild('qrCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
 
   get menuUrl(): string {
-    return `${window.location.origin}/menu/${this.table.code}`;
+    return `${window.location.origin}/menu/${this.table.qr_code}`;
   }
 
   ngAfterViewInit(): void {
