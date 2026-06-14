@@ -12,6 +12,14 @@ export interface BackendUser {
   is_super_admin: boolean;
   /** Role in UPPERCASE: `ADMIN` | `CASHIER` | `STAFF`. */
   role: string;
+  /** When `true`, the user logged in with a temporary password and must change it. */
+  must_change_password?: boolean;
+}
+
+/** Request body for `POST /api/v1/auth/change-password`. */
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
 }
 
 /** Response body of `POST /api/v1/auth/login`. */

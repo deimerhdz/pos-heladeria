@@ -20,7 +20,12 @@ function loginResponse(user: BackendUser): LoginResponse {
 
 describe('AuthService.login', () => {
   let service: AuthService;
-  let authApi: { login: ReturnType<typeof vi.fn>; logout: ReturnType<typeof vi.fn>; refreshToken: ReturnType<typeof vi.fn> };
+  let authApi: {
+    login: ReturnType<typeof vi.fn>;
+    logout: ReturnType<typeof vi.fn>;
+    refreshToken: ReturnType<typeof vi.fn>;
+    changePassword: ReturnType<typeof vi.fn>;
+  };
   let tokenStorage: {
     getAccessToken: ReturnType<typeof vi.fn>;
     getRefreshToken: ReturnType<typeof vi.fn>;
@@ -29,7 +34,7 @@ describe('AuthService.login', () => {
   };
 
   beforeEach(() => {
-    authApi = { login: vi.fn(), logout: vi.fn(), refreshToken: vi.fn() };
+    authApi = { login: vi.fn(), logout: vi.fn(), refreshToken: vi.fn(), changePassword: vi.fn() };
     tokenStorage = {
       // No stored session: constructor's restoreSession() short-circuits to clear.
       getAccessToken: vi.fn().mockReturnValue(null),
@@ -120,5 +125,50 @@ describe('AuthService.login', () => {
 
     expect(error).toBe('Credenciales incorrectas. Verifica tu email y contraseña.');
     expect(service.currentUser()).toBeNull();
+  });
+
+  it('surfaces must_change_password from the login user', async () => {
+    authApi.login.mockReturnValue(
+      of(
+        loginResponse({
+          email: 'admin@tienda.com',
+          uid: 'u3',
+          tenant_id: 1,
+          is_super_admin: false,
+          role: 'ADMIN',
+          must_change_password: true,
+        }),
+      ),
+    );
+
+    await service.login('admin@tienda.com', 'temp');
+
+    expect(service.currentUser()!.mustChangePassword).toBe(true);
+  });
+
+  it('clears mustChangePassword after a successful password change', async () => {
+    authApi.login.mockReturnValue(
+      of(
+        loginResponse({
+          email: 'admin@tienda.com',
+          uid: 'u3',
+          tenant_id: 1,
+          is_super_admin: false,
+          role: 'ADMIN',
+          must_change_password: true,
+        }),
+      ),
+    );
+    await service.login('admin@tienda.com', 'temp');
+    authApi.changePassword.mockReturnValue(of(null));
+
+    const { error } = await service.changePassword('temp', 'newsecret');
+
+    expect(error).toBeNull();
+    expect(authApi.changePassword).toHaveBeenCalledWith({
+      current_password: 'temp',
+      new_password: 'newsecret',
+    });
+    expect(service.currentUser()!.mustChangePassword).toBe(false);
   });
 });

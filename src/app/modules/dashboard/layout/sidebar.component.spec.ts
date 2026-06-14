@@ -12,6 +12,7 @@ function makeUser(partial: Partial<User>): User {
     role: UserRole.ADMIN,
     tenantId: 1,
     isSuperAdmin: false,
+    mustChangePassword: false,
     ...partial,
   };
 }

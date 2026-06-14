@@ -5,7 +5,7 @@ import { firstValueFrom, ReplaySubject } from 'rxjs';
 import { AuthApiService } from '../auth/auth-api.service';
 import { TokenStorageService } from '../auth/token-storage.service';
 import { decodeClaims, isExpired } from '../auth/jwt.util';
-import { ApiErrorBody, BackendUser } from '../auth/auth.models';
+import { BackendUser } from '../auth/auth.models';
 import { displayNameFromEmail, mapBackendRole, User, UserRole } from '../interfaces/user.interface';
 
 /**
@@ -45,6 +45,32 @@ export class AuthService {
       return { error: null };
     } catch (err) {
       return { error: this.extractError(err) };
+    }
+  }
+
+  /**
+   * Change the current user's password via `POST /auth/change-password`. The
+   * Bearer is added by the interceptor. On success, rotate the token to pick up
+   * fresh claims and clear the `mustChangePassword` flag for the live session.
+   */
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ error: string | null }> {
+    try {
+      await firstValueFrom(
+        this.authApi.changePassword({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      );
+      // Best-effort: sync claims from a rotated token; the local clear below
+      // guarantees the session is unblocked regardless of the refreshed claims.
+      await this.tryRefresh();
+      this.currentUser.update(u => (u ? { ...u, mustChangePassword: false } : u));
+      return { error: null };
+    } catch (err) {
+      return { error: this.extractError(err, 'No se pudo cambiar la contraseña. Intenta de nuevo.') };
     }
   }
 
@@ -135,6 +161,7 @@ export class AuthService {
       role: role ?? UserRole.ADMIN,
       tenantId: backend.tenant_id,
       isSuperAdmin: backend.is_super_admin,
+      mustChangePassword: backend.must_change_password ?? false,
     };
   }
 
@@ -148,14 +175,23 @@ export class AuthService {
     this._authReady.next();
   }
 
-  private extractError(err: unknown): string {
+  private extractError(
+    err: unknown,
+    fallback = 'No se pudo iniciar sesión. Intenta de nuevo.',
+  ): string {
     if (err instanceof HttpErrorResponse) {
       if (err.status === 401) {
         return 'Credenciales incorrectas. Verifica tu email y contraseña.';
       }
-      const body = err.error as ApiErrorBody | null;
-      return body?.detail ?? body?.message ?? 'No se pudo iniciar sesión. Intenta de nuevo.';
+      const body = err.error as { detail?: unknown; message?: string } | null;
+      const detail = body?.detail;
+      if (typeof detail === 'string') return detail;
+      // FastAPI 422: `detail` is an array of `{ msg, loc, ... }`.
+      if (Array.isArray(detail) && detail.length > 0) {
+        return (detail[0] as { msg?: string })?.msg ?? fallback;
+      }
+      return body?.message ?? fallback;
     }
-    return 'No se pudo iniciar sesión. Intenta de nuevo.';
+    return fallback;
   }
 }

@@ -2,7 +2,12 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { LoginRequest, LoginResponse, RefreshResponse } from './auth.models';
+import {
+  ChangePasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  RefreshResponse,
+} from './auth.models';
 
 /**
  * Thin typed transport for the backend auth endpoints. Holds no state; the
@@ -31,5 +36,13 @@ export class AuthApiService {
     return this.http.get(`${this.base}/auth/logout`, {
       headers: new HttpHeaders({ Authorization: `Bearer ${accessToken}` }),
     });
+  }
+
+  /**
+   * Change the authenticated user's password. The access-token Bearer is added
+   * by the auth interceptor (this route is neither login nor refresh).
+   */
+  changePassword(req: ChangePasswordRequest): Observable<unknown> {
+    return this.http.post(`${this.base}/auth/change-password`, req);
   }
 }

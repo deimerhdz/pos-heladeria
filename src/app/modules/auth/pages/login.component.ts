@@ -178,6 +178,11 @@ export class LoginComponent {
 
     const user = this.authService.currentUser();
     if (user) {
+      // A temporary password must be changed before entering the app.
+      if (user.mustChangePassword) {
+        this.router.navigate(['/change-password']);
+        return;
+      }
       // Root domain → Super Admin area; tenant subdomain → role-based POS home.
       const target = this.tenant.isSuperAdmin() ? '/super-admin' : ROLE_HOME[user.role];
       this.router.navigate([target]);

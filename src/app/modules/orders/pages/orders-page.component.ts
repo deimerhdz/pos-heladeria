@@ -1,8 +1,9 @@
-import { DatePipe, SlicePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { OrderStatus } from '../interfaces/order.interface';
-import { OrdersService } from '../services/orders.service';
+import { OrderStatus } from '../../tables/interfaces/table.interface';
+import { OrdersApiService } from '../services/orders-api.service';
+import { orderStatusClass, orderStatusLabel } from '../order-status.util';
 
 type FilterOption = OrderStatus | 'all';
 
@@ -14,16 +15,16 @@ interface FilterButton {
 @Component({
   selector: 'app-orders-page',
   standalone: true,
-  imports: [RouterLink, DatePipe, SlicePipe],
+  imports: [RouterLink, DatePipe, DecimalPipe, SlicePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Órdenes</h1>
-          <p class="text-gray-500 text-sm mt-1">Gestión de pedidos activos e historial</p>
+          <p class="text-gray-500 text-sm mt-1">Listado de pedidos de la operación</p>
         </div>
         <button
-          (click)="ordersService.loadOrders()"
+          (click)="reload()"
           class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm font-medium text-gray-600 hover:border-indigo-300 hover:text-indigo-700 shadow-sm transition-all"
         >
           <span>↺</span> Actualizar
@@ -34,7 +35,7 @@ interface FilterButton {
       <div class="flex gap-2 flex-wrap">
         @for (filter of filters; track filter.value) {
           <button
-            (click)="activeFilter.set(filter.value)"
+            (click)="setFilter(filter.value)"
             class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
             [class]="
               activeFilter() === filter.value
@@ -43,15 +44,12 @@ interface FilterButton {
             "
           >
             {{ filter.label }}
-            @if (filter.value !== 'all') {
-              <span class="ml-1 opacity-70">({{ countByStatus(filter.value) }})</span>
-            }
           </button>
         }
       </div>
 
       <!-- Estado de carga -->
-      @if (ordersService.isLoading()) {
+      @if (ordersApi.loading() && ordersApi.orders().length === 0) {
         <div class="space-y-3">
           @for (i of [1, 2, 3]; track i) {
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 animate-pulse">
@@ -68,11 +66,11 @@ interface FilterButton {
             </div>
           }
         </div>
-      } @else if (ordersService.error()) {
+      } @else if (ordersApi.error()) {
         <div class="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">
-          Error al cargar órdenes: {{ ordersService.error() }}
+          {{ ordersApi.error() }}
         </div>
-      } @else if (filteredOrders().length === 0) {
+      } @else if (ordersApi.orders().length === 0) {
         <div
           class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400"
         >
@@ -84,113 +82,110 @@ interface FilterButton {
         </div>
       } @else {
         <div class="space-y-2">
-          @for (order of filteredOrders(); track order.id) {
-            <div
-              class="bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-100 transition-all"
+          @for (order of ordersApi.orders(); track order.id) {
+            <a
+              [routerLink]="['/dashboard/orders', order.id]"
+              class="block bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-100 transition-all"
             >
               <div class="px-4 py-3 flex items-center justify-between gap-3">
-                <!-- Mesa e info -->
-                <a
-                  [routerLink]="['/dashboard/orders', order.id]"
-                  class="flex items-center gap-3 flex-1 min-w-0"
-                >
+                <div class="flex items-center gap-3 flex-1 min-w-0">
                   <div
-                    class="w-20 h-20 rounded-xl bg-indigo-50 flex flex-col items-center justify-center shrink-0"
+                    class="w-16 h-16 rounded-xl bg-indigo-50 flex flex-col items-center justify-center shrink-0"
                   >
-                    <span class="text-xs text-indigo-400 font-medium leading-none">Mesa</span>
-                    <span class="text-sm font-bold text-indigo-700 leading-none">{{
-                      order.table_name
-                    }}</span>
+                    <span class="text-[10px] text-indigo-400 font-medium leading-none">Mesa</span>
+                    <span class="text-xs font-bold text-indigo-700 leading-tight text-center px-1 truncate w-full">
+                      {{ order.table_id | slice: 0 : 6 }}
+                    </span>
                   </div>
                   <div class="min-w-0">
                     <p class="text-sm font-semibold text-gray-800 truncate">
-                      {{ order.id | slice: 0 : 8 }}...
+                      {{ order.id | slice: 0 : 8 }}…
+                      <span class="text-xs text-gray-400 font-normal">· {{ order.scope === 'table' ? 'Mesa' : 'Individual' }}</span>
                     </p>
                     <p class="text-xs text-gray-400">
-                      {{ order.created_at | date: 'HH:mm' }} · S/ {{ order.total.toFixed(2) }}
+                      {{ order.created_at | date: 'HH:mm' }} · $ {{ +order.total | number: '1.2-2' }}
                     </p>
                     @if (order.customer_name) {
                       <p class="text-xs text-indigo-500 font-medium mt-0.5">👤 {{ order.customer_name }}</p>
                     }
                   </div>
-                </a>
-
-                <!-- Badge y acción -->
-                <div class="flex items-center gap-2 shrink-0">
-                  <span
-                    class="text-xs px-2.5 py-1 rounded-full font-semibold"
-                    [class]="statusClass(order.status)"
-                  >
-                    {{ statusLabel(order.status) }}
-                  </span>
-                  @if (ordersService.getNextStatus(order.status); as next) {
-                    <button
-                      (click)="updateStatus(order.id, next)"
-                      class="text-xs px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
-                    >
-                      {{ ordersService.getNextStatusLabel(order.status) }}
-                    </button>
-                  }
                 </div>
+
+                <span
+                  class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0"
+                  [class]="statusClass(order.status)"
+                >
+                  {{ statusLabel(order.status) }}
+                </span>
               </div>
-            </div>
+            </a>
           }
         </div>
+
+        <!-- Paginación -->
+        @if (ordersApi.pageInfo().pages > 1) {
+          <div class="flex items-center justify-center gap-3 pt-2">
+            <button
+              (click)="goToPage(ordersApi.pageInfo().page - 1)"
+              [disabled]="ordersApi.pageInfo().page <= 1 || ordersApi.loading()"
+              class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Anterior
+            </button>
+            <span class="text-sm text-gray-500">
+              Página {{ ordersApi.pageInfo().page }} de {{ ordersApi.pageInfo().pages }}
+            </span>
+            <button
+              (click)="goToPage(ordersApi.pageInfo().page + 1)"
+              [disabled]="ordersApi.pageInfo().page >= ordersApi.pageInfo().pages || ordersApi.loading()"
+              class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente →
+            </button>
+          </div>
+        }
       }
     </div>
   `,
 })
 export class OrdersPageComponent implements OnInit {
-  readonly ordersService = inject(OrdersService);
+  readonly ordersApi = inject(OrdersApiService);
 
   readonly activeFilter = signal<FilterOption>('all');
 
-  readonly filteredOrders = computed(() => {
-    const filter = this.activeFilter();
-    if (filter === 'all') return this.ordersService.orders();
-    return this.ordersService.orders().filter((o) => o.status === filter);
-  });
-
   readonly filters: FilterButton[] = [
-    { value: 'all', label: 'Todos' },
-    { value: 'pending', label: 'Pendiente' },
-    { value: 'preparing', label: 'Preparando' },
-    { value: 'ready', label: 'Listo' },
-    { value: 'bill_requested', label: 'Cuenta Solicitada' },
-    { value: 'paid', label: 'Pagado' },
+    { value: 'all', label: 'Todas' },
+    { value: 'pending', label: 'En espera' },
+    { value: 'in_progress', label: 'En preparación' },
+    { value: 'completed', label: 'Completadas' },
+    { value: 'cancelled', label: 'Canceladas' },
   ];
 
   ngOnInit(): void {
-    this.ordersService.loadOrders();
+    this.load(1);
   }
 
-  countByStatus(status: OrderStatus): number {
-    return this.ordersService.orders().filter((o) => o.status === status).length;
+  setFilter(filter: FilterOption): void {
+    this.activeFilter.set(filter);
+    this.load(1);
   }
 
-  async updateStatus(orderId: string, newStatus: OrderStatus): Promise<void> {
-    await this.ordersService.updateStatus(orderId, newStatus);
+  goToPage(page: number): void {
+    this.load(page);
   }
 
-  statusLabel(status: OrderStatus): string {
-    const labels: Record<OrderStatus, string> = {
-      pending: 'Pendiente',
-      preparing: 'Preparando',
-      ready: 'Listo',
-      bill_requested: 'Cuenta solicitada',
-      paid: 'Pagado',
-    };
-    return labels[status];
+  reload(): void {
+    this.load(this.ordersApi.pageInfo().page);
   }
 
-  statusClass(status: OrderStatus): string {
-    const classes: Record<OrderStatus, string> = {
-      pending: 'bg-amber-100 text-amber-700',
-      preparing: 'bg-blue-100 text-blue-700',
-      ready: 'bg-green-100 text-green-700',
-      bill_requested: 'bg-orange-100 text-orange-700',
-      paid: 'bg-gray-100 text-gray-500',
-    };
-    return classes[status];
+  private load(page: number): void {
+    const filter = this.activeFilter();
+    this.ordersApi.listOrders({
+      status: filter === 'all' ? null : filter,
+      page,
+    });
   }
+
+  statusLabel = orderStatusLabel;
+  statusClass = orderStatusClass;
 }

@@ -14,6 +14,8 @@ export interface User {
   /** `null` for super admins, who are not scoped to a tenant. */
   tenantId: number | null;
   isSuperAdmin: boolean;
+  /** When `true`, the user must change a temporary password before using the app. */
+  mustChangePassword: boolean;
 }
 
 const ROLE_VALUES = new Set<string>(Object.values(UserRole));
