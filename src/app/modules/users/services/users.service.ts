@@ -1,97 +1,139 @@
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { createClient } from '@supabase/supabase-js';
+import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { UserRole } from '../../../core/interfaces/user.interface';
-import { SupabaseService } from '../../../core/services/supabase.service';
-import { UserCreateForm, UserProfile } from '../interfaces/user-profile.interface';
+import { ApiErrorBody } from '../../../core/auth/auth.models';
+import {
+  Page,
+  RoleName,
+  TenantUser,
+  TenantUserCreatePayload,
+  TenantUserForm,
+  TenantUserRoleUpdatePayload,
+  TenantUserStatusUpdatePayload,
+} from '../interfaces/user-profile.interface';
 
 @Injectable({ providedIn: 'root' })
 export class UsersService {
-  private readonly supabase = inject(SupabaseService);
+  private readonly http = inject(HttpClient);
+  private readonly baseUrl = `${environment.apiBaseUrl}/users`;
 
-  readonly users = signal<UserProfile[]>([]);
-  readonly isLoading = signal(false);
+  readonly users = signal<TenantUser[]>([]);
+  readonly loading = signal(false);
+  readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly totalCount = computed(() => this.users().length);
+  // Estado de paginación (reflejo del `Page<T>` del backend).
+  readonly page = signal(1);
+  readonly size = signal(20);
+  readonly total = signal(0);
+  readonly totalPages = signal(0);
 
-  async loadUsers(): Promise<void> {
-    this.isLoading.set(true);
+  /** Total real de usuarios en el tenant (consumido por el dashboard admin). */
+  readonly totalCount = computed(() => this.total());
+
+  async loadUsers(page: number = this.page(), size: number = this.size()): Promise<void> {
+    this.loading.set(true);
     this.error.set(null);
 
-    const { data, error } = await this.supabase.client
-      .from('profiles_with_email')
-      .select('*')
-      .order('created_at', { ascending: true });
+    const params = new HttpParams().set('page', page).set('size', size);
 
-    if (error) {
-      this.error.set(error.message);
-      this.isLoading.set(false);
+    try {
+      const data = await firstValueFrom(
+        this.http.get<Page<TenantUser>>(this.baseUrl, { params }),
+      );
+      this.users.set([...data.items].sort((a, b) => a.name.localeCompare(b.name)));
+      this.page.set(data.page);
+      this.size.set(data.size);
+      this.total.set(data.total);
+      this.totalPages.set(data.pages);
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  async createUser(form: TenantUserForm): Promise<void> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+
+    if (form.role === '') {
+      this.error.set('Debes seleccionar un rol.');
+      this.isSubmitting.set(false);
       return;
     }
 
-    this.users.set(
-      (data ?? []).map((row: any) => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        role: row.role as UserRole,
-        is_active: row.is_active,
-        created_at: row.created_at,
-      }))
-    );
-    this.isLoading.set(false);
-  }
-
-  async createUser(form: UserCreateForm): Promise<{ error: string | null }> {
-    // Cliente secundario para no afectar la sesión del admin
-    const anonClient = createClient(environment.supabaseUrl, environment.supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: signUpData, error: signUpError } = await anonClient.auth.signUp({
-      email: form.email,
+    const phone = form.phone.trim();
+    const payload: TenantUserCreatePayload = {
+      name: form.name.trim(),
+      email: form.email.trim(),
       password: form.password,
-    });
+      role: form.role,
+      ...(phone ? { phone } : {}),
+    };
 
-    if (signUpError) {
-      if (signUpError.message.toLowerCase().includes('already registered')) {
-        return { error: 'Este correo ya está registrado' };
-      }
-      return { error: signUpError.message };
+    try {
+      await firstValueFrom(this.http.post<TenantUser>(this.baseUrl, payload));
+      await this.loadUsers(1);
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.isSubmitting.set(false);
     }
-
-    const userId = signUpData.user?.id;
-    if (!userId) {
-      return { error: 'No se pudo obtener el ID del usuario creado' };
-    }
-
-    const { error: insertError } = await this.supabase.client
-      .from('profiles')
-      .insert({ id: userId, name: form.name, role: form.role });
-
-    if (insertError) {
-      return { error: `Perfil no pudo crearse: ${insertError.message}` };
-    }
-
-    await this.loadUsers();
-    return { error: null };
   }
 
-  async toggleActive(userId: string, newValue: boolean): Promise<void> {
-    const previous = this.users();
-    this.users.update(users =>
-      users.map(u => u.id === userId ? { ...u, is_active: newValue } : u)
-    );
+  async changeRole(userId: string, role: RoleName): Promise<void> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
 
-    const { error } = await this.supabase.client
-      .from('profiles')
-      .update({ is_active: newValue })
-      .eq('id', userId);
+    const payload: TenantUserRoleUpdatePayload = { role };
 
-    if (error) {
-      this.users.set(previous);
-      this.error.set(error.message);
+    try {
+      await firstValueFrom(
+        this.http.patch<TenantUser>(`${this.baseUrl}/${userId}/role`, payload),
+      );
+      await this.loadUsers();
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.isSubmitting.set(false);
     }
+  }
+
+  async toggleActive(userId: string, active: boolean): Promise<void> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+
+    const payload: TenantUserStatusUpdatePayload = { active };
+
+    try {
+      await firstValueFrom(
+        this.http.patch<TenantUser>(`${this.baseUrl}/${userId}/status`, payload),
+      );
+      await this.loadUsers();
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /** Consulta puntual de un usuario por id (`GET /users/{user_id}`). No usado por la UI base. */
+  async getUser(userId: string): Promise<TenantUser | null> {
+    try {
+      return await firstValueFrom(this.http.get<TenantUser>(`${this.baseUrl}/${userId}`));
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return null;
+    }
+  }
+
+  private extractError(err: unknown): string {
+    if (err instanceof HttpErrorResponse) {
+      const body = err.error as ApiErrorBody | null;
+      return body?.detail ?? body?.message ?? 'No se pudo completar la operación.';
+    }
+    return 'No se pudo completar la operación.';
   }
 }

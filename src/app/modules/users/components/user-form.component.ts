@@ -1,6 +1,6 @@
-import { Component, EventEmitter, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { UserRole } from '../../../core/interfaces/user.interface';
+import { RoleName, TenantUserForm } from '../interfaces/user-profile.interface';
 import { UsersService } from '../services/users.service';
 
 @Component({
@@ -15,9 +15,9 @@ import { UsersService } from '../services/users.service';
       </div>
 
       <form [formGroup]="form" (ngSubmit)="submit()" class="px-5 py-4 space-y-4">
-        @if (errorMessage()) {
+        @if (usersService.error()) {
           <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-            {{ errorMessage() }}
+            {{ usersService.error() }}
           </div>
         }
 
@@ -51,6 +51,23 @@ import { UsersService } from '../services/users.service';
           }
         </div>
 
+        <!-- Teléfono (opcional) -->
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1.5">
+            Teléfono <span class="text-gray-400 font-normal">(opcional)</span>
+          </label>
+          <input
+            type="tel"
+            formControlName="phone"
+            placeholder="Ej: 3001234567"
+            class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+            [class.border-red-300]="phoneInvalid"
+          />
+          @if (phoneInvalid) {
+            <p class="text-red-500 text-xs mt-1">Máximo 20 caracteres</p>
+          }
+        </div>
+
         <!-- Contraseña -->
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1.5">Contraseña temporal</label>
@@ -75,9 +92,8 @@ import { UsersService } from '../services/users.service';
             [class.border-red-300]="roleInvalid"
           >
             <option value="" disabled>Selecciona un rol</option>
-            <option value="admin">Admin</option>
-            <option value="cashier">Cajero</option>
-            <option value="staff">Staff (Cocina)</option>
+            <option value="ADMIN">Admin</option>
+            <option value="CASHIER">Cajero</option>
           </select>
           @if (roleInvalid) {
             <p class="text-red-500 text-xs mt-1">Selecciona un rol</p>
@@ -88,15 +104,15 @@ import { UsersService } from '../services/users.service';
         <div class="flex gap-3 pt-2">
           <button
             type="submit"
-            [disabled]="isSubmitting()"
+            [disabled]="usersService.isSubmitting()"
             class="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {{ isSubmitting() ? 'Guardando...' : 'Guardar' }}
+            {{ usersService.isSubmitting() ? 'Guardando...' : 'Guardar' }}
           </button>
           <button
             type="button"
             (click)="cancelled.emit()"
-            [disabled]="isSubmitting()"
+            [disabled]="usersService.isSubmitting()"
             class="flex-1 py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-200 disabled:opacity-50 transition-colors"
           >
             Cancelar
@@ -110,16 +126,17 @@ export class UserFormComponent {
   @Output() saved = new EventEmitter<void>();
   @Output() cancelled = new EventEmitter<void>();
 
-  private readonly usersService = inject(UsersService);
-
-  readonly isSubmitting = signal(false);
-  readonly errorMessage = signal<string | null>(null);
+  readonly usersService = inject(UsersService);
 
   readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(150)] }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
-    password: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(6)] }),
-    role: new FormControl<UserRole>('' as UserRole, { nonNullable: true, validators: [Validators.required] }),
+    phone: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(20)] }),
+    password: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(6), Validators.maxLength(128)],
+    }),
+    role: new FormControl<RoleName | ''>('', { nonNullable: true, validators: [Validators.required] }),
   });
 
   get nameInvalid(): boolean {
@@ -128,6 +145,10 @@ export class UserFormComponent {
   }
   get emailInvalid(): boolean {
     const c = this.form.controls.email;
+    return c.invalid && c.touched;
+  }
+  get phoneInvalid(): boolean {
+    const c = this.form.controls.phone;
     return c.invalid && c.touched;
   }
   get passwordInvalid(): boolean {
@@ -144,16 +165,11 @@ export class UserFormComponent {
       this.form.markAllAsTouched();
       return;
     }
-    this.isSubmitting.set(true);
-    this.errorMessage.set(null);
 
-    const { error } = await this.usersService.createUser(this.form.getRawValue());
+    await this.usersService.createUser(this.form.getRawValue() as TenantUserForm);
 
-    this.isSubmitting.set(false);
-    if (error) {
-      this.errorMessage.set(error);
-      return;
+    if (!this.usersService.error()) {
+      this.saved.emit();
     }
-    this.saved.emit();
   }
 }
