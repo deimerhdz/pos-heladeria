@@ -3,7 +3,6 @@ import { Injectable, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
-import { SupabaseService } from '../../../core/services/supabase.service';
 import {
   Product,
   ProductCreatePayload,
@@ -54,12 +53,19 @@ interface RecipeItemResponse {
   quantity: string;
 }
 
+interface PresignResponse {
+  upload_url: string;
+  key: string;
+  public_url: string;
+  expires_in: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ProductService {
   private readonly http = inject(HttpClient);
-  private readonly supabase = inject(SupabaseService);
   private readonly productsUrl = `${environment.apiBaseUrl}/products`;
   private readonly variantsUrl = `${environment.apiBaseUrl}/variants`;
+  private readonly uploadsUrl = `${environment.apiBaseUrl}/uploads`;
 
   readonly products = signal<Product[]>([]);
   readonly loading = signal(false);
@@ -212,30 +218,29 @@ export class ProductService {
     );
   }
 
-  // --- Image storage (kept on Supabase) ---
+  // --- Image storage (Cloudflare R2, via presigned upload) ---
 
+  /**
+   * Uploads a product image directly to R2: asks the backend for a presigned
+   * PUT URL scoped to the tenant, then PUTs the file straight to R2 (bytes
+   * never go through our API). Deleting the previous image is handled by the
+   * backend automatically when `image_url` changes on PATCH /products/{id}.
+   */
   async uploadProductImage(file: File): Promise<string> {
-    const timestamp = Date.now();
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `products/${timestamp}-${safeName}`;
+    const presign = await firstValueFrom(
+      this.http.post<PresignResponse>(`${this.uploadsUrl}/presign`, {
+        filename: file.name,
+        content_type: file.type,
+      }),
+    );
 
-    const { error } = await this.supabase.client.storage
-      .from('product-images')
-      .upload(path, file, { upsert: false });
+    await firstValueFrom(
+      this.http.put(presign.upload_url, file, {
+        headers: { 'Content-Type': file.type },
+      }),
+    );
 
-    if (error) throw new Error(error.message);
-
-    const { data } = this.supabase.client.storage.from('product-images').getPublicUrl(path);
-
-    return data.publicUrl;
-  }
-
-  async deleteProductImage(imageUrl: string): Promise<void> {
-    const marker = '/product-images/';
-    const idx = imageUrl.indexOf(marker);
-    if (idx === -1) return;
-    const path = imageUrl.slice(idx + marker.length);
-    await this.supabase.client.storage.from('product-images').remove([path]);
+    return presign.public_url;
   }
 
   // --- Helpers ---
