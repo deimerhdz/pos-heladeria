@@ -1,149 +1,218 @@
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
+import { Observable, firstValueFrom } from 'rxjs';
+import { environment } from '../../../../environments/environment';
+import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { SupabaseService } from '../../../core/services/supabase.service';
-import { Product, ProductForm, RecipeItem, RecipeItemForm } from '../interfaces/product.interface';
+import {
+  Product,
+  ProductCreatePayload,
+  ProductForm,
+  ProductOptionGroupPayload,
+  ProductUpdatePayload,
+  RecipeItem,
+  Variant,
+  VariantCreatePayload,
+  VariantForm,
+  VariantUpdatePayload,
+} from '../interfaces/product.interface';
+
+/** Raw backend product. */
+interface ProductResponse {
+  id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  preparation_type: Product['preparation_type'];
+  image_url: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+interface ProductPage {
+  items: ProductResponse[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+/** Raw backend variant (decimals arrive as strings). */
+interface VariantResponse {
+  id: string;
+  product_id: string;
+  name: string;
+  sku: string | null;
+  price: string;
+  active: boolean;
+}
+
+interface RecipeItemResponse {
+  id: string;
+  inventory_item_id: string;
+  quantity: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ProductService {
+  private readonly http = inject(HttpClient);
   private readonly supabase = inject(SupabaseService);
+  private readonly productsUrl = `${environment.apiBaseUrl}/products`;
+  private readonly variantsUrl = `${environment.apiBaseUrl}/variants`;
 
   readonly products = signal<Product[]>([]);
   readonly loading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
 
+  // --- Products ---
+
   async loadProducts(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
-
-    const { data, error } = await this.supabase.client
-      .from('products')
-      .select('id, name, description, price, image_url, is_active, category_id, created_at')
-      .order('name');
-
-    if (error) {
-      this.error.set(error.message);
-    } else {
-      this.products.set((data ?? []) as Product[]);
+    try {
+      const page = await firstValueFrom(
+        this.http.get<ProductPage>(this.productsUrl, { params: { size: 100 } }),
+      );
+      const products = page.items
+        .map((p) => this.toProduct(p))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      this.products.set(products);
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.loading.set(false);
     }
-
-    this.loading.set(false);
   }
 
-  async createProduct(data: ProductForm): Promise<string | null> {
-    this.isSubmitting.set(true);
-    this.error.set(null);
-
-    const { data: inserted, error } = await this.supabase.client
-      .from('products')
-      .insert({
-        name: data.name,
-        description: data.description || null,
-        price: data.price,
-        image_url: data.image_url || null,
-        category_id: data.category_id,
-        is_active: true,
-      })
-      .select('id')
-      .single();
-
-    if (error) {
-      this.error.set(error.message);
-      this.isSubmitting.set(false);
+  async getProduct(id: string): Promise<Product | null> {
+    try {
+      const p = await firstValueFrom(this.http.get<ProductResponse>(`${this.productsUrl}/${id}`));
+      return this.toProduct(p);
+    } catch (err) {
+      this.error.set(this.extractError(err));
       return null;
     }
-
-    await this.loadProducts();
-    this.isSubmitting.set(false);
-    return (inserted as { id: string }).id;
   }
 
-  async updateProduct(id: string, data: ProductForm): Promise<void> {
+  /** Creates a product and returns its id (or null on error). */
+  async createProduct(form: ProductForm): Promise<string | null> {
     this.isSubmitting.set(true);
     this.error.set(null);
-
-    const { error } = await this.supabase.client
-      .from('products')
-      .update({
-        name: data.name,
-        description: data.description || null,
-        price: data.price,
-        image_url: data.image_url || null,
-        category_id: data.category_id,
-      })
-      .eq('id', id);
-
-    if (error) {
-      this.error.set(error.message);
+    const payload: ProductCreatePayload = {
+      category_id: form.category_id,
+      name: form.name,
+      description: form.description || null,
+      preparation_type: form.preparation_type,
+      image_url: form.image_url || null,
+    };
+    try {
+      const created = await firstValueFrom(
+        this.http.post<ProductResponse>(this.productsUrl, payload),
+      );
+      await this.loadProducts();
+      return created.id;
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return null;
+    } finally {
       this.isSubmitting.set(false);
-      return;
-    }
-
-    await this.loadProducts();
-    this.isSubmitting.set(false);
-  }
-
-  async loadRecipe(productId: string): Promise<RecipeItem[]> {
-    const { data, error } = await this.supabase.client
-      .from('recipe_items')
-      .select(`
-        id, product_id, ingredient_id, quantity,
-        ingredients ( name, unit, cost_per_unit )
-      `)
-      .eq('product_id', productId);
-
-    if (error || !data) return [];
-
-    return (data as unknown as {
-      id: string;
-      product_id: string;
-      ingredient_id: string;
-      quantity: number;
-      ingredients: { name: string; unit: string; cost_per_unit: number } | null;
-    }[]).map(row => ({
-      id: row.id,
-      product_id: row.product_id,
-      ingredient_id: row.ingredient_id,
-      quantity: row.quantity,
-      ingredient_name: row.ingredients?.name ?? '',
-      ingredient_unit: (row.ingredients?.unit ?? 'unidad') as RecipeItem['ingredient_unit'],
-      ingredient_cost_per_unit: row.ingredients?.cost_per_unit ?? 0,
-    }));
-  }
-
-  async saveRecipe(productId: string, items: RecipeItemForm[]): Promise<void> {
-    const { error: deleteError } = await this.supabase.client
-      .from('recipe_items')
-      .delete()
-      .eq('product_id', productId);
-
-    if (deleteError) {
-      this.error.set(deleteError.message);
-      return;
-    }
-
-    if (items.length === 0) return;
-
-    const rows = items.map(item => ({
-      product_id: productId,
-      ingredient_id: item.ingredient_id,
-      quantity: item.quantity,
-    }));
-
-    const { error: insertError } = await this.supabase.client
-      .from('recipe_items')
-      .insert(rows);
-
-    if (insertError) {
-      this.error.set(insertError.message);
     }
   }
 
-  calculateProductCost(recipe: RecipeItem[]): number {
-    return recipe.reduce(
-      (sum, item) => sum + item.quantity * item.ingredient_cost_per_unit,
-      0
+  async updateProduct(id: string, form: ProductForm): Promise<boolean> {
+    const payload: ProductUpdatePayload = {
+      category_id: form.category_id,
+      name: form.name,
+      description: form.description || null,
+      preparation_type: form.preparation_type,
+      image_url: form.image_url || null,
+    };
+    const ok = await this.run(() =>
+      this.http.patch<ProductResponse>(`${this.productsUrl}/${id}`, payload),
+    );
+    if (ok) await this.loadProducts();
+    return ok;
+  }
+
+  async toggleActive(id: string, current: boolean): Promise<boolean> {
+    const payload: ProductUpdatePayload = { active: !current };
+    const ok = await this.run(() =>
+      this.http.patch<ProductResponse>(`${this.productsUrl}/${id}`, payload),
+    );
+    if (ok) await this.loadProducts();
+    return ok;
+  }
+
+  // --- Variants ---
+
+  async loadVariants(productId: string): Promise<Variant[]> {
+    try {
+      const data = await firstValueFrom(
+        this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`),
+      );
+      return data.map((v) => this.toVariant(v));
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return [];
+    }
+  }
+
+  async createVariant(productId: string, form: VariantForm): Promise<boolean> {
+    const payload: VariantCreatePayload = {
+      name: form.name,
+      price: form.price,
+      sku: form.sku,
+    };
+    return this.run(() =>
+      this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, payload),
     );
   }
+
+  async updateVariant(variantId: string, payload: VariantUpdatePayload): Promise<boolean> {
+    return this.run(() => this.http.patch(`${this.variantsUrl}/${variantId}`, payload));
+  }
+
+  async deleteVariant(variantId: string): Promise<boolean> {
+    return this.run(() => this.http.delete(`${this.variantsUrl}/${variantId}`));
+  }
+
+  // --- Product option groups ---
+
+  /** Assign an existing option group to a product with per-product bounds. */
+  async assignOptionGroup(productId: string, payload: ProductOptionGroupPayload): Promise<boolean> {
+    return this.run(() =>
+      this.http.post(`${this.productsUrl}/${productId}/option-groups`, payload),
+    );
+  }
+
+  // --- Recipes (per variant, consume inventory items) ---
+
+  /** Fetch a variant's recipe. A missing recipe (404) is a valid empty state. */
+  async getVariantRecipe(variantId: string): Promise<RecipeItem[]> {
+    try {
+      const data = await firstValueFrom(
+        this.http.get<RecipeItemResponse[]>(`${this.variantsUrl}/${variantId}/recipe`),
+      );
+      return data.map((i) => ({
+        inventory_item_id: i.inventory_item_id,
+        quantity: Number(i.quantity),
+      }));
+    } catch (err) {
+      if (err instanceof HttpErrorResponse && err.status === 404) return [];
+      this.error.set(this.extractError(err));
+      return [];
+    }
+  }
+
+  async putVariantRecipe(variantId: string, items: RecipeItem[]): Promise<boolean> {
+    return this.run(() =>
+      this.http.put(`${this.variantsUrl}/${variantId}/recipe`, { items }),
+    );
+  }
+
+  // --- Image storage (kept on Supabase) ---
 
   async uploadProductImage(file: File): Promise<string> {
     const timestamp = Date.now();
@@ -156,9 +225,7 @@ export class ProductService {
 
     if (error) throw new Error(error.message);
 
-    const { data } = this.supabase.client.storage
-      .from('product-images')
-      .getPublicUrl(path);
+    const { data } = this.supabase.client.storage.from('product-images').getPublicUrl(path);
 
     return data.publicUrl;
   }
@@ -171,21 +238,53 @@ export class ProductService {
     await this.supabase.client.storage.from('product-images').remove([path]);
   }
 
-  async toggleActive(id: string, current: boolean): Promise<void> {
+  // --- Helpers ---
+
+  /** Runs a write request under isSubmitting/error; returns success boolean. */
+  private async run(request: () => Observable<unknown>): Promise<boolean> {
     this.isSubmitting.set(true);
     this.error.set(null);
-
-    const { error } = await this.supabase.client
-      .from('products')
-      .update({ is_active: !current })
-      .eq('id', id);
-
-    if (error) {
-      this.error.set(error.message);
-    } else {
-      await this.loadProducts();
+    try {
+      await firstValueFrom(request());
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return false;
+    } finally {
+      this.isSubmitting.set(false);
     }
+  }
 
-    this.isSubmitting.set(false);
+  private toProduct(p: ProductResponse): Product {
+    return {
+      id: p.id,
+      category_id: p.category_id,
+      name: p.name,
+      description: p.description,
+      preparation_type: p.preparation_type,
+      image_url: p.image_url,
+      active: p.active,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+    };
+  }
+
+  private toVariant(v: VariantResponse): Variant {
+    return {
+      id: v.id,
+      product_id: v.product_id,
+      name: v.name,
+      sku: v.sku,
+      price: Number(v.price),
+      active: v.active,
+    };
+  }
+
+  private extractError(err: unknown): string {
+    if (err instanceof HttpErrorResponse) {
+      const body = err.error as ApiErrorBody | null;
+      return body?.detail ?? body?.message ?? 'No se pudo completar la operación.';
+    }
+    return 'No se pudo completar la operación.';
   }
 }

@@ -17,9 +17,9 @@ export interface OrderItem {
   order_id: string;
   product_id: string;
   product_name: string;
-  unit_price: number;
+
   quantity: number;
-  subtotal: number;
+
   created_at: string;
 }
 
@@ -30,7 +30,6 @@ export interface OrderWithItems extends Order {
 export interface ManualOrderItem {
   product_id: string;
   product_name: string;
-  unit_price: number;
+
   quantity: number;
-  subtotal: number;
 }

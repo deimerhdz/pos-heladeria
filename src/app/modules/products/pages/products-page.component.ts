@@ -1,15 +1,15 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { Product } from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
 import { CategoryService } from '../../categories/services/category.service';
-import { ProductFormComponent } from '../components/product-form.component';
+import { ProductCreateModalComponent } from '../components/product-create-modal.component';
 
 @Component({
   selector: 'app-products-page',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, ProductFormComponent],
+  imports: [FormsModule, ProductCreateModalComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -56,7 +56,9 @@ import { ProductFormComponent } from '../components/product-form.component';
       <!-- Loading -->
       @if (productService.loading() && productService.products().length === 0) {
         <div class="flex justify-center py-12">
-          <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <div
+            class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"
+          ></div>
         </div>
       } @else {
         <!-- Table -->
@@ -83,48 +85,98 @@ import { ProductFormComponent } from '../components/product-form.component';
             <table class="w-full">
               <thead>
                 <tr class="border-b border-gray-100 bg-gray-50">
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Nombre</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Categoría</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Precio</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
-                  <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Acciones</th>
+                  <th
+                    class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                  >
+                    Nombre
+                  </th>
+                  <th
+                    class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                  >
+                    Categoría
+                  </th>
+                  <th
+                    class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                  >
+                    Preparación
+                  </th>
+                  <th
+                    class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                  >
+                    Estado
+                  </th>
+                  <th
+                    class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                  >
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-50">
                 @for (product of filteredProducts(); track product.id) {
-                  <tr [class.opacity-50]="!product.is_active" class="hover:bg-gray-50 transition-colors">
+                  <tr
+                    [class.opacity-50]="!product.active"
+                    class="hover:bg-gray-50 transition-colors"
+                  >
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
                         @if (product.image_url) {
-                          <img [src]="product.image_url" [alt]="product.name" class="w-9 h-9 rounded-lg object-cover shrink-0" />
+                          <img
+                            [src]="product.image_url"
+                            [alt]="product.name"
+                            class="w-9 h-9 rounded-lg object-cover shrink-0"
+                          />
                         } @else {
-                          <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">🍦</div>
+                          <div
+                            class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0"
+                          >
+                            🍦
+                          </div>
                         }
                         <div>
-                          <span class="text-sm font-medium" [class.text-gray-400]="!product.is_active" [class.text-gray-900]="product.is_active">
+                          <span
+                            class="text-sm font-medium"
+                            [class.text-gray-400]="!product.active"
+                            [class.text-gray-900]="product.active"
+                          >
                             {{ product.name }}
                           </span>
                           @if (product.description) {
-                            <p class="text-xs text-gray-400 line-clamp-1">{{ product.description }}</p>
+                            <p class="text-xs text-gray-400 line-clamp-1">
+                              {{ product.description }}
+                            </p>
                           }
                         </div>
                       </div>
                     </td>
                     <td class="px-5 py-4 hidden md:table-cell">
-                      <span class="text-sm text-gray-500">{{ categoryName(product.category_id) }}</span>
+                      <span class="text-sm text-gray-500">{{
+                        categoryName(product.category_id)
+                      }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      <span class="text-sm font-medium text-gray-900">
-                        {{ product.price | number:'1.2-2' }}
+                      <span
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        [class]="
+                          product.preparation_type === 'packaged'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-purple-100 text-purple-700'
+                        "
+                      >
+                        {{ product.preparation_type === 'packaged' ? 'Empacado' : 'Preparado' }}
                       </span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (product.is_active) {
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                      @if (product.active) {
+                        <span
+                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
+                        >
                           Activo
                         </span>
                       } @else {
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                        <span
+                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"
+                        >
                           Inactivo
                         </span>
                       }
@@ -140,13 +192,15 @@ import { ProductFormComponent } from '../components/product-form.component';
                         </button>
                         <button
                           (click)="onToggle(product)"
-                          [title]="product.is_active ? 'Desactivar' : 'Activar'"
+                          [title]="product.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
-                          [class]="product.is_active
-                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                            : 'text-gray-400 hover:text-green-600 hover:bg-green-50'"
+                          [class]="
+                            product.active
+                              ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                          "
                         >
-                          {{ product.is_active ? '🔴' : '🟢' }}
+                          {{ product.active ? '🔴' : '🟢' }}
                         </button>
                       </div>
                     </td>
@@ -159,24 +213,23 @@ import { ProductFormComponent } from '../components/product-form.component';
       }
     </div>
 
-    <!-- Modal -->
-    @if (showForm()) {
-      <app-product-form
-        [product]="editingProduct()"
-        (saved)="onSaved()"
-        (cancelled)="onCancelled()"
-      />
+    <!-- Create modal -->
+    @if (showCreate()) {
+      <app-product-create-modal
+        (close)="showCreate.set(false)"
+        (created)="onCreated($event)">
+      </app-product-create-modal>
     }
   `,
 })
 export class ProductsPageComponent implements OnInit {
   readonly productService = inject(ProductService);
   private readonly categoryService = inject(CategoryService);
+  private readonly router = inject(Router);
 
   readonly searchTerm = signal('');
   readonly statusFilter = signal<'all' | 'active' | 'inactive'>('all');
-  readonly showForm = signal(false);
-  readonly editingProduct = signal<Product | null>(null);
+  readonly showCreate = signal(false);
 
   searchTermValue = '';
   statusFilterValue: 'all' | 'active' | 'inactive' = 'all';
@@ -193,12 +246,12 @@ export class ProductsPageComponent implements OnInit {
     const term = this.searchTerm().toLowerCase();
     const status = this.statusFilter();
 
-    return this.productService.products().filter(p => {
+    return this.productService.products().filter((p) => {
       const matchesSearch = !term || p.name.toLowerCase().includes(term);
       const matchesStatus =
         status === 'all' ||
-        (status === 'active' && p.is_active) ||
-        (status === 'inactive' && !p.is_active);
+        (status === 'active' && p.active) ||
+        (status === 'inactive' && !p.active);
       return matchesSearch && matchesStatus;
     });
   });
@@ -215,26 +268,19 @@ export class ProductsPageComponent implements OnInit {
   }
 
   openCreate(): void {
-    this.editingProduct.set(null);
-    this.showForm.set(true);
+    this.showCreate.set(true);
+  }
+
+  onCreated(productId: string): void {
+    this.showCreate.set(false);
+    this.router.navigate(['/dashboard/products', productId]);
   }
 
   openEdit(product: Product): void {
-    this.editingProduct.set(product);
-    this.showForm.set(true);
+    this.router.navigate(['/dashboard/products', product.id]);
   }
 
   async onToggle(product: Product): Promise<void> {
-    await this.productService.toggleActive(product.id, product.is_active);
-  }
-
-  onSaved(): void {
-    this.showForm.set(false);
-    this.editingProduct.set(null);
-  }
-
-  onCancelled(): void {
-    this.showForm.set(false);
-    this.editingProduct.set(null);
+    await this.productService.toggleActive(product.id, product.active);
   }
 }

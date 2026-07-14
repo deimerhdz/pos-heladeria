@@ -183,7 +183,7 @@ export class AdminDashboardComponent implements OnInit {
   readonly recentOrders = computed(() => this.ordersService.orders().slice(0, 5));
 
   readonly activeProductsCount = computed(
-    () => this.productService.products().filter((p) => p.is_active).length,
+    () => this.productService.products().filter((p) => p.active).length,
   );
 
   readonly quickActions: QuickAction[] = [

@@ -20,5 +20,4 @@ export interface TenantCreateWithUser {
   /** Administrator user fields. */
   name: string;
   email: string;
-  password: string;
 }

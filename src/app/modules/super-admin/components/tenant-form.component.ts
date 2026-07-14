@@ -1,10 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  EventEmitter,
-  Output,
-  inject,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Output, inject } from '@angular/core';
 import {
   AbstractControl,
   FormControl,
@@ -33,7 +27,9 @@ function toSlug(value: string): string {
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white">
+        <div
+          class="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white"
+        >
           <h2 class="text-lg font-semibold text-gray-900">Nuevo tenant</h2>
           <button
             type="button"
@@ -47,7 +43,9 @@ function toSlug(value: string): string {
         <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="px-6 py-5 space-y-5">
           <!-- Tenant data -->
           <div class="space-y-4">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Datos del tenant</h3>
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Datos del tenant
+            </h3>
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -106,7 +104,9 @@ function toSlug(value: string): string {
 
           <!-- Admin user data -->
           <div class="space-y-4 pt-2 border-t border-gray-100">
-            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Usuario administrador</h3>
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Usuario administrador
+            </h3>
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -139,23 +139,6 @@ function toSlug(value: string): string {
               />
               @if (invalid('email')) {
                 <p class="text-red-500 text-xs mt-1">Email inválido (mínimo 5 caracteres)</p>
-              }
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
-                Contraseña <span class="text-red-500">*</span>
-              </label>
-              <input
-                type="password"
-                formControlName="password"
-                placeholder="Mínimo 6 caracteres"
-                class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                [class.border-red-400]="invalid('password')"
-                [class.border-gray-200]="!invalid('password')"
-              />
-              @if (invalid('password')) {
-                <p class="text-red-500 text-xs mt-1">Mínimo 6 caracteres</p>
               }
             </div>
           </div>
@@ -220,10 +203,6 @@ export class TenantFormComponent {
       nonNullable: true,
       validators: [Validators.required, Validators.email, Validators.minLength(5)],
     }),
-    password: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.minLength(6)],
-    }),
   });
 
   invalid(name: keyof typeof this.form.controls): boolean {
@@ -238,7 +217,7 @@ export class TenantFormComponent {
       this.form.controls.schema_name.setValue(slug);
     }
     if (!this.hostTouchedManually) {
-      this.form.controls.host.setValue(slug ? `${slug}.${environment.rootDomain}` : '');
+      this.form.controls.host.setValue(slug ? `${slug}` : '');
     }
   }
 
@@ -258,7 +237,6 @@ export class TenantFormComponent {
       host: raw.host.trim(),
       name: raw.name.trim(),
       email: raw.email.trim(),
-      password: raw.password,
     };
 
     await this.tenantService.createTenant(payload);

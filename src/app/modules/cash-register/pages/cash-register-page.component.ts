@@ -21,7 +21,9 @@ import { CashRegisterService } from '../services/cash-register.service';
       </div>
 
       @if (cashService.isLoading()) {
-        <div class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center animate-pulse">
+        <div
+          class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center animate-pulse"
+        >
           <p class="text-gray-400">Cargando caja...</p>
         </div>
       } @else if (!cashService.currentSession()) {
@@ -70,7 +72,7 @@ import { CashRegisterService } from '../services/cash-register.service';
               <span class="text-sm font-semibold text-green-700">Abierta</span>
             </div>
             <p class="text-xs text-gray-400 mt-2">
-              Desde {{ cashService.currentSession()!.opened_at | date:'HH:mm' }}
+              Desde {{ cashService.currentSession()!.opened_at | date: 'HH:mm' }}
             </p>
           </div>
 
@@ -79,15 +81,24 @@ import { CashRegisterService } from '../services/cash-register.service';
             <p class="text-2xl font-bold text-gray-900 mt-1">
               S/ {{ cashService.todaySalesTotal().toFixed(2) }}
             </p>
-            <p class="text-xs text-gray-400 mt-1">{{ cashService.todayPayments().length }} cobros</p>
+            <p class="text-xs text-gray-400 mt-1">
+              {{ cashService.todayPayments().length }} cobros
+            </p>
           </div>
 
-          <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center justify-center">
+          <div
+            class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center justify-center"
+          >
             @if (confirmingClose()) {
               <div class="text-center space-y-2 w-full">
                 <p class="text-sm font-semibold text-gray-700">¿Cerrar la caja?</p>
                 <p class="text-xs text-gray-400">
-                  Cierre: S/ {{ (cashService.currentSession()!.opening_amount + cashService.todaySalesTotal()).toFixed(2) }}
+                  Cierre: S/
+                  {{
+                    (
+                      cashService.currentSession()!.opening_amount + cashService.todaySalesTotal()
+                    ).toFixed(2)
+                  }}
                 </p>
                 <div class="flex gap-2">
                   <button
@@ -128,7 +139,9 @@ import { CashRegisterService } from '../services/cash-register.service';
             <div class="flex items-center gap-3">
               <h2 class="text-sm font-semibold text-gray-800">Órdenes por cobrar</h2>
               @if (collectableOrders().length > 0) {
-                <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold animate-pulse">
+                <span
+                  class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold animate-pulse"
+                >
                   {{ collectableOrders().length }} pendiente(s)
                 </span>
               }
@@ -142,25 +155,37 @@ import { CashRegisterService } from '../services/cash-register.service';
           </div>
 
           @if (ordersService.isLoading()) {
-            <p class="px-5 py-6 text-center text-sm text-gray-400 animate-pulse">Cargando órdenes...</p>
+            <p class="px-5 py-6 text-center text-sm text-gray-400 animate-pulse">
+              Cargando órdenes...
+            </p>
           } @else if (collectableOrders().length === 0) {
-            <p class="px-5 py-8 text-center text-sm text-gray-400">Sin órdenes pendientes de cobro</p>
+            <p class="px-5 py-8 text-center text-sm text-gray-400">
+              Sin órdenes pendientes de cobro
+            </p>
           } @else {
             <div class="divide-y divide-gray-50">
               @for (order of collectableOrders(); track order.id) {
                 <div class="px-5 py-3 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-3 flex-1 min-w-0">
-                    <div class="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-sm font-bold text-orange-700 shrink-0">
+                    <div
+                      class="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center text-sm font-bold text-orange-700 shrink-0"
+                    >
                       {{ order.table_name.charAt(0) }}
                     </div>
                     <div class="min-w-0">
                       <p class="text-sm font-semibold text-gray-800">{{ order.table_name }}</p>
                       <p class="text-xs text-gray-400">
-                        {{ order.status === 'bill_requested' ? 'Cuenta solicitada' : 'Listo para cobrar' }}
+                        {{
+                          order.status === 'bill_requested'
+                            ? 'Cuenta solicitada'
+                            : 'Listo para cobrar'
+                        }}
                       </p>
                     </div>
                   </div>
-                  <span class="text-sm font-bold text-gray-800 shrink-0">S/ {{ order.total.toFixed(2) }}</span>
+                  <span class="text-sm font-bold text-gray-800 shrink-0"
+                    >S/ {{ order.total.toFixed(2) }}</span
+                  >
                   <button
                     (click)="startPayment(order.id)"
                     [disabled]="loadingOrderId() === order.id"
@@ -186,15 +211,19 @@ import { CashRegisterService } from '../services/cash-register.service';
               @for (payment of cashService.todayPayments(); track payment.id) {
                 <div class="px-5 py-3 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center text-sm">
+                    <div
+                      class="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center text-sm"
+                    >
                       {{ payment.payment_method === 'cash' ? '💵' : '🏦' }}
                     </div>
                     <div>
                       <p class="text-sm font-semibold text-gray-800">{{ payment.table_name }}</p>
-                      <p class="text-xs text-gray-400">{{ payment.paid_at | date:'HH:mm' }}</p>
+                      <p class="text-xs text-gray-400">{{ payment.paid_at | date: 'HH:mm' }}</p>
                     </div>
                   </div>
-                  <span class="text-sm font-bold text-green-700">S/ {{ payment.amount.toFixed(2) }}</span>
+                  <span class="text-sm font-bold text-green-700"
+                    >S/ {{ payment.amount.toFixed(2) }}</span
+                  >
                 </div>
               }
             </div>
@@ -215,7 +244,9 @@ import { CashRegisterService } from '../services/cash-register.service';
     @if (activeOrder()) {
       <app-payment-modal
         [order]="activeOrder()!"
-        (confirmed)="isManualOrder() ? onManualPaymentConfirmed($event) : onPaymentConfirmed($event)"
+        (confirmed)="
+          isManualOrder() ? onManualPaymentConfirmed($event) : onPaymentConfirmed($event)
+        "
         (cancelled)="closeModal()"
       />
     }
@@ -237,15 +268,12 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
   private realtimeChannel: RealtimeChannel | null = null;
 
   readonly collectableOrders = () =>
-    this.ordersService.orders().filter(
-      o => o.status === 'ready' || o.status === 'bill_requested'
-    );
+    this.ordersService
+      .orders()
+      .filter((o) => o.status === 'ready' || o.status === 'bill_requested');
 
   async ngOnInit(): Promise<void> {
-    await Promise.all([
-      this.cashService.loadCurrentSession(),
-      this.ordersService.loadOrders(),
-    ]);
+    await Promise.all([this.cashService.loadCurrentSession(), this.ordersService.loadOrders()]);
 
     this.realtimeChannel = this.ordersService.subscribeToOrders(() => {
       this.ordersService.loadOrders();
@@ -278,7 +306,7 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
   onManualOrderProceed(items: ManualOrderItem[]): void {
     this.showManualOrderForm.set(false);
     this.pendingManualItems.set(items);
-    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+
     const virtualOrder: OrderWithItems = {
       id: '',
       table_id: '',
@@ -286,7 +314,7 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
       status: 'ready',
       notes: null,
       customer_name: null,
-      total,
+      total: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       items: items.map((i, idx) => ({
@@ -294,9 +322,9 @@ export class CashRegisterPageComponent implements OnInit, OnDestroy {
         order_id: '',
         product_id: i.product_id,
         product_name: i.product_name,
-        unit_price: i.unit_price,
+
         quantity: i.quantity,
-        subtotal: i.subtotal,
+
         created_at: new Date().toISOString(),
       })),
     };

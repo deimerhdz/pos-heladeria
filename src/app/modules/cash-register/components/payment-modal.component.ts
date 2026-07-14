@@ -10,15 +10,9 @@ import { PaymentFormData } from '../interfaces/payment.interface';
   imports: [FormsModule],
   template: `
     <!-- Backdrop -->
-    <div
-      class="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4"
-      (click)="onBackdropClick($event)"
-    >
+    <div class="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
       <!-- Modal -->
-      <div
-        class="bg-white rounded-2xl shadow-xl w-full max-w-md z-50"
-        (click)="$event.stopPropagation()"
-      >
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md z-50">
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
@@ -47,7 +41,6 @@ import { PaymentFormData } from '../interfaces/payment.interface';
                   </span>
                   <span class="text-gray-700">{{ item.product_name }}</span>
                 </div>
-                <span class="text-gray-600 font-medium">S/ {{ item.subtotal.toFixed(2) }}</span>
               </div>
             }
           </div>
@@ -198,9 +191,5 @@ export class PaymentModalComponent implements OnInit {
       paymentMethod: this.paymentMethod(),
       changeGiven: isTransfer ? 0 : this.change(),
     });
-  }
-
-  onBackdropClick(event: MouseEvent): void {
-    this.cancelled.emit();
   }
 }

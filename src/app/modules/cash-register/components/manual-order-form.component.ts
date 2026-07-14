@@ -9,14 +9,8 @@ import { ProductService } from '../../products/services/product.service';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div
-      class="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4"
-      (click)="onBackdropClick($event)"
-    >
-      <div
-        class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col z-50"
-        (click)="$event.stopPropagation()"
-      >
+    <div class="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col z-50">
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
           <div>
@@ -40,7 +34,9 @@ import { ProductService } from '../../products/services/product.service';
             </div>
 
             @if (productService.loading()) {
-              <p class="px-4 py-6 text-center text-sm text-gray-400 animate-pulse">Cargando productos...</p>
+              <p class="px-4 py-6 text-center text-sm text-gray-400 animate-pulse">
+                Cargando productos...
+              </p>
             } @else if (activeProducts().length === 0) {
               <p class="px-4 py-6 text-center text-sm text-gray-400">Sin productos activos</p>
             } @else {
@@ -52,9 +48,11 @@ import { ProductService } from '../../products/services/product.service';
                   >
                     <div class="min-w-0">
                       <p class="text-sm font-semibold text-gray-800 truncate">{{ product.name }}</p>
-                      <p class="text-xs text-gray-400">S/ {{ product.price.toFixed(2) }}</p>
                     </div>
-                    <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-lg font-bold shrink-0">+</span>
+                    <span
+                      class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-lg font-bold shrink-0"
+                      >+</span
+                    >
                   </button>
                 }
               </div>
@@ -68,25 +66,34 @@ import { ProductService } from '../../products/services/product.service';
             </div>
 
             @if (items().length === 0) {
-              <p class="px-4 py-6 text-center text-sm text-gray-400 flex-1">Agrega productos desde el catálogo</p>
+              <p class="px-4 py-6 text-center text-sm text-gray-400 flex-1">
+                Agrega productos desde el catálogo
+              </p>
             } @else {
               <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
                 @for (item of items(); track item.product_id) {
                   <div class="px-4 py-3 flex items-center gap-2">
                     <div class="flex-1 min-w-0">
-                      <p class="text-sm font-semibold text-gray-800 truncate">{{ item.product_name }}</p>
-                      <p class="text-xs text-gray-400">S/ {{ item.subtotal.toFixed(2) }}</p>
+                      <p class="text-sm font-semibold text-gray-800 truncate">
+                        {{ item.product_name }}
+                      </p>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
                       <button
                         (click)="decrement(item)"
                         class="w-7 h-7 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center text-lg font-bold hover:bg-red-100 hover:text-red-600 transition-colors"
-                      >−</button>
-                      <span class="w-6 text-center text-sm font-bold text-gray-800">{{ item.quantity }}</span>
+                      >
+                        −
+                      </button>
+                      <span class="w-6 text-center text-sm font-bold text-gray-800">{{
+                        item.quantity
+                      }}</span>
                       <button
                         (click)="increment(item)"
                         class="w-7 h-7 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center text-lg font-bold hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
-                      >+</button>
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
                 }
@@ -94,9 +101,10 @@ import { ProductService } from '../../products/services/product.service';
             }
 
             <!-- Total -->
-            <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center shrink-0">
+            <div
+              class="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center shrink-0"
+            >
               <span class="text-sm font-semibold text-gray-600">Total</span>
-              <span class="text-xl font-bold text-gray-900">S/ {{ total().toFixed(2) }}</span>
             </div>
           </div>
         </div>
@@ -119,7 +127,7 @@ import { ProductService } from '../../products/services/product.service';
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             "
           >
-            Cobrar S/ {{ total().toFixed(2) }}
+            Cobrar S/
           </button>
         </div>
       </div>
@@ -132,63 +140,60 @@ export class ManualOrderFormComponent implements OnInit {
 
   readonly productService = inject(ProductService);
   readonly items = signal<ManualOrderItem[]>([]);
-  readonly activeProducts = computed(() => this.productService.products().filter(p => p.is_active));
-  readonly total = computed(() => this.items().reduce((sum, i) => sum + i.subtotal, 0));
+  readonly activeProducts = computed(() => this.productService.products().filter((p) => p.active));
 
   async ngOnInit(): Promise<void> {
     await this.productService.loadProducts();
   }
 
   addProduct(product: Product): void {
-    this.items.update(current => {
-      const existing = current.find(i => i.product_id === product.id);
-      if (existing) {
-        return current.map(i =>
-          i.product_id === product.id
-            ? { ...i, quantity: i.quantity + 1, subtotal: (i.quantity + 1) * i.unit_price }
-            : i
-        );
-      }
-      return [...current, {
-        product_id: product.id,
-        product_name: product.name,
-        unit_price: product.price,
-        quantity: 1,
-        subtotal: product.price,
-      }];
+    this.items.update((current) => {
+      const existing = current.find((i) => i.product_id === product.id);
+      // if (existing) {
+      //   return current.map((i) =>
+      //     i.product_id === product.id
+      //       ? { ...i, quantity: i.quantity + 1, subtotal: (i.quantity + 1) * i.unit_price }
+      //       : i,
+      //   );
+      // }
+      return [
+        ...current,
+        {
+          product_id: product.id,
+          product_name: product.name,
+
+          quantity: 1,
+        },
+      ];
     });
   }
 
   increment(item: ManualOrderItem): void {
-    this.items.update(current =>
-      current.map(i =>
-        i.product_id === item.product_id
-          ? { ...i, quantity: i.quantity + 1, subtotal: (i.quantity + 1) * i.unit_price }
-          : i
-      )
-    );
+    // this.items.update((current) =>
+    //   current.map((i) =>
+    //     i.product_id === item.product_id
+    //       ? { ...i, quantity: i.quantity + 1, subtotal: (i.quantity + 1) * i.unit_price }
+    //       : i,
+    //   ),
+    // );
   }
 
   decrement(item: ManualOrderItem): void {
     if (item.quantity === 1) {
-      this.items.update(current => current.filter(i => i.product_id !== item.product_id));
+      this.items.update((current) => current.filter((i) => i.product_id !== item.product_id));
       return;
     }
-    this.items.update(current =>
-      current.map(i =>
-        i.product_id === item.product_id
-          ? { ...i, quantity: i.quantity - 1, subtotal: (i.quantity - 1) * i.unit_price }
-          : i
-      )
-    );
+    // this.items.update((current) =>
+    //   current.map((i) =>
+    //     i.product_id === item.product_id
+    //       ? { ...i, quantity: i.quantity - 1, subtotal: (i.quantity - 1) * i.unit_price }
+    //       : i,
+    //   ),
+    // );
   }
 
   onProceed(): void {
     if (this.items().length === 0) return;
     this.proceed.emit(this.items());
-  }
-
-  onBackdropClick(event: MouseEvent): void {
-    this.cancelled.emit();
   }
 }

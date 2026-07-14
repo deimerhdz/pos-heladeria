@@ -48,6 +48,28 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
+        path: 'products/:id',
+        loadComponent: () =>
+          import('../products/pages/product-detail.component').then(
+            (m) => m.ProductDetailComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'option-groups',
+        loadComponent: () =>
+          import('../option-groups/pages/option-groups-page.component').then(
+            (m) => m.OptionGroupsPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'menu',
+        loadComponent: () =>
+          import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
         path: 'unit-measures',
         loadComponent: () =>
           import('../unit-measures/pages/unit-measures-page.component').then(
@@ -74,17 +96,25 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
       },
       {
-        path: 'insumos',
+        path: 'inventario',
         loadComponent: () =>
-          import('../ingredients/pages/ingredients-page.component').then(
-            (m) => m.IngredientsPageComponent,
+          import('../inventory/pages/inventory-page.component').then(
+            (m) => m.InventoryPageComponent,
           ),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
-        path: 'inventario',
-        redirectTo: 'insumos',
+        path: 'insumos',
+        redirectTo: 'inventario',
         pathMatch: 'full',
+      },
+      {
+        path: 'proveedores',
+        loadComponent: () =>
+          import('../suppliers/pages/suppliers-page.component').then(
+            (m) => m.SuppliersPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
         path: 'users',

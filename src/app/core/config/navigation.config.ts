@@ -28,15 +28,18 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   // Solo Admin
+  { label: 'Menú', icon: '📖', route: '/dashboard/menu', roles: [UserRole.ADMIN] },
   { label: 'Usuarios', icon: '👥', route: '/dashboard/users', roles: [UserRole.ADMIN] },
   { label: 'Categorías', icon: '📂', route: '/dashboard/categories', roles: [UserRole.ADMIN] },
+  { label: 'Grupos de opciones', icon: '🧩', route: '/dashboard/option-groups', roles: [UserRole.ADMIN] },
   {
     label: 'Unidades de medida',
     icon: '📏',
     route: '/dashboard/unit-measures',
     roles: [UserRole.ADMIN],
   },
-  { label: 'Insumos', icon: '🧪', route: '/dashboard/insumos', roles: [UserRole.ADMIN] },
+  { label: 'Inventario', icon: '📦', route: '/dashboard/inventario', roles: [UserRole.ADMIN] },
+  { label: 'Proveedores', icon: '🚚', route: '/dashboard/proveedores', roles: [UserRole.ADMIN] },
   { label: 'Caja', icon: '💰', route: '/dashboard/caja', roles: [UserRole.ADMIN] },
   // { label: 'Cocina',      icon: '👨‍🍳', route: '/dashboard/cocina',     roles: [UserRole.ADMIN] },
   { label: 'Reportes', icon: '📊', route: '/dashboard/reports', roles: [UserRole.ADMIN] },

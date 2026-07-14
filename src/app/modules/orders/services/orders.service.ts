@@ -100,11 +100,11 @@ export class OrdersService {
 
   async createManualOrder(items: ManualOrderItem[]): Promise<string | null> {
     this.error.set(null);
-    const total = items.reduce((sum, item) => sum + item.subtotal, 0);
+    // const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
     const { data: order, error: orderError } = await this.supabase.client
       .from('orders')
-      .insert({ table_id: null, status: 'paid', notes: null, customer_name: null, total })
+      // .insert({ table_id: null, status: 'paid', notes: null, customer_name: null, total })
       .select('id')
       .single();
 
@@ -114,13 +114,13 @@ export class OrdersService {
     }
 
     const orderId = (order as { id: string }).id;
-    const rows = items.map(item => ({
+    const rows = items.map((item) => ({
       order_id: orderId,
       product_id: item.product_id,
       product_name: item.product_name,
-      unit_price: item.unit_price,
+      // unit_price: item.unit_price,
       quantity: item.quantity,
-      subtotal: item.subtotal,
+      // subtotal: item.subtotal,
     }));
 
     const { error: itemsError } = await this.supabase.client.from('order_items').insert(rows);
