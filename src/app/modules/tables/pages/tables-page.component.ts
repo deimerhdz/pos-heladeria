@@ -55,9 +55,8 @@ import { TableQrComponent } from '../components/table-qr.component';
             <table class="w-full">
               <thead>
                 <tr class="border-b border-gray-100 bg-gray-50">
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Nombre</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden sm:table-cell">Código</th>
-                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Capacidad</th>
+                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Mesa</th>
+                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden sm:table-cell">Nombre</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Acciones</th>
                 </tr>
@@ -70,16 +69,13 @@ import { TableQrComponent } from '../components/table-qr.component';
                         <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">🪑</div>
                         <div>
                           <span class="text-sm font-medium" [class.text-gray-400]="!table.active" [class.text-gray-900]="table.active">
-                            {{ table.name }}
+                            Mesa {{ table.number }}
                           </span>
                         </div>
                       </div>
                     </td>
                     <td class="px-5 py-4 hidden sm:table-cell">
-                      <span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">{{ table.qr_code }}</span>
-                    </td>
-                    <td class="px-5 py-4 hidden md:table-cell">
-                      <span class="text-sm text-gray-500">{{ table.capacity }}</span>
+                      <span class="text-sm text-gray-500">{{ table.name || '—' }}</span>
                     </td>
                     <td class="px-5 py-4">
                       @if (table.active) {

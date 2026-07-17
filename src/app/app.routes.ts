@@ -42,7 +42,8 @@ export const routes: Routes = [
       import('./modules/dashboard/routes').then(m => m.dashboardRoutes),
   },
   {
-    path: 'menu/:code',
+    // Diner QR entry: `token` is the table's UUID `qr_token` from the printed QR.
+    path: 'menu/qr/:token',
     loadComponent: () =>
       import('./modules/tables/pages/public-menu.component').then(m => m.PublicMenuComponent),
   },

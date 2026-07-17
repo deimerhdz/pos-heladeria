@@ -5,7 +5,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Home por rol
   { label: 'Dashboard', icon: '🏠', route: '/dashboard/admin', roles: [UserRole.ADMIN] },
   { label: 'Caja', icon: '💳', route: '/dashboard/caja', roles: [UserRole.CASHIER] },
-  { label: 'Cocina', icon: '🍳', route: '/dashboard/cocina', roles: [UserRole.STAFF] },
+  { label: 'Cocina', icon: '🍳', route: '/dashboard/cocina', roles: [UserRole.STAFF, UserRole.ADMIN] },
 
   // Compartidos
   {
@@ -21,10 +21,22 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [UserRole.ADMIN, UserRole.CASHIER],
   },
   {
+    label: 'Ventas',
+    icon: '🧾',
+    route: '/dashboard/ventas',
+    roles: [UserRole.ADMIN, UserRole.CASHIER],
+  },
+  {
     label: 'Mesas',
     icon: '🪑',
     route: '/dashboard/tables',
     roles: [UserRole.ADMIN],
+  },
+  {
+    label: 'Sesiones de mesa',
+    icon: '🍽️',
+    route: '/dashboard/mesas-sesiones',
+    roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF],
   },
 
   // Solo Admin
@@ -38,6 +50,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: '/dashboard/unit-measures',
     roles: [UserRole.ADMIN],
   },
+  { label: 'Métodos de pago', icon: '💳', route: '/dashboard/metodos-pago', roles: [UserRole.ADMIN] },
   { label: 'Inventario', icon: '📦', route: '/dashboard/inventario', roles: [UserRole.ADMIN] },
   { label: 'Proveedores', icon: '🚚', route: '/dashboard/proveedores', roles: [UserRole.ADMIN] },
   { label: 'Caja', icon: '💰', route: '/dashboard/caja', roles: [UserRole.ADMIN] },

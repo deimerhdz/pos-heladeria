@@ -1,11 +1,12 @@
-import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { OrderStatus } from '../../tables/interfaces/table.interface';
-import { OrdersApiService } from '../services/orders-api.service';
+import { DiningOrder, DiningOrderStatus } from '../../tables/interfaces/dining.interface';
+import { DiningSessionService } from '../../tables/services/dining-session.service';
+import { TableService } from '../../tables/services/table.service';
 import { orderStatusClass, orderStatusLabel } from '../order-status.util';
 
-type FilterOption = OrderStatus | 'all';
+type FilterOption = DiningOrderStatus | 'all';
 
 interface FilterButton {
   value: FilterOption;
@@ -15,13 +16,13 @@ interface FilterButton {
 @Component({
   selector: 'app-orders-page',
   standalone: true,
-  imports: [RouterLink, DatePipe, DecimalPipe, SlicePipe],
+  imports: [RouterLink, DatePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Órdenes</h1>
-          <p class="text-gray-500 text-sm mt-1">Listado de pedidos de la operación</p>
+          <p class="text-gray-500 text-sm mt-1">Comandas de la operación</p>
         </div>
         <button
           (click)="reload()"
@@ -48,8 +49,7 @@ interface FilterButton {
         }
       </div>
 
-      <!-- Estado de carga -->
-      @if (ordersApi.loading() && ordersApi.orders().length === 0) {
+      @if (loading() && orders().length === 0) {
         <div class="space-y-3">
           @for (i of [1, 2, 3]; track i) {
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 animate-pulse">
@@ -66,14 +66,10 @@ interface FilterButton {
             </div>
           }
         </div>
-      } @else if (ordersApi.error()) {
-        <div class="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">
-          {{ ordersApi.error() }}
-        </div>
-      } @else if (ordersApi.orders().length === 0) {
-        <div
-          class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400"
-        >
+      } @else if (error()) {
+        <div class="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">{{ error() }}</div>
+      } @else if (visibleOrders().length === 0) {
+        <div class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400">
           <p class="text-4xl mb-3">📋</p>
           <p class="font-medium">No hay órdenes</p>
           @if (activeFilter() !== 'all') {
@@ -82,28 +78,18 @@ interface FilterButton {
         </div>
       } @else {
         <div class="space-y-2">
-          @for (order of ordersApi.orders(); track order.id) {
+          @for (order of visibleOrders(); track order.id) {
             <a
               [routerLink]="['/dashboard/orders', order.id]"
               class="block bg-white rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-100 transition-all"
             >
               <div class="px-4 py-3 flex items-center justify-between gap-3">
                 <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <div
-                    class="w-16 h-16 rounded-xl bg-indigo-50 flex flex-col items-center justify-center shrink-0"
-                  >
-                    <span class="text-[10px] text-indigo-400 font-medium leading-none">Mesa</span>
-                    <span class="text-xs font-bold text-indigo-700 leading-tight text-center px-1 truncate w-full">
-                      {{ order.table_id | slice: 0 : 6 }}
-                    </span>
-                  </div>
+                  <div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shrink-0">🍽️</div>
                   <div class="min-w-0">
-                    <p class="text-sm font-semibold text-gray-800 truncate">
-                      {{ order.id | slice: 0 : 8 }}…
-                      <span class="text-xs text-gray-400 font-normal">· {{ order.scope === 'table' ? 'Mesa' : 'Individual' }}</span>
-                    </p>
+                    <p class="text-sm font-semibold text-gray-800 truncate">{{ tableLabel(order) }}</p>
                     <p class="text-xs text-gray-400">
-                      {{ order.created_at | date: 'HH:mm' }} · $ {{ +order.total | number: '1.2-2' }}
+                      {{ order.created_at | date: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
                     </p>
                     @if (order.customer_name) {
                       <p class="text-xs text-indigo-500 font-medium mt-0.5">👤 {{ order.customer_name }}</p>
@@ -111,79 +97,75 @@ interface FilterButton {
                   </div>
                 </div>
 
-                <span
-                  class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0"
-                  [class]="statusClass(order.status)"
-                >
+                <span class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0" [class]="statusClass(order.status)">
                   {{ statusLabel(order.status) }}
                 </span>
               </div>
             </a>
           }
         </div>
-
-        <!-- Paginación -->
-        @if (ordersApi.pageInfo().pages > 1) {
-          <div class="flex items-center justify-center gap-3 pt-2">
-            <button
-              (click)="goToPage(ordersApi.pageInfo().page - 1)"
-              [disabled]="ordersApi.pageInfo().page <= 1 || ordersApi.loading()"
-              class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Anterior
-            </button>
-            <span class="text-sm text-gray-500">
-              Página {{ ordersApi.pageInfo().page }} de {{ ordersApi.pageInfo().pages }}
-            </span>
-            <button
-              (click)="goToPage(ordersApi.pageInfo().page + 1)"
-              [disabled]="ordersApi.pageInfo().page >= ordersApi.pageInfo().pages || ordersApi.loading()"
-              class="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Siguiente →
-            </button>
-          </div>
-        }
       }
     </div>
   `,
 })
 export class OrdersPageComponent implements OnInit {
-  readonly ordersApi = inject(OrdersApiService);
+  private readonly api = inject(DiningSessionService);
+  private readonly tableService = inject(TableService);
 
+  readonly orders = signal<DiningOrder[]>([]);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
   readonly activeFilter = signal<FilterOption>('all');
 
   readonly filters: FilterButton[] = [
     { value: 'all', label: 'Todas' },
     { value: 'pending', label: 'En espera' },
-    { value: 'in_progress', label: 'En preparación' },
-    { value: 'completed', label: 'Completadas' },
+    { value: 'preparing', label: 'En preparación' },
+    { value: 'served', label: 'Servidas' },
     { value: 'cancelled', label: 'Canceladas' },
   ];
 
+  readonly visibleOrders = computed(() => {
+    const f = this.activeFilter();
+    const list = f === 'all' ? this.orders() : this.orders().filter((o) => o.status === f);
+    return [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  });
+
+  private readonly tableLabels = computed(() => {
+    const map = new Map<string, string>();
+    for (const t of this.tableService.tables()) {
+      map.set(t.id, t.name ? `Mesa ${t.number} · ${t.name}` : `Mesa ${t.number}`);
+    }
+    return map;
+  });
+
   ngOnInit(): void {
-    this.load(1);
+    this.tableService.loadTables();
+    this.reload();
   }
 
   setFilter(filter: FilterOption): void {
     this.activeFilter.set(filter);
-    this.load(1);
   }
 
-  goToPage(page: number): void {
-    this.load(page);
+  async reload(): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      this.orders.set(await this.api.listOrders());
+    } catch (err) {
+      this.error.set(this.api.extractError(err, 'No se pudieron cargar las órdenes.'));
+    } finally {
+      this.loading.set(false);
+    }
   }
 
-  reload(): void {
-    this.load(this.ordersApi.pageInfo().page);
+  tableLabel(order: DiningOrder): string {
+    return (order.dining_table_id && this.tableLabels().get(order.dining_table_id)) || 'Mostrador';
   }
 
-  private load(page: number): void {
-    const filter = this.activeFilter();
-    this.ordersApi.listOrders({
-      status: filter === 'all' ? null : filter,
-      page,
-    });
+  itemCount(order: DiningOrder): number {
+    return (order.items ?? []).reduce((n, i) => n + i.quantity, 0);
   }
 
   statusLabel = orderStatusLabel;

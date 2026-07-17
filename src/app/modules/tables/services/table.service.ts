@@ -7,13 +7,14 @@ import {
   Table,
   TableCreatePayload,
   TableForm,
+  TableQrToken,
   TableUpdatePayload,
 } from '../interfaces/table.interface';
 
 @Injectable({ providedIn: 'root' })
 export class TableService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/tables`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/orders/tables`;
 
   readonly tables = signal<Table[]>([]);
   readonly loading = signal(false);
@@ -26,7 +27,7 @@ export class TableService {
 
     try {
       const data = await firstValueFrom(this.http.get<Table[]>(this.baseUrl));
-      this.tables.set([...data].sort((a, b) => a.name.localeCompare(b.name)));
+      this.tables.set([...data].sort((a, b) => a.number - b.number));
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
@@ -38,12 +39,10 @@ export class TableService {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    // Auto-generate a short QR code so the public menu link (/menu/:code) keeps working.
-    const qr_code = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+    // The backend generates the `qr_token`; the client only sends number + name.
     const payload: TableCreatePayload = {
-      name: data.name,
-      qr_code,
-      capacity: data.capacity,
+      number: data.number,
+      name: data.name?.trim() || null,
     };
 
     try {
@@ -60,10 +59,7 @@ export class TableService {
     this.isSubmitting.set(true);
     this.error.set(null);
 
-    const payload: TableUpdatePayload = {
-      name: data.name,
-      capacity: data.capacity,
-    };
+    const payload: TableUpdatePayload = { name: data.name?.trim() || null };
 
     try {
       await firstValueFrom(this.http.patch<Table>(`${this.baseUrl}/${id}`, payload));
@@ -89,6 +85,11 @@ export class TableService {
     } finally {
       this.isSubmitting.set(false);
     }
+  }
+
+  /** Fetch the signed, printable QR token for a table. Throws `HttpErrorResponse`. */
+  async getQrToken(id: string): Promise<TableQrToken> {
+    return firstValueFrom(this.http.get<TableQrToken>(`${this.baseUrl}/${id}/qr-token`));
   }
 
   private extractError(err: unknown): string {

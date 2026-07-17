@@ -35,49 +35,43 @@ import { TableService } from '../services/table.service';
         </div>
 
         <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="px-6 py-5 space-y-4">
-          <!-- Name -->
+          <!-- Number -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
-              Nombre <span class="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              formControlName="name"
-              placeholder="Ej: Mesa 1"
-              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              [class.border-red-400]="nameControl.invalid && nameControl.touched"
-              [class.border-gray-200]="!(nameControl.invalid && nameControl.touched)"
-            />
-            @if (nameControl.touched && nameControl.errors?.['required']) {
-              <p class="text-red-500 text-xs mt-1">El nombre es requerido</p>
-            }
-          </div>
-
-          <!-- Capacity -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
-              Capacidad <span class="text-red-500">*</span>
+              Número <span class="text-red-500">*</span>
             </label>
             <input
               type="number"
-              formControlName="capacity"
-              placeholder="Ej: 4"
+              formControlName="number"
+              placeholder="Ej: 1"
               min="1"
-              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              [class.border-red-400]="capacityControl.invalid && capacityControl.touched"
-              [class.border-gray-200]="!(capacityControl.invalid && capacityControl.touched)"
+              [readOnly]="!!table"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 read-only:bg-gray-50 read-only:text-gray-500"
+              [class.border-red-400]="numberControl.invalid && numberControl.touched"
+              [class.border-gray-200]="!(numberControl.invalid && numberControl.touched)"
             />
-            @if (capacityControl.touched && capacityControl.errors?.['required']) {
-              <p class="text-red-500 text-xs mt-1">La capacidad es requerida</p>
+            @if (numberControl.touched && numberControl.errors?.['required']) {
+              <p class="text-red-500 text-xs mt-1">El número es requerido</p>
             }
-            @if (capacityControl.touched && capacityControl.errors?.['min']) {
-              <p class="text-red-500 text-xs mt-1">La capacidad debe ser mayor a 0</p>
+            @if (numberControl.touched && numberControl.errors?.['min']) {
+              <p class="text-red-500 text-xs mt-1">El número debe ser mayor a 0</p>
+            }
+            @if (table) {
+              <p class="text-xs text-gray-400 mt-1">El número de la mesa no se puede cambiar.</p>
             }
           </div>
 
-          @if (table) {
-            <p class="text-xs text-gray-400">Código QR: <span class="font-mono font-medium text-gray-600">{{ table.qr_code }}</span> (inmutable)</p>
-          }
+          <!-- Name (optional) -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+            <input
+              type="text"
+              formControlName="name"
+              placeholder="Ej: Terraza, Barra…"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <p class="text-xs text-gray-400 mt-1">Opcional. Etiqueta para identificar la mesa.</p>
+          </div>
 
           <!-- Service error -->
           @if (tableService.error()) {
@@ -116,24 +110,23 @@ export class TableFormComponent implements OnChanges {
   readonly tableService = inject(TableService);
 
   readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    capacity: new FormControl<number | null>(null, {
+    number: new FormControl<number | null>(null, {
       validators: [Validators.required, Validators.min(1)],
     }),
+    name: new FormControl<string>('', { nonNullable: true }),
   });
 
-  get nameControl(): AbstractControl { return this.form.controls.name; }
-  get capacityControl(): AbstractControl { return this.form.controls.capacity; }
+  get numberControl(): AbstractControl { return this.form.controls.number; }
 
   ngOnChanges(): void {
     this.tableService.error.set(null);
     if (this.table) {
       this.form.setValue({
-        name: this.table.name,
-        capacity: this.table.capacity,
+        number: this.table.number,
+        name: this.table.name ?? '',
       });
     } else {
-      this.form.reset();
+      this.form.reset({ number: null, name: '' });
     }
   }
 
@@ -142,11 +135,12 @@ export class TableFormComponent implements OnChanges {
     if (this.form.invalid) return;
 
     const data: TableForm = {
-      name: this.form.controls.name.value.trim(),
-      capacity: this.form.controls.capacity.value!,
+      number: this.form.controls.number.value!,
+      name: this.form.controls.name.value.trim() || null,
     };
 
     if (this.table) {
+      // Number is immutable; only the name is editable.
       await this.tableService.updateTable(this.table.id, data);
     } else {
       await this.tableService.createTable(data);

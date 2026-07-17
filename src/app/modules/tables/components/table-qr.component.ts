@@ -1,12 +1,12 @@
 import {
-  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
   EventEmitter,
   Input,
+  OnInit,
   Output,
-  ViewChild,
+  inject,
+  signal,
 } from '@angular/core';
 import QRCode from 'qrcode';
 import { Table } from '../interfaces/table.interface';
@@ -19,16 +19,26 @@ import { Table } from '../interfaces/table.interface';
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 class="text-lg font-semibold text-gray-900">QR — {{ table.name }}</h2>
+          <h2 class="text-lg font-semibold text-gray-900">QR — Mesa {{ table.number }}</h2>
           <button type="button" (click)="onClose()" class="text-gray-400 hover:text-gray-600 transition-colors">
             ✕
           </button>
         </div>
 
         <div class="px-6 py-5 flex flex-col items-center gap-4">
-          <canvas #qrCanvas class="rounded-xl"></canvas>
-
-          <p class="text-xs text-gray-400 text-center break-all">{{ menuUrl }}</p>
+          @if (loading()) {
+            <div class="flex items-center justify-center h-64 w-64">
+              <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          } @else if (error()) {
+            <div class="flex flex-col items-center justify-center h-64 w-64 text-center">
+              <div class="text-4xl mb-2">🚫</div>
+              <p class="text-sm text-red-600">{{ error() }}</p>
+            </div>
+          } @else {
+            <img [src]="qrDataUrl()" alt="Código QR de la mesa" class="rounded-xl w-64 h-64" />
+            <p class="text-xs text-gray-400 text-center break-all">{{ menuUrl() }}</p>
+          }
 
           <div class="flex gap-3 w-full">
             <button
@@ -41,7 +51,8 @@ import { Table } from '../interfaces/table.interface';
             <button
               type="button"
               (click)="downloadPng()"
-              class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+              [disabled]="loading() || !!error()"
+              class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Descargar PNG
             </button>
@@ -51,30 +62,33 @@ import { Table } from '../interfaces/table.interface';
     </div>
   `,
 })
-export class TableQrComponent implements AfterViewInit {
+export class TableQrComponent implements OnInit {
   @Input() table!: Table;
   @Output() closed = new EventEmitter<void>();
 
-  @ViewChild('qrCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
+  readonly loading = signal(true);
+  readonly error = signal<string | null>(null);
+  readonly menuUrl = signal<string>('');
+  readonly qrDataUrl = signal<string>('');
 
-  get menuUrl(): string {
-    return `${window.location.origin}/menu/${this.table.qr_code}`;
-  }
-
-  ngAfterViewInit(): void {
-    QRCode.toCanvas(this.canvasRef.nativeElement, this.menuUrl, {
-      width: 256,
-      margin: 2,
-    });
+  async ngOnInit(): Promise<void> {
+    try {
+      // The QR encodes the SPA route with the table's UUID `qr_token`; the diner
+      // resolves the menu and opens the session with this same token.
+      this.menuUrl.set(`${window.location.origin}/menu/qr/${this.table.qr_token}`);
+      this.qrDataUrl.set(await QRCode.toDataURL(this.menuUrl(), { width: 256, margin: 2 }));
+      this.loading.set(false);
+    } catch {
+      this.error.set('No se pudo generar el código QR de la mesa.');
+      this.loading.set(false);
+    }
   }
 
   downloadPng(): void {
-    QRCode.toDataURL(this.menuUrl, { width: 256, margin: 2 }, (_, url) => {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `qr-mesa-${this.table.name.replace(/\s+/g, '-').toLowerCase()}.png`;
-      a.click();
-    });
+    const a = document.createElement('a');
+    a.href = this.qrDataUrl();
+    a.download = `qr-mesa-${this.table.number}.png`;
+    a.click();
   }
 
   onClose(): void {

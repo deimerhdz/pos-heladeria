@@ -22,17 +22,29 @@ export const dashboardRoutes: Routes = [
       {
         path: 'caja',
         loadComponent: () =>
-          import('../cash-register/pages/cash-register-page.component').then(
-            (m) => m.CashRegisterPageComponent,
-          ),
+          import('../cash-register/pages/cash-page.component').then((m) => m.CashPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
-      // {
-      //   path: 'cocina',
-      //   loadComponent: () =>
-      //     import('./pages/staff-dashboard.component').then(m => m.StaffDashboardComponent),
-      //   canActivate: [roleGuard([UserRole.ADMIN, UserRole.STAFF])],
-      // },
+      {
+        path: 'metodos-pago',
+        loadComponent: () =>
+          import('../sales/pages/payment-methods-page.component').then(
+            (m) => m.PaymentMethodsPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'ventas',
+        loadComponent: () =>
+          import('../sales/pages/sales-page.component').then((m) => m.SalesPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+      },
+      {
+        path: 'cocina',
+        loadComponent: () =>
+          import('../tables/pages/kitchen-board.component').then((m) => m.KitchenBoardComponent),
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.STAFF])],
+      },
       {
         path: 'categories',
         loadComponent: () =>
@@ -82,6 +94,12 @@ export const dashboardRoutes: Routes = [
         loadComponent: () =>
           import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'mesas-sesiones',
+        loadComponent: () =>
+          import('../tables/pages/table-sessions.component').then((m) => m.TableSessionsComponent),
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
       },
       {
         path: 'orders',

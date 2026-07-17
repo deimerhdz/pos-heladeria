@@ -1,17 +1,19 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { OrderResponse } from '../../tables/interfaces/table.interface';
-import { OrdersApiService } from '../services/orders-api.service';
+import { DiningOrder, DiningOrderItem } from '../../tables/interfaces/dining.interface';
+import { DiningSessionService } from '../../tables/services/dining-session.service';
+import { TableService } from '../../tables/services/table.service';
+import { MenuService } from '../../menu/services/menu.service';
+import { buildMenuLookup } from '../../tables/services/menu-lookup';
 import { orderStatusClass, orderStatusLabel } from '../order-status.util';
 
 @Component({
   selector: 'app-order-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe, DecimalPipe],
+  imports: [RouterLink, DatePipe],
   template: `
     <div class="space-y-6">
-      <!-- Header -->
       <div class="flex items-center gap-3">
         <a
           routerLink="/dashboard/orders"
@@ -21,7 +23,7 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
         </a>
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Detalle de Orden</h1>
-          <p class="text-gray-500 text-sm mt-0.5">Vista completa del pedido</p>
+          <p class="text-gray-500 text-sm mt-0.5">Vista completa de la comanda</p>
         </div>
       </div>
 
@@ -40,18 +42,14 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
           </a>
         </div>
       } @else {
-        <!-- Info de la orden -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
             <div class="min-w-0">
               <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Mesa</p>
-              <p class="text-base font-bold text-gray-900 font-mono truncate">{{ order()!.table_id }}</p>
-              <p class="text-xs text-gray-400 mt-0.5">{{ order()!.scope === 'table' ? 'Orden de mesa' : 'Orden individual' }}</p>
+              <p class="text-base font-bold text-gray-900 truncate">{{ tableLabel() }}</p>
+              <p class="text-xs text-gray-400 mt-0.5">Canal: {{ order()!.channel }}</p>
             </div>
-            <span
-              class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0"
-              [class]="statusClass(order()!.status)"
-            >
+            <span class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0" [class]="statusClass(order()!.status)">
               {{ statusLabel(order()!.status) }}
             </span>
           </div>
@@ -67,32 +65,34 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
             </div>
           </div>
 
-          <!-- Items -->
+          @if (order()!.notes) {
+            <div class="px-5 py-3 border-b border-gray-100">
+              <p class="text-xs text-gray-400">Notas</p>
+              <p class="text-sm text-gray-700 italic">“{{ order()!.notes }}”</p>
+            </div>
+          }
+
           <div class="px-5 py-4">
             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ítems del pedido</p>
             <div class="space-y-2">
               @for (item of order()!.items ?? []; track item.id) {
-                <div class="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                  <div class="flex items-center gap-3">
-                    <span class="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center text-xs font-bold text-indigo-700">
-                      {{ item.quantity }}
-                    </span>
-                    <div>
-                      <p class="text-sm font-medium text-gray-800">{{ item.product_name }}</p>
-                      <p class="text-xs text-gray-400">$ {{ +item.unit_price | number: '1.2-2' }} c/u</p>
-                    </div>
+                <div class="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
+                  <span class="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center text-xs font-bold text-indigo-700 shrink-0">
+                    {{ item.quantity }}
+                  </span>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-800">{{ variantLabel(item.product_variant_id) }}</p>
+                    @if (optionLabels(item)) {
+                      <p class="text-xs text-gray-400">{{ optionLabels(item) }}</p>
+                    }
+                    @if (item.notes) {
+                      <p class="text-xs text-amber-600 italic">“{{ item.notes }}”</p>
+                    }
                   </div>
-                  <p class="text-sm font-semibold text-gray-700">$ {{ +item.subtotal | number: '1.2-2' }}</p>
                 </div>
               } @empty {
                 <p class="text-sm text-gray-400">Sin ítems</p>
               }
-            </div>
-
-            <!-- Total -->
-            <div class="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
-              <p class="text-sm font-semibold text-gray-600">Total</p>
-              <p class="text-xl font-bold text-gray-900">$ {{ +order()!.total | number: '1.2-2' }}</p>
             </div>
           </div>
         </div>
@@ -101,11 +101,15 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
   `,
 })
 export class OrderDetailComponent implements OnInit {
-  private readonly ordersApi = inject(OrdersApiService);
+  private readonly api = inject(DiningSessionService);
   private readonly route = inject(ActivatedRoute);
+  private readonly tableService = inject(TableService);
+  private readonly menuService = inject(MenuService);
 
-  readonly order = signal<OrderResponse | null>(null);
+  readonly order = signal<DiningOrder | null>(null);
   readonly isLoading = signal(true);
+
+  private readonly lookup = computed(() => buildMenuLookup(this.menuService.categories()));
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -113,13 +117,31 @@ export class OrderDetailComponent implements OnInit {
       this.isLoading.set(false);
       return;
     }
+    // Menu + tables give names/labels for the comanda's variant/option/table ids.
+    this.menuService.loadMenu();
+    this.tableService.loadTables();
     try {
-      this.order.set(await this.ordersApi.getOrder(id));
+      this.order.set(await this.api.getOrder(id));
     } catch {
       this.order.set(null);
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  tableLabel(): string {
+    const o = this.order();
+    if (!o?.dining_table_id) return 'Mostrador';
+    const t = this.tableService.tables().find((x) => x.id === o.dining_table_id);
+    return t ? (t.name ? `Mesa ${t.number} · ${t.name}` : `Mesa ${t.number}`) : 'Mesa';
+  }
+
+  variantLabel(variantId: string): string {
+    return this.lookup().variantLabel(variantId);
+  }
+
+  optionLabels(item: DiningOrderItem): string {
+    return (item.options ?? []).map((o) => this.lookup().optionLabel(o.option_id)).filter(Boolean).join(', ');
   }
 
   statusLabel = orderStatusLabel;
