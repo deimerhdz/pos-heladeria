@@ -177,7 +177,7 @@ export class AdminDashboardComponent implements OnInit {
     { label: 'Ventas', icon: '🧾', route: '/dashboard/ventas', description: 'Historial de cobros' },
     { label: 'Gestión de Caja', icon: '💰', route: '/dashboard/caja', description: 'Turnos y arqueo' },
     { label: 'Productos', icon: '🍦', route: '/dashboard/products', description: 'Catálogo y precios' },
-    { label: 'Mesas', icon: '🪑', route: '/dashboard/tables', description: 'Estado y QR' },
+    { label: 'Mesas', icon: '🪑', route: '/dashboard/ajustes/mesas', description: 'Estado y QR' },
   ];
 
   ngOnInit(): void {

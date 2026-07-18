@@ -26,13 +26,50 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
       {
-        path: 'metodos-pago',
+        path: 'ajustes',
         loadComponent: () =>
-          import('../sales/pages/payment-methods-page.component').then(
-            (m) => m.PaymentMethodsPageComponent,
-          ),
+          import('../settings/pages/settings-page.component').then((m) => m.SettingsPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'informacion' },
+          {
+            path: 'informacion',
+            loadComponent: () =>
+              import('../settings/pages/tenant-info.component').then((m) => m.TenantInfoComponent),
+          },
+          {
+            path: 'metodos-pago',
+            loadComponent: () =>
+              import('../sales/pages/payment-methods-page.component').then(
+                (m) => m.PaymentMethodsPageComponent,
+              ),
+          },
+          {
+            path: 'mesas',
+            loadComponent: () =>
+              import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
+          },
+          {
+            path: 'unidades',
+            loadComponent: () =>
+              import('../unit-measures/pages/unit-measures-page.component').then(
+                (m) => m.UnitMeasuresPageComponent,
+              ),
+          },
+          {
+            path: 'grupos-opciones',
+            loadComponent: () =>
+              import('../option-groups/pages/option-groups-page.component').then(
+                (m) => m.OptionGroupsPageComponent,
+              ),
+          },
+        ],
       },
+      // Rutas migradas a Ajustes — se conservan como redirect (deep links/marcadores).
+      { path: 'metodos-pago', pathMatch: 'full', redirectTo: 'ajustes/metodos-pago' },
+      { path: 'unit-measures', pathMatch: 'full', redirectTo: 'ajustes/unidades' },
+      { path: 'option-groups', pathMatch: 'full', redirectTo: 'ajustes/grupos-opciones' },
+      { path: 'tables', pathMatch: 'full', redirectTo: 'ajustes/mesas' },
       {
         path: 'ventas',
         loadComponent: () =>
@@ -68,31 +105,9 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
-        path: 'option-groups',
-        loadComponent: () =>
-          import('../option-groups/pages/option-groups-page.component').then(
-            (m) => m.OptionGroupsPageComponent,
-          ),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
-      {
         path: 'menu',
         loadComponent: () =>
           import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
-      {
-        path: 'unit-measures',
-        loadComponent: () =>
-          import('../unit-measures/pages/unit-measures-page.component').then(
-            (m) => m.UnitMeasuresPageComponent,
-          ),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
-      {
-        path: 'tables',
-        loadComponent: () =>
-          import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
