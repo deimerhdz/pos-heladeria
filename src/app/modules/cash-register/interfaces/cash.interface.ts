@@ -1,19 +1,14 @@
-// Types for the real cash module (`/api/v1/cash/*`). Decimal amounts arrive as
-// strings; payloads send numbers.
+// DTOs del módulo de caja real (`/api/v1/cash/*`). Los montos decimales llegan
+// como **strings** (Numeric(12,2) del backend); se coercionan con Number() en la UI.
 
-/** `RegisterResponse` — a physical cash drawer. */
+/** `RegisterResponse` — una caja física/lógica. */
 export interface CashRegister {
   id: string;
   name: string;
   active: boolean;
 }
 
-/** Body for `POST /cash/registers` (`RegisterCreate`). */
-export interface RegisterCreatePayload {
-  name: string;
-}
-
-/** `ShiftResponse` — a cashier work shift on a register. */
+/** `ShiftResponse` — un turno de caja. */
 export interface CashShift {
   id: string;
   cash_register_id: string;
@@ -23,37 +18,53 @@ export interface CashShift {
   opened_at: string;
   closed_at?: string | null;
   counted_amount?: string | null;
-  status: string;
+  status: 'open' | 'closed';
+  close_note?: string | null;
 }
 
-/** Body for `POST /cash/shifts/open` (`ShiftOpen`). */
-export interface ShiftOpenPayload {
-  cash_register_id: string;
-  opening_amount?: number;
-}
+/** Tipo de movimiento manual de efectivo. */
+export type MovementKind = 'ingreso' | 'egreso' | 'retiro';
 
-/** Body for `POST /cash/shifts/{id}/close` (`ShiftClose`) — cierre con arqueo. */
-export interface ShiftClosePayload {
-  counted_amount?: number;
-}
-
-export type CashMovementType = 'in' | 'out';
-
-/** Body for `POST /cash/shifts/{id}/movements` (`CashMovementIn`). */
+/** Body para `POST /cash/shifts/{id}/movements`. */
 export interface CashMovementPayload {
-  type: CashMovementType;
+  kind: MovementKind;
   amount: number;
-  description: string;
+  category: string;
+  description?: string | null;
 }
 
 /** `CashMovementResponse`. */
 export interface CashMovement {
   id: string;
   cash_shift_id: string;
-  type: string;
+  kind: MovementKind;
   amount: string;
-  description: string;
+  category?: string | null;
+  description?: string | null;
+  user_name?: string | null;
   occurred_at: string;
+}
+
+/** Una denominación contada en el arqueo. */
+export interface DenominationIn {
+  denomination: number;
+  quantity: number;
+}
+
+/** Body para `POST /cash/shifts/{id}/close`. */
+export interface ShiftClosePayload {
+  counted_amount?: number | null;
+  denominations: DenominationIn[];
+  close_note?: string | null;
+}
+
+/** Ventas del turno agrupadas por clasificación del método de pago. */
+export interface SalesByMethod {
+  method_id: string;
+  method_name: string;
+  method_type: 'cash' | 'card' | 'transfer' | 'other';
+  total: string;
+  count: number;
 }
 
 /** `ReconciliationResponse` — arqueo del turno. */
@@ -61,10 +72,25 @@ export interface Reconciliation {
   cash_shift_id: string;
   status: string;
   opening_amount: string;
-  cash_sales: string;
-  cash_in: string;
-  cash_out: string;
+  ventas_efectivo: string;
+  ventas_tarjeta: string;
+  ventas_transferencia: string;
+  sales_by_method: SalesByMethod[];
+  ingresos: string;
+  egresos: string;
+  retiros: string;
   expected: string;
   counted_amount?: string | null;
   difference?: string | null;
+  /** DEPRECADO: alias de `ventas_efectivo`. */
+  cash_sales?: string;
+}
+
+/** `ShiftReportResponse` — reporte de cierre consolidado. */
+export interface ShiftReport {
+  shift: CashShift;
+  reconciliation: Reconciliation;
+  movements: CashMovement[];
+  denominations: DenominationIn[];
+  close_note?: string | null;
 }

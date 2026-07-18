@@ -4,174 +4,117 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   CashMovement,
-  CashMovementType,
+  CashMovementPayload,
   CashRegister,
   CashShift,
   Reconciliation,
+  ShiftClosePayload,
+  ShiftReport,
 } from '../interfaces/cash.interface';
 
-const SHIFT_STORAGE_KEY = 'cash.shift';
+const REGISTER_STORAGE_KEY = 'cash.register';
 
 /**
- * Real cash module transport (`/api/v1/cash/*`). The API has no "current shift"
- * or "list shifts/movements" endpoints, so the open shift is persisted in
- * localStorage (to survive reloads) and movements are kept in a session-local
- * list; `reconciliation` holds the authoritative running totals.
+ * Transporte del módulo de caja real (`/api/v1/cash/*`). El header de tenant y el
+ * Bearer los añade `authTokenInterceptor` a toda petición.
+ *
+ * Además mantiene el **turno abierto actual** como estado compartido (singleton
+ * root): lo consume tanto `CashSessionStore` (pantalla de caja) como el checkout
+ * de ventas, que necesita el `cash_shift_id` para cobrar.
  */
 @Injectable({ providedIn: 'root' })
 export class CashService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/cash`;
 
+  /** Estado compartido del turno abierto (fuente única de verdad entre módulos). */
   readonly registers = signal<CashRegister[]>([]);
   readonly shift = signal<CashShift | null>(null);
-  readonly reconciliation = signal<Reconciliation | null>(null);
-  readonly movements = signal<CashMovement[]>([]);
 
-  readonly loading = signal(false);
-  readonly isSubmitting = signal(false);
-  readonly error = signal<string | null>(null);
-
-  /** True while a shift is open (not yet closed). */
+  /** True mientras hay un turno abierto (no cerrado). */
   readonly isOpen = computed(() => {
     const s = this.shift();
-    return !!s && !s.closed_at && s.status !== 'closed';
+    return !!s && s.status !== 'closed' && !s.closed_at;
   });
 
-  async loadRegisters(): Promise<void> {
-    try {
-      this.registers.set(
-        await firstValueFrom(this.http.get<CashRegister[]>(`${this.baseUrl}/registers`)),
-      );
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudieron cargar las cajas.'));
-    }
+  /** Carga las cajas y actualiza la señal compartida. */
+  async loadRegisters(): Promise<CashRegister[]> {
+    const regs = await this.listRegisters();
+    this.registers.set(regs);
+    return regs;
   }
 
-  async createRegister(name: string): Promise<void> {
-    this.isSubmitting.set(true);
-    this.error.set(null);
-    try {
-      await firstValueFrom(
-        this.http.post<CashRegister>(`${this.baseUrl}/registers`, { name }),
-      );
-      await this.loadRegisters();
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudo crear la caja.'));
-    } finally {
-      this.isSubmitting.set(false);
-    }
-  }
-
-  /** Restore a previously opened shift (survives reloads). */
+  /**
+   * Restaura el turno abierto de la última caja usada (persistida en localStorage)
+   * hacia la señal `shift`. Silencioso si no hay caja recordada o no hay turno
+   * abierto (404). Lo usa el checkout de ventas al cargar sin pasar por /caja.
+   */
   async restoreShift(): Promise<void> {
-    const raw = localStorage.getItem(SHIFT_STORAGE_KEY);
-    if (!raw) return;
-    let stored: CashShift;
+    const regId = localStorage.getItem(REGISTER_STORAGE_KEY);
+    if (!regId) return;
     try {
-      stored = JSON.parse(raw) as CashShift;
+      this.shift.set(await this.getCurrentShift(regId));
     } catch {
-      localStorage.removeItem(SHIFT_STORAGE_KEY);
-      return;
-    }
-    this.shift.set(stored);
-    await this.loadReconciliation();
-  }
-
-  async openShift(cashRegisterId: string, openingAmount: number): Promise<boolean> {
-    this.isSubmitting.set(true);
-    this.error.set(null);
-    try {
-      const shift = await firstValueFrom(
-        this.http.post<CashShift>(`${this.baseUrl}/shifts/open`, {
-          cash_register_id: cashRegisterId,
-          opening_amount: openingAmount,
-        }),
-      );
-      this.shift.set(shift);
-      this.movements.set([]);
-      localStorage.setItem(SHIFT_STORAGE_KEY, JSON.stringify(shift));
-      await this.loadReconciliation();
-      return true;
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudo abrir el turno.'));
-      return false;
-    } finally {
-      this.isSubmitting.set(false);
+      this.shift.set(null);
     }
   }
 
-  async addMovement(type: CashMovementType, amount: number, description: string): Promise<boolean> {
-    const shift = this.shift();
-    if (!shift) return false;
-    this.isSubmitting.set(true);
-    this.error.set(null);
-    try {
-      const movement = await firstValueFrom(
-        this.http.post<CashMovement>(`${this.baseUrl}/shifts/${shift.id}/movements`, {
-          type,
-          amount,
-          description,
-        }),
-      );
-      this.movements.update((list) => [movement, ...list]);
-      await this.loadReconciliation();
-      return true;
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudo registrar el movimiento.'));
-      return false;
-    } finally {
-      this.isSubmitting.set(false);
-    }
+  listRegisters(): Promise<CashRegister[]> {
+    return firstValueFrom(this.http.get<CashRegister[]>(`${this.baseUrl}/registers`));
   }
 
-  async loadReconciliation(): Promise<void> {
-    const shift = this.shift();
-    if (!shift) return;
-    try {
-      this.reconciliation.set(
-        await firstValueFrom(
-          this.http.get<Reconciliation>(`${this.baseUrl}/shifts/${shift.id}/reconciliation`),
-        ),
-      );
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudo cargar el arqueo.'));
-    }
+  createRegister(name: string): Promise<CashRegister> {
+    return firstValueFrom(this.http.post<CashRegister>(`${this.baseUrl}/registers`, { name }));
   }
 
-  async closeShift(countedAmount: number): Promise<boolean> {
-    const shift = this.shift();
-    if (!shift) return false;
-    this.isSubmitting.set(true);
-    this.error.set(null);
-    try {
-      const closed = await firstValueFrom(
-        this.http.post<CashShift>(`${this.baseUrl}/shifts/${shift.id}/close`, {
-          counted_amount: countedAmount,
-        }),
-      );
-      this.shift.set(closed);
-      localStorage.removeItem(SHIFT_STORAGE_KEY);
-      await this.loadReconciliation();
-      return true;
-    } catch (err) {
-      this.error.set(this.extractError(err, 'No se pudo cerrar el turno.'));
-      return false;
-    } finally {
-      this.isSubmitting.set(false);
-    }
+  openShift(cashRegisterId: string, openingAmount: number): Promise<CashShift> {
+    return firstValueFrom(
+      this.http.post<CashShift>(`${this.baseUrl}/shifts/open`, {
+        cash_register_id: cashRegisterId,
+        opening_amount: openingAmount,
+      }),
+    );
   }
 
-  /** Discard the (closed) shift from view to start a new one. */
-  reset(): void {
-    this.shift.set(null);
-    this.reconciliation.set(null);
-    this.movements.set([]);
-    this.error.set(null);
-    localStorage.removeItem(SHIFT_STORAGE_KEY);
+  /** Turno abierto de una caja; lanza 404 si no hay ninguno. */
+  getCurrentShift(cashRegisterId: string): Promise<CashShift> {
+    return firstValueFrom(
+      this.http.get<CashShift>(`${this.baseUrl}/shifts/current`, {
+        params: { cash_register_id: cashRegisterId },
+      }),
+    );
   }
 
-  private extractError(err: unknown, fallback: string): string {
+  addMovement(shiftId: string, payload: CashMovementPayload): Promise<CashMovement> {
+    return firstValueFrom(
+      this.http.post<CashMovement>(`${this.baseUrl}/shifts/${shiftId}/movements`, payload),
+    );
+  }
+
+  listMovements(shiftId: string): Promise<CashMovement[]> {
+    return firstValueFrom(
+      this.http.get<CashMovement[]>(`${this.baseUrl}/shifts/${shiftId}/movements`),
+    );
+  }
+
+  getReconciliation(shiftId: string): Promise<Reconciliation> {
+    return firstValueFrom(
+      this.http.get<Reconciliation>(`${this.baseUrl}/shifts/${shiftId}/reconciliation`),
+    );
+  }
+
+  closeShift(shiftId: string, payload: ShiftClosePayload): Promise<CashShift> {
+    return firstValueFrom(
+      this.http.post<CashShift>(`${this.baseUrl}/shifts/${shiftId}/close`, payload),
+    );
+  }
+
+  getReport(shiftId: string): Promise<ShiftReport> {
+    return firstValueFrom(this.http.get<ShiftReport>(`${this.baseUrl}/shifts/${shiftId}/report`));
+  }
+
+  /** Extrae un mensaje legible del error HTTP del backend (FastAPI `detail`). */
+  extractError(err: unknown, fallback: string): string {
     if (err instanceof HttpErrorResponse) {
       const body = err.error as { detail?: unknown; message?: string } | null;
       const detail = body?.detail;
