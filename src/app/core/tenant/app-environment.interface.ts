@@ -4,12 +4,10 @@
  */
 export interface AppEnvironment {
   readonly production: boolean;
-  readonly supabaseUrl: string;
-  readonly supabaseAnonKey: string;
 
   /**
    * Logical root domain for tenant resolution.
-   * - Production: `pos-sistem.com`
+   * - Production: `skeilopos.com`
    * - Development: `localhost`
    * A hostname equal to this (or in `devRootHosts`) resolves to Super Admin;
    * a `<slug>.<rootDomain>` hostname resolves to a tenant.
