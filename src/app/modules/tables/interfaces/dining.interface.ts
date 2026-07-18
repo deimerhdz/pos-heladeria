@@ -25,7 +25,11 @@ export interface DiningSession {
 
 export type OrderChannel = 'qr' | 'counter' | 'waiter';
 
-export type DiningOrderStatus = 'pending' | 'preparing' | 'served' | 'cancelled';
+/** Order (comanda/cuenta) lifecycle — a billing status, NOT kitchen prep. */
+export type DiningOrderStatus = 'abierta' | 'bloqueada' | 'pagada' | 'cancelada';
+
+/** Per-item kitchen status (`KitchenStatus`). The kitchen board works on this. */
+export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'anulado';
 
 /** One line of a `POST /orders` request (`OrderItemIn`). */
 export interface OrderItemPayload {
@@ -55,10 +59,19 @@ export interface DiningOrderItemOption {
 export interface DiningOrderItem {
   id: string;
   product_variant_id: string;
+  session_id?: string | null;
   quantity: number;
   unit_price: string;
+  /** Kitchen status of this item. */
+  estado_cocina: KitchenStatus;
+  void_de?: string | null;
   notes?: string | null;
   options?: DiningOrderItemOption[];
+}
+
+/** Body for `PATCH /orders/items/{id}/kitchen` (`KitchenTransitionIn`). */
+export interface KitchenTransitionPayload {
+  estado_cocina: KitchenStatus;
 }
 
 /** Response of `POST /orders` and `GET /orders` (`OrderResponse`). */
@@ -66,6 +79,7 @@ export interface DiningOrder {
   id: string;
   channel: string;
   status: DiningOrderStatus;
+  version?: number;
   dining_session_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;

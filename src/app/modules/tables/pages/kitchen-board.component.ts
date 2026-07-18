@@ -10,12 +10,21 @@ import { DiningSessionService } from '../services/dining-session.service';
 import { TableService } from '../services/table.service';
 import { MenuService } from '../../menu/services/menu.service';
 import { buildMenuLookup } from '../services/menu-lookup';
-import { DiningOrder, DiningOrderItem, DiningOrderStatus } from '../interfaces/dining.interface';
+import { DiningOrder, DiningOrderItem, KitchenStatus } from '../interfaces/dining.interface';
 
 interface Column {
-  status: DiningOrderStatus;
+  status: KitchenStatus;
   title: string;
   accent: string;
+}
+
+/** A kitchen ticket = one order item with its parent order's context. */
+interface Ticket {
+  itemId: string;
+  item: DiningOrderItem;
+  tableLabel: string;
+  customerName: string;
+  createdAt: string;
 }
 
 const REFRESH_MS = 10_000;
@@ -29,7 +38,7 @@ const REFRESH_MS = 10_000;
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Cocina</h1>
-          <p class="text-gray-500 text-sm mt-1">Comandas en tiempo real · se actualiza solo</p>
+          <p class="text-gray-500 text-sm mt-1">Ítems en preparación · se actualiza solo</p>
         </div>
         <button
           (click)="reload(true)"
@@ -44,7 +53,7 @@ const REFRESH_MS = 10_000;
         <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{{ error() }}</div>
       }
 
-      @if (loading() && orders().length === 0) {
+      @if (loading() && tickets().length === 0) {
         <div class="flex justify-center py-16">
           <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
         </div>
@@ -55,54 +64,45 @@ const REFRESH_MS = 10_000;
               <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <span class="font-semibold text-gray-800">{{ col.title }}</span>
                 <span class="text-xs font-bold px-2 py-0.5 rounded-full" [class]="col.accent">
-                  {{ ordersByStatus(col.status).length }}
+                  {{ ticketsFor(col.status).length }}
                 </span>
               </div>
 
               <div class="p-3 space-y-3 overflow-y-auto">
-                @for (order of ordersByStatus(col.status); track order.id) {
+                @for (t of ticketsFor(col.status); track t.itemId) {
                   <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
-                    <div class="flex items-center justify-between gap-2 mb-2">
-                      <div class="min-w-0">
-                        <p class="text-sm font-semibold text-gray-900 truncate">{{ tableLabel(order) }}</p>
-                        <p class="text-xs text-gray-400 truncate">
-                          {{ order.customer_name || 'Cliente' }} · {{ elapsed(order.created_at) }}
-                        </p>
-                      </div>
+                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                      <p class="text-sm font-semibold text-gray-900 truncate">{{ t.tableLabel }}</p>
+                      <span class="text-xs text-gray-400 shrink-0">{{ elapsed(t.createdAt) }}</span>
                     </div>
 
-                    <ul class="space-y-1.5 mb-3">
-                      @for (item of order.items ?? []; track item.id) {
-                        <li class="text-sm text-gray-700">
-                          <span class="font-medium">{{ item.quantity }}×</span>
-                          {{ variantLabel(item.product_variant_id) }}
-                          @if (item.options && item.options.length > 0) {
-                            <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
-                          }
-                          @if (item.notes) {
-                            <span class="block text-xs text-amber-600 italic pl-5">“{{ item.notes }}”</span>
-                          }
-                        </li>
-                      } @empty {
-                        <li class="text-xs text-gray-400">Sin ítems</li>
-                      }
-                    </ul>
+                    <p class="text-sm text-gray-800">
+                      <span class="font-medium">{{ t.item.quantity }}×</span>
+                      {{ variantLabel(t.item.product_variant_id) }}
+                    </p>
+                    @if (optionLabels(t.item)) {
+                      <p class="text-xs text-gray-400 pl-5">{{ optionLabels(t.item) }}</p>
+                    }
+                    @if (t.item.notes) {
+                      <p class="text-xs text-amber-600 italic pl-5">“{{ t.item.notes }}”</p>
+                    }
+                    <p class="text-xs text-gray-400 mt-0.5">{{ t.customerName }}</p>
 
-                    <div class="flex items-center gap-2">
-                      @if (nextStatus(order.status); as next) {
+                    <div class="flex items-center gap-2 mt-2.5">
+                      @if (nextFor(col.status); as next) {
                         <button
-                          (click)="advance(order, next)"
-                          [disabled]="submitting()"
+                          (click)="advance(t.itemId, next.status)"
+                          [disabled]="isBusy(t.itemId)"
                           class="flex-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
                         >
-                          {{ actionLabel(order.status) }}
+                          {{ next.label }}
                         </button>
                       }
-                      @if (order.status !== 'cancelled' && order.status !== 'served') {
+                      @if (col.status !== 'listo') {
                         <button
-                          (click)="advance(order, 'cancelled')"
-                          [disabled]="submitting()"
-                          title="Cancelar"
+                          (click)="advance(t.itemId, 'anulado')"
+                          [disabled]="isBusy(t.itemId)"
+                          title="Anular ítem"
                           class="px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 text-xs transition-colors disabled:opacity-50"
                         >
                           ✕
@@ -111,7 +111,7 @@ const REFRESH_MS = 10_000;
                     </div>
                   </div>
                 } @empty {
-                  <p class="text-center text-xs text-gray-300 py-8">Sin comandas</p>
+                  <p class="text-center text-xs text-gray-300 py-8">Sin ítems</p>
                 }
               </div>
             </div>
@@ -128,15 +128,15 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
 
   readonly orders = signal<DiningOrder[]>([]);
   readonly loading = signal(false);
-  readonly submitting = signal(false);
+  readonly busy = signal<Set<string>>(new Set());
   readonly error = signal<string | null>(null);
 
   private timer?: ReturnType<typeof setInterval>;
 
   readonly columns: Column[] = [
-    { status: 'pending', title: 'Pendiente', accent: 'bg-amber-100 text-amber-700' },
-    { status: 'preparing', title: 'En preparación', accent: 'bg-blue-100 text-blue-700' },
-    { status: 'served', title: 'Servida', accent: 'bg-green-100 text-green-700' },
+    { status: 'pendiente', title: 'Pendiente', accent: 'bg-amber-100 text-amber-700' },
+    { status: 'en_preparacion', title: 'En preparación', accent: 'bg-blue-100 text-blue-700' },
+    { status: 'listo', title: 'Listo', accent: 'bg-green-100 text-green-700' },
   ];
 
   private readonly lookup = computed(() => buildMenuLookup(this.menuService.categories()));
@@ -149,10 +149,30 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     return map;
   });
 
+  /** All active kitchen tickets (items), flattened from every open order. */
+  readonly tickets = computed<Ticket[]>(() => {
+    const labels = this.tableLabels();
+    const out: Ticket[] = [];
+    for (const order of this.orders()) {
+      const tableLabel = (order.dining_table_id && labels.get(order.dining_table_id)) || 'Mostrador';
+      for (const item of order.items ?? []) {
+        out.push({
+          itemId: item.id,
+          item,
+          tableLabel,
+          customerName: order.customer_name ?? 'Cliente',
+          createdAt: order.created_at,
+        });
+      }
+    }
+    return out;
+  });
+
   async ngOnInit(): Promise<void> {
-    // Menu + tables are loaded once for label resolution; orders poll on an interval.
-    await Promise.all([this.menuService.loadMenu(), this.tableService.loadTables()]);
+    // Orders first so the board never depends on menu/tables; those load labels.
     await this.reload(true);
+    this.menuService.loadMenu();
+    this.tableService.loadTables();
     this.timer = setInterval(() => this.reload(false), REFRESH_MS);
   }
 
@@ -172,29 +192,46 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     }
   }
 
-  ordersByStatus(status: DiningOrderStatus): DiningOrder[] {
-    const list = this.orders().filter((o) => o.status === status);
-    // Oldest first for active work; newest first for the served column.
-    return status === 'served'
-      ? list.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15)
-      : list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  ticketsFor(status: KitchenStatus): Ticket[] {
+    const list = this.tickets().filter((t) => t.item.estado_cocina === status);
+    // Oldest first for active work; newest first (capped) for the "listo" column.
+    return status === 'listo'
+      ? list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
+      : list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async advance(order: DiningOrder, next: DiningOrderStatus): Promise<void> {
-    this.submitting.set(true);
+  nextFor(status: KitchenStatus): { status: KitchenStatus; label: string } | null {
+    if (status === 'pendiente') return { status: 'en_preparacion', label: 'Preparar →' };
+    if (status === 'en_preparacion') return { status: 'listo', label: 'Marcar listo →' };
+    if (status === 'listo') return { status: 'entregado', label: 'Entregar ✓' };
+    return null;
+  }
+
+  isBusy(itemId: string): boolean {
+    return this.busy().has(itemId);
+  }
+
+  async advance(itemId: string, next: KitchenStatus): Promise<void> {
+    this.busy.update((s) => new Set(s).add(itemId));
     this.error.set(null);
     try {
-      await this.api.updateOrderStatus(order.id, next);
-      this.orders.update((list) => list.map((o) => (o.id === order.id ? { ...o, status: next } : o)));
+      await this.api.updateItemKitchen(itemId, next);
+      // Optimistically update the nested item's kitchen status.
+      this.orders.update((orders) =>
+        orders.map((o) => ({
+          ...o,
+          items: o.items?.map((it) => (it.id === itemId ? { ...it, estado_cocina: next } : it)),
+        })),
+      );
     } catch (err) {
-      this.error.set(this.api.extractError(err, 'No se pudo actualizar la comanda.'));
+      this.error.set(this.api.extractError(err, 'No se pudo actualizar el ítem.'));
     } finally {
-      this.submitting.set(false);
+      this.busy.update((s) => {
+        const n = new Set(s);
+        n.delete(itemId);
+        return n;
+      });
     }
-  }
-
-  tableLabel(order: DiningOrder): string {
-    return (order.dining_table_id && this.tableLabels().get(order.dining_table_id)) || 'Mostrador';
   }
 
   variantLabel(variantId: string): string {
@@ -203,18 +240,6 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
 
   optionLabels(item: DiningOrderItem): string {
     return (item.options ?? []).map((o) => this.lookup().optionLabel(o.option_id)).filter(Boolean).join(', ');
-  }
-
-  nextStatus(status: DiningOrderStatus): DiningOrderStatus | null {
-    if (status === 'pending') return 'preparing';
-    if (status === 'preparing') return 'served';
-    return null;
-  }
-
-  actionLabel(status: DiningOrderStatus): string {
-    if (status === 'pending') return 'Preparar →';
-    if (status === 'preparing') return 'Marcar servida →';
-    return '';
   }
 
   elapsed(createdAt: string): string {

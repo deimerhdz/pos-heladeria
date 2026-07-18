@@ -1,8 +1,9 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DiningSessionService } from '../services/dining-session.service';
 import { TableService } from '../services/table.service';
-import { DiningOrder, DiningOrderStatus } from '../interfaces/dining.interface';
+import { DiningOrder } from '../interfaces/dining.interface';
 import { CheckoutComponent } from '../../sales/components/checkout.component';
+import { orderStatusClass, orderStatusLabel } from '../../orders/order-status.util';
 
 interface SessionGroup {
   sessionId: string;
@@ -11,18 +12,6 @@ interface SessionGroup {
   diningTableId: string | null;
   orders: DiningOrder[];
 }
-
-const STATUS_META: Record<DiningOrderStatus, { label: string; classes: string }> = {
-  pending: { label: 'En espera', classes: 'bg-amber-100 text-amber-700' },
-  preparing: { label: 'En preparación', classes: 'bg-blue-100 text-blue-700' },
-  served: { label: 'Servida', classes: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Cancelada', classes: 'bg-gray-100 text-gray-500' },
-};
-
-const NEXT_STATUS: Partial<Record<DiningOrderStatus, DiningOrderStatus>> = {
-  pending: 'preparing',
-  preparing: 'served',
-};
 
 @Component({
   selector: 'app-table-sessions',
@@ -99,17 +88,9 @@ const NEXT_STATUS: Partial<Record<DiningOrderStatus, DiningOrderStatus>> = {
                       <span class="text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusClass(order.status)">
                         {{ statusLabel(order.status) }}
                       </span>
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400">{{ itemCount(order) }} ítem(s)</span>
-                        @if (nextStatus(order.status); as next) {
-                          <button
-                            (click)="advance(order, next)"
-                            [disabled]="submitting()"
-                            class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                          >
-                            {{ statusLabel(next) }} →
-                          </button>
-                        }
+                      <div class="flex items-center gap-2 text-xs text-gray-400">
+                        <span>{{ itemCount(order) }} ítem(s)</span>
+                        <span class="text-green-600">{{ readyCount(order) }} listos 🍳</span>
                       </div>
                     </div>
                     @if (order.notes) {
@@ -161,7 +142,7 @@ export class TableSessionsComponent implements OnInit {
     const labels = this.tableLabels();
     const bySession = new Map<string, SessionGroup>();
     for (const order of this.orders()) {
-      if (order.status === 'served' || order.status === 'cancelled') continue;
+      if (order.status === 'pagada' || order.status === 'cancelada') continue;
       const sessionId = order.dining_session_id;
       if (!sessionId) continue;
       let group = bySession.get(sessionId);
@@ -208,19 +189,6 @@ export class TableSessionsComponent implements OnInit {
     }
   }
 
-  async advance(order: DiningOrder, next: DiningOrderStatus): Promise<void> {
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      await this.api.updateOrderStatus(order.id, next);
-      this.orders.set(await this.api.listOrders());
-    } catch (err) {
-      this.error.set(this.api.extractError(err, 'No se pudo actualizar la comanda.'));
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
   async closeSession(sessionId: string): Promise<void> {
     this.submitting.set(true);
     this.error.set(null);
@@ -238,15 +206,13 @@ export class TableSessionsComponent implements OnInit {
     return (order.items ?? []).reduce((n, i) => n + i.quantity, 0);
   }
 
-  nextStatus(status: DiningOrderStatus): DiningOrderStatus | null {
-    return NEXT_STATUS[status] ?? null;
+  /** Items already prepared (listo/entregado) for this order. */
+  readyCount(order: DiningOrder): number {
+    return (order.items ?? []).filter(
+      (i) => i.estado_cocina === 'listo' || i.estado_cocina === 'entregado',
+    ).length;
   }
 
-  statusLabel(status: DiningOrderStatus): string {
-    return STATUS_META[status]?.label ?? status;
-  }
-
-  statusClass(status: DiningOrderStatus): string {
-    return STATUS_META[status]?.classes ?? 'bg-gray-100 text-gray-500';
-  }
+  statusLabel = orderStatusLabel;
+  statusClass = orderStatusClass;
 }

@@ -119,10 +119,10 @@ export class OrdersPageComponent implements OnInit {
 
   readonly filters: FilterButton[] = [
     { value: 'all', label: 'Todas' },
-    { value: 'pending', label: 'En espera' },
-    { value: 'preparing', label: 'En preparación' },
-    { value: 'served', label: 'Servidas' },
-    { value: 'cancelled', label: 'Canceladas' },
+    { value: 'abierta', label: 'Abiertas' },
+    { value: 'bloqueada', label: 'Bloqueadas' },
+    { value: 'pagada', label: 'Pagadas' },
+    { value: 'cancelada', label: 'Canceladas' },
   ];
 
   readonly visibleOrders = computed(() => {

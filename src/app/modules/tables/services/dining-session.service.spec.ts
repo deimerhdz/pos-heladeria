@@ -98,11 +98,20 @@ describe('DiningSessionService', () => {
   });
 
   it('lists orders and filters by status', async () => {
-    const promise = service.listOrders('pending');
+    const promise = service.listOrders('abierta');
     const req = http.expectOne((r) => r.url === `${api}/orders`);
-    expect(req.request.params.get('status')).toBe('pending');
+    expect(req.request.params.get('status')).toBe('abierta');
     req.flush([]);
     await promise;
+  });
+
+  it('advances an item kitchen status', async () => {
+    const promise = service.updateItemKitchen('item1', 'en_preparacion');
+    const req = http.expectOne(`${api}/orders/items/item1/kitchen`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ estado_cocina: 'en_preparacion' });
+    req.flush({ id: 'item1', product_variant_id: 'v1', quantity: 1, unit_price: '3.00', estado_cocina: 'en_preparacion' });
+    expect((await promise).estado_cocina).toBe('en_preparacion');
   });
 
   it('persists and restores a session by token', () => {

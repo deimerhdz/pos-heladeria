@@ -5,8 +5,10 @@ import { environment } from '../../../../environments/environment';
 import { MenuCategory } from '../../products/interfaces/product.interface';
 import {
   DiningOrder,
+  DiningOrderItem,
   DiningOrderStatus,
   DiningSession,
+  KitchenStatus,
   OrderCreatePayload,
   SessionOpenPayload,
 } from '../interfaces/dining.interface';
@@ -138,10 +140,19 @@ export class DiningSessionService {
     return firstValueFrom(this.http.get<DiningOrder>(`${this.api}/orders/${id}`));
   }
 
-  /** Change the status of a comanda (staff). Throws on error. */
+  /** Change the billing status of a comanda (staff). Throws on error. */
   async updateOrderStatus(orderId: string, status: DiningOrderStatus): Promise<DiningOrder> {
     return firstValueFrom(
       this.http.patch<DiningOrder>(`${this.api}/orders/${orderId}/status`, { status }),
+    );
+  }
+
+  /** Advance an item's kitchen status (pendiente→en_preparacion→listo→entregado). */
+  async updateItemKitchen(itemId: string, estado: KitchenStatus): Promise<DiningOrderItem> {
+    return firstValueFrom(
+      this.http.patch<DiningOrderItem>(`${this.api}/orders/items/${itemId}/kitchen`, {
+        estado_cocina: estado,
+      }),
     );
   }
 

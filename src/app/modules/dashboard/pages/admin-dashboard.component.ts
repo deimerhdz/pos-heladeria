@@ -149,7 +149,7 @@ export class AdminDashboardComponent implements OnInit {
   readonly activeProductsCount = computed(() => this.productService.products().filter((p) => p.active).length);
 
   readonly activeOrdersCount = computed(
-    () => this.orders().filter((o) => o.status === 'pending' || o.status === 'preparing').length,
+    () => this.orders().filter((o) => o.status === 'abierta' || o.status === 'bloqueada').length,
   );
 
   readonly recentOrders = computed(() =>
