@@ -19,6 +19,7 @@ import { UserRole } from '../../../core/interfaces/user.interface';
 import { AdminUser, AdminUserForm } from '../interfaces/admin-user.interface';
 import { SuperAdminUsersService } from '../services/super-admin-users.service';
 import { TenantService } from '../services/tenant.service';
+import { PasswordInputComponent } from '../../../shared/password-input/password-input.component';
 
 /** Tenant roles the super admin can assign (creating super admins is out of scope). */
 const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
@@ -30,7 +31,7 @@ const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
 @Component({
   selector: 'app-admin-user-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, PasswordInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -76,13 +77,12 @@ const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
               <label class="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña <span class="text-red-500">*</span>
               </label>
-              <input
-                type="password"
+              <app-password-input
                 formControlName="password"
                 placeholder="Mínimo 6 caracteres"
-                class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                [class.border-red-400]="passwordControl.invalid && passwordControl.touched"
-                [class.border-gray-200]="!(passwordControl.invalid && passwordControl.touched)"
+                autocomplete="new-password"
+                sizeClass="px-3 py-2 rounded-lg text-sm"
+                [invalid]="passwordControl.invalid && passwordControl.touched"
               />
               @if (passwordControl.touched && passwordControl.errors?.['required']) {
                 <p class="text-red-500 text-xs mt-1">La contraseña es requerida</p>

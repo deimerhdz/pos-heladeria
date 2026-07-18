@@ -10,6 +10,7 @@ import {
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
+import { PasswordInputComponent } from '../../../shared/password-input/password-input.component';
 
 const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: '/dashboard/admin',
@@ -28,7 +29,7 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
 @Component({
   selector: 'app-change-password',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, PasswordInputComponent],
   template: `
     <div
       class="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4"
@@ -62,13 +63,12 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
               <label class="block text-sm font-medium text-gray-700 mb-1.5">
                 Contraseña actual
               </label>
-              <input
-                type="password"
+              <app-password-input
                 formControlName="current_password"
                 placeholder="Contraseña temporal"
-                class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                [class.border-red-400]="invalid('current_password')"
-                [class.border-gray-200]="!invalid('current_password')"
+                autocomplete="current-password"
+                sizeClass="px-3 py-2 rounded-xl text-sm"
+                [invalid]="invalid('current_password')"
               />
               @if (invalid('current_password')) {
                 <p class="text-red-500 text-xs mt-1">La contraseña actual es requerida</p>
@@ -80,13 +80,12 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
               <label class="block text-sm font-medium text-gray-700 mb-1.5">
                 Nueva contraseña
               </label>
-              <input
-                type="password"
+              <app-password-input
                 formControlName="new_password"
                 placeholder="Mínimo 6 caracteres"
-                class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                [class.border-red-400]="invalid('new_password')"
-                [class.border-gray-200]="!invalid('new_password')"
+                autocomplete="new-password"
+                sizeClass="px-3 py-2 rounded-xl text-sm"
+                [invalid]="invalid('new_password')"
               />
               @if (invalid('new_password')) {
                 <p class="text-red-500 text-xs mt-1">Entre 6 y 128 caracteres</p>
@@ -98,13 +97,12 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
               <label class="block text-sm font-medium text-gray-700 mb-1.5">
                 Confirmar nueva contraseña
               </label>
-              <input
-                type="password"
+              <app-password-input
                 formControlName="confirm_password"
                 placeholder="Repite la nueva contraseña"
-                class="w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                [class.border-red-400]="confirmInvalid()"
-                [class.border-gray-200]="!confirmInvalid()"
+                autocomplete="new-password"
+                sizeClass="px-3 py-2 rounded-xl text-sm"
+                [invalid]="confirmInvalid()"
               />
               @if (confirmInvalid()) {
                 <p class="text-red-500 text-xs mt-1">Las contraseñas no coinciden</p>

@@ -2,11 +2,12 @@ import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RoleName, TenantUserForm } from '../interfaces/user-profile.interface';
 import { UsersService } from '../services/users.service';
+import { PasswordInputComponent } from '../../../shared/password-input/password-input.component';
 
 @Component({
   selector: 'app-user-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, PasswordInputComponent],
   template: `
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div class="px-5 py-4 border-b border-gray-100">
@@ -71,12 +72,12 @@ import { UsersService } from '../services/users.service';
         <!-- Contraseña -->
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1.5">Contraseña temporal</label>
-          <input
-            type="password"
+          <app-password-input
             formControlName="password"
             placeholder="Mínimo 6 caracteres"
-            class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
-            [class.border-red-300]="passwordInvalid"
+            autocomplete="new-password"
+            sizeClass="px-3 py-2.5 rounded-xl text-sm"
+            [invalid]="passwordInvalid"
           />
           @if (passwordInvalid) {
             <p class="text-red-500 text-xs mt-1">Mínimo 6 caracteres</p>

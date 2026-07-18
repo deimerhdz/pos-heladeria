@@ -49,14 +49,21 @@ export class AuthService {
   }
 
   /**
-   * Change the current user's password via `POST /auth/change-password`. The
-   * Bearer is added by the interceptor. On success, rotate the token to pick up
-   * fresh claims and clear the `mustChangePassword` flag for the live session.
+   * Change the current user's password via `POST /auth/change-password` (the
+   * Bearer is added by the interceptor).
+   *
+   * The endpoint returns no tokens, and refreshing only re-issues the access
+   * token from the *refresh* token's (stale) claims — so `must_change_password`
+   * would stay `true` and, after a reload, bounce the user back here. To make
+   * the cleared state authoritative and survive reloads, we re-authenticate
+   * with the just-set password: `login` reads the backend (DB) state and stores
+   * fresh access + refresh tokens with the flag cleared.
    */
   async changePassword(
     currentPassword: string,
     newPassword: string,
   ): Promise<{ error: string | null }> {
+    const email = this.currentUser()?.email;
     try {
       await firstValueFrom(
         this.authApi.changePassword({
@@ -64,14 +71,19 @@ export class AuthService {
           new_password: newPassword,
         }),
       );
-      // Best-effort: sync claims from a rotated token; the local clear below
-      // guarantees the session is unblocked regardless of the refreshed claims.
-      await this.tryRefresh();
-      this.currentUser.update(u => (u ? { ...u, mustChangePassword: false } : u));
-      return { error: null };
     } catch (err) {
       return { error: this.extractError(err, 'No se pudo cambiar la contraseña. Intenta de nuevo.') };
     }
+
+    // Re-login with the new password to obtain authoritative tokens.
+    if (email) {
+      const res = await this.login(email, newPassword);
+      if (!res.error) return { error: null };
+    }
+    // Fallback: unblock at least the in-memory session (reload may still bounce
+    // if re-login failed, but a successful change should not stay blocked now).
+    this.currentUser.update(u => (u ? { ...u, mustChangePassword: false } : u));
+    return { error: null };
   }
 
   async logout(): Promise<void> {

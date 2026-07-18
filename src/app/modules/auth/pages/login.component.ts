@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
 import { TenantContextService } from '../../../core/tenant/tenant-context.service';
+import { PasswordInputComponent } from '../../../shared/password-input/password-input.component';
 
 const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: '/dashboard/admin',
@@ -15,7 +16,7 @@ const ROLE_HOME: Record<UserRole, string> = {
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, PasswordInputComponent],
   template: `
     <div
       class="min-h-screen bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 flex items-center justify-center p-4"
@@ -90,14 +91,13 @@ const ROLE_HOME: Record<UserRole, string> = {
               <label for="password" class="block text-sm font-medium text-gray-700 mb-1.5">
                 Contraseña
               </label>
-              <input
+              <app-password-input
                 id="password"
-                type="password"
                 formControlName="password"
                 placeholder="••••••••"
                 autocomplete="current-password"
-                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent text-gray-900 placeholder-gray-400 text-sm transition"
-                [class.border-red-300]="passwordInvalid"
+                sizeClass="px-4 py-3 rounded-xl text-sm"
+                [invalid]="passwordInvalid"
               />
               @if (passwordInvalid) {
                 <p class="text-red-500 text-xs mt-1">La contraseña es requerida</p>
