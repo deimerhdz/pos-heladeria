@@ -7,7 +7,7 @@ export interface AdminUser {
   name: string | null;
   role: UserRole;
   tenant_id: number | null;
-  is_active: boolean;
+  active: boolean;
   created_at: string;
 }
 

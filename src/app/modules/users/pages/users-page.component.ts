@@ -5,6 +5,7 @@ import { UserFormComponent } from '../components/user-form.component';
 import { UserRoleModalComponent } from '../components/user-role-modal.component';
 import { TenantUser } from '../interfaces/user-profile.interface';
 import { UsersService } from '../services/users.service';
+import { JsonPipe } from '@angular/common';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
@@ -21,7 +22,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
 @Component({
   selector: 'app-users-page',
   standalone: true,
-  imports: [FormsModule, UserFormComponent, UserRoleModalComponent],
+  imports: [FormsModule, UserFormComponent, UserRoleModalComponent, JsonPipe],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -122,7 +123,9 @@ const PAGE_SIZES = [10, 20, 50, 100];
                   </span>
                   <span
                     class="text-xs px-2 py-1 rounded-full font-medium"
-                    [class]="user.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'"
+                    [class]="
+                      user.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                    "
                   >
                     {{ user.active ? 'Activo' : 'Inactivo' }}
                   </span>
@@ -189,7 +192,9 @@ const PAGE_SIZES = [10, 20, 50, 100];
                 </button>
                 <button
                   (click)="goToPage(usersService.page() + 1)"
-                  [disabled]="usersService.page() >= usersService.totalPages() || usersService.loading()"
+                  [disabled]="
+                    usersService.page() >= usersService.totalPages() || usersService.loading()
+                  "
                   class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   Siguiente

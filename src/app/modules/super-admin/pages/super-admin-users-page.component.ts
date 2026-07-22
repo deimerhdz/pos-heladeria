@@ -113,7 +113,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
               </thead>
               <tbody class="divide-y divide-gray-50">
                 @for (u of filteredUsers(); track u.id) {
-                  <tr [class.opacity-50]="!u.is_active" class="hover:bg-gray-50 transition-colors">
+                  <tr [class.opacity-50]="!u.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
                         <div
@@ -124,8 +124,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
                         <div class="min-w-0">
                           <p
                             class="text-sm font-medium truncate"
-                            [class.text-gray-400]="!u.is_active"
-                            [class.text-gray-900]="u.is_active"
+                            [class.text-gray-400]="!u.active"
+                            [class.text-gray-900]="u.active"
                           >
                             {{ u.name || '—' }}
                           </p>
@@ -140,7 +140,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
                       <span class="text-sm text-gray-600">{{ tenantName(u.tenant_id) }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (u.is_active) {
+                      @if (u.active) {
                         <span
                           class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
                         >
@@ -165,15 +165,15 @@ const ROLE_LABELS: Record<UserRole, string> = {
                         </button>
                         <button
                           (click)="onToggle(u)"
-                          [title]="u.is_active ? 'Desactivar' : 'Activar'"
+                          [title]="u.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
                           [class]="
-                            u.is_active
+                            u.active
                               ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
                               : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
                           "
                         >
-                          {{ u.is_active ? '🔴' : '🟢' }}
+                          {{ u.active ? '🔴' : '🟢' }}
                         </button>
                       </div>
                     </td>
@@ -215,8 +215,8 @@ export class SuperAdminUsersPageComponent implements OnInit {
         (u.name?.toLowerCase().includes(term) ?? false);
       const matchesStatus =
         status === 'all' ||
-        (status === 'active' && u.is_active) ||
-        (status === 'inactive' && !u.is_active);
+        (status === 'active' && u.active) ||
+        (status === 'inactive' && !u.active);
       return matchesSearch && matchesStatus;
     });
   });
@@ -251,8 +251,8 @@ export class SuperAdminUsersPageComponent implements OnInit {
   }
 
   async onToggle(user: AdminUser): Promise<void> {
-    if (user.is_active && !confirm(`¿Desactivar al usuario "${user.email}"?`)) return;
-    await this.usersService.toggleActive(user.id, user.is_active);
+    if (user.active && !confirm(`¿Desactivar al usuario "${user.email}"?`)) return;
+    await this.usersService.toggleActive(user.id, user.active);
   }
 
   onSaved(): void {
