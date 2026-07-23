@@ -5,7 +5,6 @@ import { UserFormComponent } from '../components/user-form.component';
 import { UserRoleModalComponent } from '../components/user-role-modal.component';
 import { TenantUser } from '../interfaces/user-profile.interface';
 import { UsersService } from '../services/users.service';
-import { JsonPipe } from '@angular/common';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
@@ -22,7 +21,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
 @Component({
   selector: 'app-users-page',
   standalone: true,
-  imports: [FormsModule, UserFormComponent, UserRoleModalComponent, JsonPipe],
+  imports: [FormsModule, UserFormComponent, UserRoleModalComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
