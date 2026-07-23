@@ -5,6 +5,7 @@ import { filter } from 'rxjs/operators';
 import { SidebarComponent } from './sidebar.component';
 import { HeaderComponent } from './header.component';
 import { LayoutService } from './layout.service';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 
 @Component({
   selector: 'app-dashboard-layout',
@@ -31,8 +32,14 @@ import { LayoutService } from './layout.service';
     </div>
   `,
 })
-export class DashboardLayoutComponent {
+export class DashboardLayoutComponent implements OnInit {
   readonly layoutService = inject(LayoutService);
+  private readonly tenantInfo = inject(TenantInfoService);
+
+  /** Carga el branding del negocio una vez para todo el dashboard (lo pinta el sidebar). */
+  ngOnInit(): void {
+    void this.tenantInfo.load();
+  }
 
   constructor() {
     inject(Router).events

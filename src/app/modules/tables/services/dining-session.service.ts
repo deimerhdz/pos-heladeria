@@ -20,9 +20,16 @@ export interface ResolvedTable {
   name: string | null;
 }
 
+/** Branding del negocio que acompaña al menú público (el comensal es anónimo). */
+export interface ResolvedBusiness {
+  name: string;
+  logo_url: string | null;
+}
+
 /** Result of resolving a QR token: the table + the active menu. */
 export interface ResolvedMenu {
   table: ResolvedTable;
+  business: ResolvedBusiness | null;
   categories: MenuCategory[];
 }
 
@@ -67,6 +74,7 @@ export class DiningSessionService {
   private mapResolved(raw: Record<string, unknown>): ResolvedMenu {
     const tableRaw = (raw['table'] ?? raw['dining_table'] ?? raw) as Record<string, unknown>;
     const categoriesRaw = (raw['menu'] ?? raw['categories'] ?? raw['items'] ?? []) as unknown[];
+    const businessRaw = raw['business'] as Record<string, unknown> | undefined;
 
     return {
       table: {
@@ -74,6 +82,12 @@ export class DiningSessionService {
         number: (tableRaw['number'] as number) ?? null,
         name: (tableRaw['name'] as string) ?? null,
       },
+      business: businessRaw
+        ? {
+            name: (businessRaw['name'] as string) ?? '',
+            logo_url: (businessRaw['logo_url'] as string) ?? null,
+          }
+        : null,
       categories: (categoriesRaw as Record<string, unknown>[]).map((c) => this.mapCategory(c)),
     };
   }

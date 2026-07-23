@@ -4,6 +4,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { NAV_ITEMS, SUPER_ADMIN_NAV_ITEMS } from '../../../core/config/navigation.config';
 import { NAV_GROUP_ORDER, NavItem } from '../../../core/interfaces/navigation.interface';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { LayoutService } from './layout.service';
 
 interface NavGroup {
@@ -27,14 +28,22 @@ interface NavGroup {
       <!-- Brand -->
       <div class="px-5 py-4 border-b border-white/10">
         <div class="flex items-center gap-3">
-          <span
-            class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-lg shrink-0"
-          >
-            {{ isSuperAdmin() ? '🛡️' : '🍦' }}
-          </span>
+          @if (!isSuperAdmin() && logoUrl()) {
+            <img
+              [src]="logoUrl()"
+              alt=""
+              class="w-9 h-9 rounded-xl object-cover bg-white/10 shrink-0"
+            />
+          } @else {
+            <span
+              class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-lg shrink-0"
+            >
+              {{ isSuperAdmin() ? '🛡️' : '🍦' }}
+            </span>
+          }
           <div class="min-w-0">
             <h1 class="text-sm font-bold leading-tight truncate">
-              {{ isSuperAdmin() ? 'Super Admin' : 'Heladería' }}
+              {{ isSuperAdmin() ? 'Super Admin' : businessName() }}
             </h1>
             <p class="text-white/60 text-xs truncate">
               {{ isSuperAdmin() ? 'Panel de Plataforma' : 'Sistema de Gestión' }}
@@ -80,6 +89,11 @@ interface NavGroup {
 export class SidebarComponent {
   private authService = inject(AuthService);
   readonly layoutService = inject(LayoutService);
+  private readonly tenantInfo = inject(TenantInfoService);
+
+  /** Branding del negocio (lo carga `DashboardLayoutComponent`; aquí solo se lee). */
+  readonly logoUrl = this.tenantInfo.logoUrl;
+  readonly businessName = this.tenantInfo.businessName;
 
   private readonly baseClass =
     'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors';

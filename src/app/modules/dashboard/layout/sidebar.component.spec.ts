@@ -1,6 +1,8 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { SidebarComponent } from './sidebar.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { User, UserRole } from '../../../core/interfaces/user.interface';
@@ -23,7 +25,13 @@ describe('SidebarComponent.visibleItems', () => {
   function createComponent(): SidebarComponent {
     TestBed.configureTestingModule({
       imports: [SidebarComponent],
-      providers: [provideRouter([]), { provide: AuthService, useValue: { currentUser } }],
+      providers: [
+        provideRouter([]),
+        // El sidebar inyecta TenantInfoService (solo lee sus señales, no pide nada).
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { currentUser } },
+      ],
     });
     return TestBed.createComponent(SidebarComponent).componentInstance;
   }

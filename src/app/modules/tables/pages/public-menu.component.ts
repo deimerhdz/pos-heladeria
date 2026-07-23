@@ -41,8 +41,18 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
       @if (view() === 'name') {
         <div class="min-h-screen flex items-center justify-center px-4">
           <div class="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
-            <div class="text-5xl mb-4">🍦</div>
-            <h1 class="text-2xl font-bold text-gray-900 mb-1">¡Bienvenido!</h1>
+            @if (businessLogo()) {
+              <img
+                [src]="businessLogo()"
+                [alt]="businessName() ?? ''"
+                class="w-20 h-20 rounded-2xl object-cover mx-auto mb-4 border border-gray-100"
+              />
+            } @else {
+              <div class="text-5xl mb-4">🍦</div>
+            }
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">
+              {{ businessName() ? '¡Bienvenido a ' + businessName() + '!' : '¡Bienvenido!' }}
+            </h1>
             @if (tableLabel()) {
               <p class="text-indigo-600 font-medium">{{ tableLabel() }}</p>
             }
@@ -85,9 +95,18 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
         <!-- Top bar -->
         <div class="bg-white border-b border-gray-100 sticky top-0 z-30">
           <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="font-bold text-gray-900 truncate">{{ tableLabel() }}</p>
-              <p class="text-xs text-gray-400 truncate">Hola, {{ customerName() }} 👋</p>
+            <div class="flex items-center gap-2.5 min-w-0">
+              @if (businessLogo()) {
+                <img
+                  [src]="businessLogo()"
+                  [alt]="businessName() ?? ''"
+                  class="w-9 h-9 rounded-lg object-cover border border-gray-100 shrink-0"
+                />
+              }
+              <div class="min-w-0">
+                <p class="font-bold text-gray-900 truncate">{{ tableLabel() }}</p>
+                <p class="text-xs text-gray-400 truncate">Hola, {{ customerName() }} 👋</p>
+              </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               @if (myOrders().length > 0) {
@@ -250,6 +269,9 @@ export class PublicMenuComponent implements OnInit {
 
   readonly tableNumber = signal<number | null>(null);
   readonly tableName = signal<string | null>(null);
+  /** Branding del negocio, que viaja dentro de la respuesta del menú del QR. */
+  readonly businessName = signal<string | null>(null);
+  readonly businessLogo = signal<string | null>(null);
   readonly customerName = signal<string>('');
 
   readonly nameInput = signal('');
@@ -285,9 +307,11 @@ export class PublicMenuComponent implements OnInit {
 
     // Resolve the table + menu from the QR token.
     try {
-      const { table, categories } = await this.api.resolveByToken(this.token);
+      const { table, business, categories } = await this.api.resolveByToken(this.token);
       this.tableNumber.set(table.number);
       this.tableName.set(table.name);
+      this.businessName.set(business?.name ?? null);
+      this.businessLogo.set(business?.logo_url ?? null);
       this.categories.set(categories);
     } catch (err) {
       this.handleResolveError(err);
