@@ -63,6 +63,25 @@ export const dashboardRoutes: Routes = [
                 (m) => m.OptionGroupsPageComponent,
               ),
           },
+          {
+            path: 'promociones',
+            loadComponent: () =>
+              import('../promotions/pages/promotions-page.component').then(
+                (m) => m.PromotionsPageComponent,
+              ),
+          },
+          {
+            path: 'horarios',
+            loadComponent: () =>
+              import('../settings/pages/business-hours.component').then(
+                (m) => m.BusinessHoursComponent,
+              ),
+          },
+          {
+            path: 'auditoria',
+            loadComponent: () =>
+              import('../settings/pages/audit-logs.component').then((m) => m.AuditLogsComponent),
+          },
         ],
       },
       // Rutas migradas a Ajustes — se conservan como redirect (deep links/marcadores).
@@ -97,11 +116,16 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
+        // 'new' debe ir antes de ':id' para no ser capturado como id.
+        path: 'products/new',
+        loadComponent: () =>
+          import('../products/pages/product-form.component').then((m) => m.ProductFormComponent),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
         path: 'products/:id',
         loadComponent: () =>
-          import('../products/pages/product-detail.component').then(
-            (m) => m.ProductDetailComponent,
-          ),
+          import('../products/pages/product-form.component').then((m) => m.ProductFormComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {

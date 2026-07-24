@@ -4,10 +4,12 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
 import {
+  GroupBill,
   Table,
   TableCreatePayload,
   TableForm,
   TableQrToken,
+  TableStatus,
   TableUpdatePayload,
 } from '../interfaces/table.interface';
 
@@ -15,6 +17,7 @@ import {
 export class TableService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/orders/tables`;
+  private readonly ordersUrl = `${environment.apiBaseUrl}/orders`;
 
   readonly tables = signal<Table[]>([]);
   readonly loading = signal(false);
@@ -90,6 +93,44 @@ export class TableService {
   /** Fetch the signed, printable QR token for a table. Throws `HttpErrorResponse`. */
   async getQrToken(id: string): Promise<TableQrToken> {
     return firstValueFrom(this.http.get<TableQrToken>(`${this.baseUrl}/${id}/qr-token`));
+  }
+
+  /** Cambiar el estado operativo de la mesa (RF-051). Refresca la lista. */
+  async setStatus(id: string, status: TableStatus): Promise<boolean> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    try {
+      await firstValueFrom(this.http.patch<Table>(`${this.baseUrl}/${id}/status`, { status }));
+      await this.loadTables();
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return false;
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /** Mover una orden abierta a otra mesa (RF-052). Throws `HttpErrorResponse`. */
+  async moveOrder(orderId: string, targetTableId: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${this.ordersUrl}/${orderId}/move`, { dining_table_id: targetTableId }),
+    );
+  }
+
+  /** Unir órdenes en una sola cuenta (RF-053). Devuelve el grupo. */
+  async mergeOrders(orderIds: string[]): Promise<{ merged_group_id: string; order_ids: string[] }> {
+    return firstValueFrom(
+      this.http.post<{ merged_group_id: string; order_ids: string[] }>(
+        `${this.ordersUrl}/merge`,
+        { order_ids: orderIds },
+      ),
+    );
+  }
+
+  /** Cuenta consolidada de un grupo de mesas (RF-053). */
+  async groupBill(groupId: string): Promise<GroupBill> {
+    return firstValueFrom(this.http.get<GroupBill>(`${this.ordersUrl}/group/${groupId}/bill`));
   }
 
   private extractError(err: unknown): string {

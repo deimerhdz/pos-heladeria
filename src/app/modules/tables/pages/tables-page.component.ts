@@ -1,8 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Table } from '../interfaces/table.interface';
+import { Table, TableStatus } from '../interfaces/table.interface';
 import { TableService } from '../services/table.service';
 import { TableFormComponent } from '../components/table-form.component';
 import { TableQrComponent } from '../components/table-qr.component';
+import { ToastService } from '../../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-tables-page',
@@ -78,11 +79,22 @@ import { TableQrComponent } from '../components/table-qr.component';
                       <span class="text-sm text-gray-500">{{ table.name || '—' }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (table.active) {
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Activa</span>
-                      } @else {
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactiva</span>
-                      }
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" [class]="statusChip(table.status)">
+                          {{ statusLabel(table.status) }}
+                        </span>
+                        <select
+                          [value]="table.status"
+                          (change)="changeStatus(table, $any($event.target).value)"
+                          class="text-xs border border-gray-200 rounded-lg px-1.5 py-1 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          title="Cambiar estado"
+                        >
+                          <option value="libre">Libre</option>
+                          <option value="ocupada">Ocupada</option>
+                          <option value="reservada">Reservada</option>
+                          <option value="pendiente_pago">Pendiente de pago</option>
+                        </select>
+                      </div>
                     </td>
                     <td class="px-5 py-4">
                       <div class="flex items-center justify-end gap-1">
@@ -141,6 +153,7 @@ import { TableQrComponent } from '../components/table-qr.component';
 })
 export class TablesPageComponent implements OnInit {
   readonly tableService = inject(TableService);
+  private readonly toast = inject(ToastService);
 
   readonly showForm = signal(false);
   readonly editingTable = signal<Table | null>(null);
@@ -183,5 +196,30 @@ export class TablesPageComponent implements OnInit {
   onQrClosed(): void {
     this.showQr.set(false);
     this.qrTable.set(null);
+  }
+
+  async changeStatus(table: Table, status: TableStatus): Promise<void> {
+    if (status === table.status) return;
+    const ok = await this.tableService.setStatus(table.id, status);
+    if (ok) this.toast.success(`Mesa ${table.number}: ${this.statusLabel(status)}`);
+    else this.toast.error(this.tableService.error() ?? 'No se pudo cambiar el estado');
+  }
+
+  statusLabel(s: TableStatus): string {
+    return {
+      libre: 'Libre',
+      ocupada: 'Ocupada',
+      reservada: 'Reservada',
+      pendiente_pago: 'Pendiente de pago',
+    }[s];
+  }
+
+  statusChip(s: TableStatus): string {
+    return {
+      libre: 'bg-emerald-100 text-emerald-700',
+      ocupada: 'bg-amber-100 text-amber-700',
+      reservada: 'bg-indigo-100 text-indigo-700',
+      pendiente_pago: 'bg-red-100 text-red-700',
+    }[s];
   }
 }

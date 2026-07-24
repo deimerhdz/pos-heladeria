@@ -53,11 +53,14 @@ export interface AdjustForm {
   reason: string | null;
 }
 
+export type PurchaseStatus = 'draft' | 'partial' | 'received';
+
 /** A purchase line item. Mirrors backend `PurchaseItemResponse`. */
 export interface PurchaseItem {
   id: string;
   inventory_item_id: string;
   quantity: number;
+  received_quantity: number;
   unit_cost: number;
 }
 
@@ -66,10 +69,16 @@ export interface Purchase {
   id: string;
   supplier_id: string | null;
   invoice_number: string | null;
+  status: PurchaseStatus;
   total: number;
   /** ISO datetime. */
   purchased_at: string;
   items: PurchaseItem[];
+}
+
+/** Recepción de ítems (RF-022): cantidad recibida por línea de compra. */
+export interface PurchaseReceivePayload {
+  items: { purchase_item_id: string; quantity: number }[];
 }
 
 /** A single line captured in the purchase form. */

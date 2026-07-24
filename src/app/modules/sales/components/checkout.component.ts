@@ -175,6 +175,9 @@ interface PaymentRow {
                 @if (+r.tax > 0) { <div class="flex justify-between text-gray-500"><span>Impuesto</span><span>$ {{ +r.tax | number: '1.2-2' }}</span></div> }
                 @if (+r.tip > 0) { <div class="flex justify-between text-gray-500"><span>Propina</span><span>$ {{ +r.tip | number: '1.2-2' }}</span></div> }
                 <div class="flex justify-between font-bold text-base"><span>Total</span><span>$ {{ +r.total | number: '1.2-2' }}</span></div>
+                @if (r.change_given && +r.change_given > 0) {
+                  <div class="flex justify-between text-emerald-600 font-semibold"><span>Cambio</span><span>$ {{ +r.change_given | number: '1.2-2' }}</span></div>
+                }
               </div>
             </div>
             @if (closeError()) {

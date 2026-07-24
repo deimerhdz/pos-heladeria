@@ -100,6 +100,14 @@ import { InventoryService } from '../services/inventory.service';
             </div>
           </div>
 
+          <label class="flex items-start gap-2 text-sm text-gray-700 bg-indigo-50/60 rounded-lg px-3 py-2">
+            <input type="checkbox" [checked]="asOrder()" (change)="asOrder.set($any($event.target).checked)" class="mt-0.5" />
+            <span>
+              Crear como <b>orden de compra</b> (no suma stock aún; se recibe luego, parcial o total).
+              <span class="block text-xs text-gray-500">Desmárcalo para una compra directa que da alta total del stock.</span>
+            </span>
+          </label>
+
           <div class="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
             <span class="text-sm text-gray-500">Total</span>
             <span class="text-lg font-bold text-gray-900">{{ total() | number:'1.2-2' }}</span>
@@ -117,7 +125,7 @@ import { InventoryService } from '../services/inventory.service';
           </button>
           <button type="button" (click)="onSubmit()" [disabled]="!canSubmit() || service.isSubmitting()"
             class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-            {{ service.isSubmitting() ? 'Registrando...' : 'Registrar compra' }}
+            {{ service.isSubmitting() ? 'Registrando...' : (asOrder() ? 'Crear orden' : 'Registrar compra') }}
           </button>
         </div>
       </div>
@@ -134,6 +142,7 @@ export class PurchaseFormComponent implements OnInit {
 
   readonly supplierId = signal('');
   readonly invoiceNumber = signal('');
+  readonly asOrder = signal(false);
   readonly rows = signal<PurchaseLineForm[]>([{ inventory_item_id: '', quantity: 1, unit_cost: 0 }]);
 
   readonly total = computed(() =>
@@ -183,7 +192,9 @@ export class PurchaseFormComponent implements OnInit {
       })),
     };
 
-    const ok = await this.service.createPurchase(formData);
+    const ok = this.asOrder()
+      ? await this.service.createPurchaseOrder(formData)
+      : await this.service.createPurchase(formData);
     if (ok) {
       this.saved.emit();
       this.close.emit();

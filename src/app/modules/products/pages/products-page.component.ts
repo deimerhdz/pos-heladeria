@@ -4,12 +4,12 @@ import { Router } from '@angular/router';
 import { Product } from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
 import { CategoryService } from '../../categories/services/category.service';
-import { ProductCreateModalComponent } from '../components/product-create-modal.component';
+import { ToastService } from '../../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-products-page',
   standalone: true,
-  imports: [FormsModule, ProductCreateModalComponent],
+  imports: [FormsModule],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -167,22 +167,29 @@ import { ProductCreateModalComponent } from '../components/product-create-modal.
                       </span>
                     </td>
                     <td class="px-5 py-4">
-                      @if (product.active) {
-                        <span
-                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
-                        >
-                          Activo
-                        </span>
-                      } @else {
-                        <span
-                          class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"
-                        >
-                          Inactivo
-                        </span>
-                      }
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        @if (product.active) {
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Activo</span>
+                        } @else {
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactivo</span>
+                        }
+                        @if (!product.available) {
+                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Agotado</span>
+                        }
+                      </div>
                     </td>
                     <td class="px-5 py-4">
                       <div class="flex items-center justify-end gap-2">
+                        <button
+                          (click)="onToggleAvailable(product)"
+                          [title]="product.available ? 'Marcar agotado' : 'Marcar disponible'"
+                          class="p-2 rounded-lg transition-colors"
+                          [class]="product.available
+                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            : 'text-amber-500 hover:text-emerald-600 hover:bg-emerald-50'"
+                        >
+                          {{ product.available ? '🍦' : '🚫' }}
+                        </button>
                         <button
                           (click)="openEdit(product)"
                           title="Editar"
@@ -212,24 +219,16 @@ import { ProductCreateModalComponent } from '../components/product-create-modal.
         </div>
       }
     </div>
-
-    <!-- Create modal -->
-    @if (showCreate()) {
-      <app-product-create-modal
-        (close)="showCreate.set(false)"
-        (created)="onCreated($event)">
-      </app-product-create-modal>
-    }
   `,
 })
 export class ProductsPageComponent implements OnInit {
   readonly productService = inject(ProductService);
   private readonly categoryService = inject(CategoryService);
   private readonly router = inject(Router);
+  private readonly toast = inject(ToastService);
 
   readonly searchTerm = signal('');
   readonly statusFilter = signal<'all' | 'active' | 'inactive'>('all');
-  readonly showCreate = signal(false);
 
   searchTermValue = '';
   statusFilterValue: 'all' | 'active' | 'inactive' = 'all';
@@ -268,12 +267,7 @@ export class ProductsPageComponent implements OnInit {
   }
 
   openCreate(): void {
-    this.showCreate.set(true);
-  }
-
-  onCreated(productId: string): void {
-    this.showCreate.set(false);
-    this.router.navigate(['/dashboard/products', productId]);
+    this.router.navigate(['/dashboard/products/new']);
   }
 
   openEdit(product: Product): void {
@@ -282,5 +276,11 @@ export class ProductsPageComponent implements OnInit {
 
   async onToggle(product: Product): Promise<void> {
     await this.productService.toggleActive(product.id, product.active);
+  }
+
+  async onToggleAvailable(product: Product): Promise<void> {
+    const ok = await this.productService.toggleAvailable(product.id, product.available);
+    if (ok) this.toast.success(product.available ? `"${product.name}" marcado agotado` : `"${product.name}" disponible`);
+    else this.toast.error(this.productService.error() ?? 'No se pudo actualizar');
   }
 }

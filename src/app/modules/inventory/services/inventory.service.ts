@@ -44,6 +44,7 @@ interface PurchaseItemResponse {
   id: string;
   inventory_item_id: string;
   quantity: string;
+  received_quantity: string;
   unit_cost: string;
 }
 
@@ -51,6 +52,7 @@ interface PurchaseResponse {
   id: string;
   supplier_id: string | null;
   invoice_number: string | null;
+  status: Purchase['status'];
   total: string;
   purchased_at: string;
   items?: PurchaseItemResponse[];
@@ -175,6 +177,15 @@ export class InventoryService {
 
   /** Register a purchase; refreshes items (stock rises) and the purchase list. */
   async createPurchase(form: PurchaseForm): Promise<boolean> {
+    return this.postPurchase(`${this.baseUrl}/purchases`, form);
+  }
+
+  /** Crear una orden de compra (draft, sin alta de stock) — RF-022. */
+  async createPurchaseOrder(form: PurchaseForm): Promise<boolean> {
+    return this.postPurchase(`${this.baseUrl}/purchases/order`, form);
+  }
+
+  private async postPurchase(url: string, form: PurchaseForm): Promise<boolean> {
     const payload: PurchaseCreatePayload = {
       supplier_id: form.supplier_id || null,
       invoice_number: form.invoice_number || null,
@@ -187,8 +198,27 @@ export class InventoryService {
     this.isSubmitting.set(true);
     this.error.set(null);
     try {
+      await firstValueFrom(this.http.post<PurchaseResponse>(url, payload));
+      await Promise.all([this.loadItems(), this.loadPurchases()]);
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return false;
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /** Recibir (parcial o total) una orden de compra — RF-022. */
+  async receivePurchase(
+    purchaseId: string,
+    items: { purchase_item_id: string; quantity: number }[],
+  ): Promise<boolean> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    try {
       await firstValueFrom(
-        this.http.post<PurchaseResponse>(`${this.baseUrl}/purchases`, payload)
+        this.http.post<PurchaseResponse>(`${this.baseUrl}/purchases/${purchaseId}/receive`, { items }),
       );
       await Promise.all([this.loadItems(), this.loadPurchases()]);
       return true;
@@ -250,12 +280,14 @@ export class InventoryService {
       id: p.id,
       supplier_id: p.supplier_id,
       invoice_number: p.invoice_number,
+      status: p.status ?? 'received',
       total: Number(p.total),
       purchased_at: p.purchased_at,
       items: (p.items ?? []).map(it => ({
         id: it.id,
         inventory_item_id: it.inventory_item_id,
         quantity: Number(it.quantity),
+        received_quantity: Number(it.received_quantity ?? 0),
         unit_cost: Number(it.unit_cost),
       })),
     };

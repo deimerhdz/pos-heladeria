@@ -14,8 +14,11 @@ import {
   InventoryItem,
   InventoryItemType,
   InventoryMovement,
+  Purchase,
+  PurchaseStatus,
 } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
+import { ToastService } from '../../../shared/feedback/toast.service';
 import { InventoryItemFormComponent } from '../components/inventory-item-form.component';
 import { StockAdjustModalComponent } from '../components/stock-adjust-modal.component';
 import { PurchaseFormComponent } from '../components/purchase-form.component';
@@ -191,18 +194,24 @@ type ActiveFilter = '' | 'active' | 'inactive';
             <div class="divide-y divide-gray-50">
               @for (p of service.purchases(); track p.id) {
                 <div class="px-4 py-3">
-                  <button type="button" (click)="toggleExpanded(p.id)"
-                    class="w-full flex items-center justify-between text-left">
-                    <div>
+                  <div class="w-full flex items-center justify-between gap-3">
+                    <button type="button" (click)="toggleExpanded(p.id)" class="flex-1 text-left">
                       <p class="font-medium text-gray-900">{{ supplierName(p.supplier_id) }}</p>
                       <p class="text-xs text-gray-500">
                         {{ p.purchased_at | date:'short' }}
                         @if (p.invoice_number) { · Factura {{ p.invoice_number }} }
                         · {{ p.items.length }} ítem(s)
                       </p>
-                    </div>
-                    <span class="text-sm font-bold text-gray-900">{{ p.total | number:'1.2-2' }}</span>
-                  </button>
+                    </button>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" [class]="purchaseChip(p.status)">
+                      {{ purchaseLabel(p.status) }}
+                    </span>
+                    @if (p.status !== 'received') {
+                      <button type="button" (click)="openReceive(p)"
+                        class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold">Recibir</button>
+                    }
+                    <span class="text-sm font-bold text-gray-900 w-20 text-right">{{ p.total | number:'1.2-2' }}</span>
+                  </div>
                   @if (expandedId() === p.id) {
                     <div class="mt-3 rounded-lg bg-gray-50 border border-gray-100 overflow-hidden">
                       <table class="w-full text-xs">
@@ -294,12 +303,48 @@ type ActiveFilter = '' | 'active' | 'inactive';
     @if (showPurchase()) {
       <app-purchase-form (close)="showPurchase.set(false)" (saved)="showPurchase.set(false)"></app-purchase-form>
     }
+
+    <!-- Modal recepción de orden de compra (RF-022) -->
+    @if (receivePurchase(); as rp) {
+      <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+          <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-base font-bold text-gray-900">Recibir compra</h2>
+            <button type="button" (click)="receivePurchase.set(null)" class="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div class="p-6 space-y-3 overflow-y-auto">
+            <p class="text-sm text-gray-500">Indica cuánto recibes ahora de cada ítem. Puedes recibir parcialmente.</p>
+            @for (row of receiveRows(); track row.purchase_item_id) {
+              <div class="flex items-center gap-3">
+                <div class="flex-1">
+                  <p class="text-sm font-medium text-gray-800">{{ itemName(row.inventory_item_id) }}</p>
+                  <p class="text-xs text-gray-400">Pendiente: {{ row.pending | number:'1.0-3' }} de {{ row.quantity | number:'1.0-3' }}</p>
+                </div>
+                <input type="number" min="0" [max]="row.pending" [(ngModel)]="row.receive"
+                  class="w-28 px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
+              </div>
+            }
+            @if (service.error()) {
+              <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ service.error() }}</div>
+            }
+          </div>
+          <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+            <button type="button" (click)="receivePurchase.set(null)" class="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100">Cancelar</button>
+            <button type="button" (click)="submitReceive(rp.id)" [disabled]="service.isSubmitting()"
+              class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold">
+              {{ service.isSubmitting() ? 'Recibiendo…' : 'Confirmar recepción' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class InventoryPageComponent implements OnInit {
   readonly service = inject(InventoryService);
   readonly unitMeasureService = inject(UnitMeasureService);
   readonly suppliersService = inject(SuppliersService);
+  private readonly toast = inject(ToastService);
 
   readonly tab = signal<Tab>('items');
 
@@ -314,6 +359,10 @@ export class InventoryPageComponent implements OnInit {
   readonly selectedItem = signal<InventoryItem | null>(null);
 
   readonly expandedId = signal<string | null>(null);
+
+  // Recepción de compra (RF-022)
+  readonly receivePurchase = signal<Purchase | null>(null);
+  readonly receiveRows = signal<{ purchase_item_id: string; inventory_item_id: string; quantity: number; pending: number; receive: number }[]>([]);
 
   readonly movementItemId = signal('');
   readonly movements = signal<InventoryMovement[]>([]);
@@ -383,6 +432,50 @@ export class InventoryPageComponent implements OnInit {
   }
   toggleExpanded(id: string): void {
     this.expandedId.update(current => (current === id ? null : id));
+  }
+
+  // --- recepción de compra (RF-022) ---
+  purchaseLabel(s: PurchaseStatus): string {
+    return { draft: 'Orden', partial: 'Parcial', received: 'Recibida' }[s];
+  }
+  purchaseChip(s: PurchaseStatus): string {
+    return {
+      draft: 'bg-gray-100 text-gray-600',
+      partial: 'bg-amber-100 text-amber-700',
+      received: 'bg-emerald-100 text-emerald-700',
+    }[s];
+  }
+  openReceive(p: Purchase): void {
+    this.receiveRows.set(
+      p.items.map(it => {
+        const pending = it.quantity - it.received_quantity;
+        return {
+          purchase_item_id: it.id,
+          inventory_item_id: it.inventory_item_id,
+          quantity: it.quantity,
+          pending,
+          receive: pending,
+        };
+      }),
+    );
+    this.service.error.set(null);
+    this.receivePurchase.set(p);
+  }
+  async submitReceive(purchaseId: string): Promise<void> {
+    const items = this.receiveRows()
+      .filter(r => Number(r.receive) > 0)
+      .map(r => ({ purchase_item_id: r.purchase_item_id, quantity: Number(r.receive) }));
+    if (items.length === 0) {
+      this.toast.info('Indica al menos una cantidad a recibir');
+      return;
+    }
+    const ok = await this.service.receivePurchase(purchaseId, items);
+    if (ok) {
+      this.toast.success('Recepción registrada');
+      this.receivePurchase.set(null);
+    } else {
+      this.toast.error(this.service.error() ?? 'No se pudo recibir la compra');
+    }
   }
 
   // --- items ---

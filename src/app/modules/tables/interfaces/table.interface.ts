@@ -1,5 +1,7 @@
 // ── Admin table management (tag `orders`, base `/orders/tables`) ────────────
 
+export type TableStatus = 'libre' | 'ocupada' | 'reservada' | 'pendiente_pago';
+
 /** Admin table model, mirrors the backend `TableResponse`. */
 export interface Table {
   id: string;
@@ -8,6 +10,14 @@ export interface Table {
   /** UUID token used to resolve the table + open a session by QR. */
   qr_token: string;
   active: boolean;
+  status: TableStatus;
+}
+
+/** Cuenta consolidada de un grupo de mesas unidas (`GET /orders/group/{id}/bill`). */
+export interface GroupBill {
+  merged_group_id: string;
+  total: string;
+  orders: { order_id: string; dining_table_id: string | null; status: string; subtotal: string }[];
 }
 
 /** Request body for `POST /orders/tables` (`TableCreate`). */
