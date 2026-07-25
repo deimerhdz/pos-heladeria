@@ -94,3 +94,40 @@ export interface ShiftReport {
   denominations: DenominationIn[];
   close_note?: string | null;
 }
+
+/** `PartialCountResponse` — arqueo parcial (RF-046). */
+export interface PartialCount {
+  id: string;
+  cash_shift_id: string;
+  counted_amount: string;
+  expected_amount: string;
+  difference: string;
+  note?: string | null;
+  user_name?: string | null;
+  counted_at: string;
+}
+
+/** Respuesta paginada genérica del backend (`Page[T]`). */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+/** `ShiftSummaryResponse` — fila del histórico de cierres (montos como string). */
+export interface ShiftSummary {
+  id: string;
+  cash_register_id: string;
+  register_name: string;
+  user_name?: string | null;
+  opening_amount: string;
+  counted_amount?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  status: string;
+  close_note?: string | null;
+  expected: string;
+  difference?: string | null;
+}

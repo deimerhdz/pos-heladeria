@@ -7,8 +7,10 @@ import {
   CashShift,
   DenominationIn,
   MovementKind,
+  Page,
   Reconciliation,
   ShiftReport,
+  ShiftSummary,
 } from '../interfaces/cash.interface';
 import {
   CashModal,
@@ -17,6 +19,7 @@ import {
   Indicadores,
   MovementRow,
   MovementView,
+  RegisterStatus,
   TagVariant,
 } from '../interfaces/cash-session.interface';
 import { CashService } from './cash.service';
@@ -77,6 +80,15 @@ export class CashSessionStore {
   readonly reconciliation = signal<Reconciliation | null>(null);
   readonly movements = signal<CashMovement[]>([]);
   readonly report = signal<ShiftReport | null>(null);
+
+  /** Vista de gestión (solo admin): estado de todas las cajas. */
+  readonly overview = signal<RegisterStatus[]>([]);
+
+  /** Histórico de cierres (solo admin). */
+  readonly history = signal<Page<ShiftSummary> | null>(null);
+  readonly historyRegisterFilter = signal('');
+  /** Contexto del reporte visible: 'live' (recién cerrado) o 'history'. */
+  readonly reportContext = signal<'live' | 'history'>('live');
 
   readonly vista = signal<MovementView>('tabla');
   readonly modal = signal<CashModal>(null);
@@ -221,6 +233,16 @@ export class CashSessionStore {
       const regs = await this.api.listRegisters();
       this.registers.set(regs);
 
+      if (this.isAdmin()) {
+        // Admin: aterriza en la gestión de todas las cajas. Se restaura el turno
+        // compartido en segundo plano para no romper el contexto del POS.
+        void this.api.restoreShift();
+        await this.loadOverview(regs);
+        this.screen.set('overview');
+        return;
+      }
+
+      // Cajero: flujo directo a su turno (restaurado de la última caja usada).
       const storedId = localStorage.getItem(REGISTER_STORAGE_KEY);
       const target = regs.find((r) => r.id === storedId) ?? null;
       if (target) {
@@ -238,6 +260,118 @@ export class CashSessionStore {
       }
     } catch (err) {
       this.error.set(this.api.extractError(err, 'No se pudieron cargar las cajas.'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /** Carga el estado (turno abierto + efectivo esperado) de cada caja. */
+  async loadOverview(regs: CashRegister[] = this.registers()): Promise<void> {
+    const rows = await Promise.all(
+      regs.map(async (register): Promise<RegisterStatus> => {
+        let shift: CashShift | null = null;
+        let expected: number | null = null;
+        try {
+          shift = await this.api.getCurrentShift(register.id);
+          const recon = await this.api.getReconciliation(shift.id);
+          expected = this.num(recon.expected);
+        } catch {
+          shift = null; // 404 = sin turno abierto
+        }
+        return { register, shift, expected };
+      }),
+    );
+    this.overview.set(rows);
+  }
+
+  /** Abre una caja abierta para operarla (dashboard). */
+  async operateRegister(registerId: string): Promise<void> {
+    this.selectedRegisterId.set(registerId);
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const shift = await this.api.getCurrentShift(registerId);
+      localStorage.setItem(REGISTER_STORAGE_KEY, registerId);
+      await this.loadShiftData(shift);
+      this.screen.set('dashboard');
+    } catch (err) {
+      this.error.set(this.api.extractError(err, 'No se pudo abrir la caja.'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  /** Inicia el flujo de apertura para una caja concreta desde la gestión. */
+  abrirCajaDesdeOverview(registerId: string): void {
+    this.selectedRegisterId.set(registerId);
+    this.openingAmount.set(0);
+    this.error.set(null);
+    this.screen.set('apertura');
+  }
+
+  /** Vuelve a la gestión de cajas (admin), refrescando el estado. */
+  async backToOverview(): Promise<void> {
+    this.reconciliation.set(null);
+    this.movements.set([]);
+    this.report.set(null);
+    this.modal.set(null);
+    this.error.set(null);
+    this.screen.set('overview');
+    this.loading.set(true);
+    await this.loadOverview();
+    this.loading.set(false);
+  }
+
+  // ─── Histórico de cierres (solo admin) ────────────────────────────────────────
+  async openHistory(): Promise<void> {
+    this.error.set(null);
+    this.screen.set('history');
+    await this.loadHistory(1);
+  }
+
+  async loadHistory(page: number): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const data = await this.api.listShifts({
+        status: 'closed',
+        cashRegisterId: this.historyRegisterFilter() || undefined,
+        page,
+        size: 20,
+      });
+      this.history.set(data);
+    } catch (err) {
+      this.error.set(this.api.extractError(err, 'No se pudo cargar el historial.'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  setHistoryFilter(registerId: string): void {
+    this.historyRegisterFilter.set(registerId);
+    void this.loadHistory(1);
+  }
+
+  backToHistory(): void {
+    this.report.set(null);
+    this.reportContext.set('live');
+    this.screen.set('history');
+  }
+
+  /** Abre el reporte de un turno del histórico (solo lectura). */
+  async viewShiftReport(shiftId: string): Promise<void> {
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const report = await this.api.getReport(shiftId);
+      this.report.set(report);
+      this.shift.set(report.shift);
+      this.reconciliation.set(report.reconciliation);
+      this.movements.set(report.movements);
+      this.reportContext.set('history');
+      this.screen.set('report');
+    } catch (err) {
+      this.error.set(this.api.extractError(err, 'No se pudo cargar el reporte.'));
     } finally {
       this.loading.set(false);
     }
@@ -377,6 +511,7 @@ export class CashSessionStore {
       this.shift.set(report.shift);
       this.reconciliation.set(report.reconciliation);
       this.movements.set(report.movements);
+      this.reportContext.set('live');
       this.modal.set(null);
       this.screen.set('report');
     } catch (err) {
@@ -402,7 +537,11 @@ export class CashSessionStore {
     this.formMonto.set('');
     this.formNota.set('');
     this.error.set(null);
-    this.screen.set('apertura');
+    if (this.isAdmin()) {
+      void this.backToOverview();
+    } else {
+      this.screen.set('apertura');
+    }
   }
 
   closeModal(): void {
@@ -443,6 +582,11 @@ export class CashSessionStore {
   /** Convierte un decimal-string (o null) del backend a número. */
   num(v: string | null | undefined): number {
     return v == null ? 0 : Number(v) || 0;
+  }
+
+  /** Fecha/hora legible (para la vista de gestión). */
+  formatDate(iso: string | null | undefined): string {
+    return this.fmtDate(iso ?? null);
   }
 
   private fmtTime(iso: string | null): string {

@@ -6,11 +6,13 @@ import { SidebarComponent } from './sidebar.component';
 import { HeaderComponent } from './header.component';
 import { LayoutService } from './layout.service';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { ToastContainerComponent } from '../../../shared/feedback/toast-container.component';
+import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.component';
 
 @Component({
   selector: 'app-dashboard-layout',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, HeaderComponent],
+  imports: [RouterOutlet, SidebarComponent, HeaderComponent, ToastContainerComponent, ConfirmDialogComponent],
   template: `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
       <!-- Overlay backdrop — solo visible en móvil cuando el sidebar está abierto -->
@@ -29,6 +31,9 @@ import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
           <router-outlet />
         </main>
       </div>
+
+      <app-toast-container />
+      <app-confirm-dialog />
     </div>
   `,
 })

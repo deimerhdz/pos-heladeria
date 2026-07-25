@@ -48,5 +48,8 @@ export class SettingsPageComponent {
     { label: 'Mesas', path: 'mesas' },
     { label: 'Unidades de medida', path: 'unidades' },
     { label: 'Grupos de opciones', path: 'grupos-opciones' },
+    { label: 'Promociones', path: 'promociones' },
+    { label: 'Horarios', path: 'horarios' },
+    { label: 'Auditoría', path: 'auditoria' },
   ];
 }

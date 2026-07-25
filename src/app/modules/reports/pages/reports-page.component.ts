@@ -81,10 +81,10 @@ import { ReportsService } from '../services/reports.service';
                 <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Cobros</p>
                 <p class="text-2xl font-bold text-gray-900 mt-1">{{ s.count }}</p>
               </div>
-              <div class="bg-white rounded-2xl p-4 shadow-sm border border-green-100">
-                <p class="text-xs text-green-600 uppercase tracking-wide font-medium">Efectivo</p>
-                <p class="text-2xl font-bold text-green-700 mt-1">
-                  S/ {{ s.cashTotal.toFixed(2) }}
+              <div class="bg-white rounded-2xl p-4 shadow-sm border border-emerald-100">
+                <p class="text-xs text-emerald-600 uppercase tracking-wide font-medium">Margen</p>
+                <p class="text-2xl font-bold text-emerald-700 mt-1">
+                  {{ money(reportsService.profitability()?.margin ?? 0) }}
                 </p>
               </div>
               <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -223,78 +223,35 @@ import { ReportsService } from '../services/reports.service';
         <!-- ═══════════════════════════════════ -->
         <section class="space-y-4">
           <h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
-            <span class="text-lg">🗄️</span> Sesiones de caja
+            <span class="text-lg">👤</span> Ventas por cajero
           </h2>
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            @if (reportsService.cashSessions().length === 0) {
+            @if (reportsService.cashiersReport().length === 0) {
               <p class="px-5 py-8 text-center text-sm text-gray-400">
-                Sin sesiones de caja en este período
+                Sin ventas en este período
               </p>
             } @else {
               <table class="w-full">
                 <thead>
                   <tr class="border-b border-gray-100 bg-gray-50">
-                    <th
-                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
-                    >
-                      Fecha
+                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      Cajero
                     </th>
-                    <th
-                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
-                    >
-                      Apertura
+                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      Tickets
                     </th>
-                    <th
-                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
-                    >
-                      Cierre
-                    </th>
-                    <th
-                      class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
-                    >
-                      Monto apertura
-                    </th>
-                    <th
-                      class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
-                    >
-                      Total cobrado
-                    </th>
-                    <th
-                      class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
-                    >
-                      Estado
+                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      Total
                     </th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
-                  @for (session of reportsService.cashSessions(); track session.id) {
+                  @for (c of reportsService.cashiersReport(); track c.userId) {
                     <tr class="hover:bg-gray-50 transition-colors">
-                      <td class="px-5 py-3 text-sm text-gray-700">
-                        {{ session.openedAt | date: 'dd/MM/yyyy' }}
-                      </td>
-                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
-                        {{ session.openedAt | date: 'HH:mm' }}
-                      </td>
-                      <td class="px-5 py-3 text-sm text-gray-500 hidden md:table-cell">
-                        {{ session.closedAt ? (session.closedAt | date: 'HH:mm') : '—' }}
-                      </td>
-                      <td class="px-5 py-3 text-sm text-gray-700 text-right hidden md:table-cell">
-                        S/ {{ session.openingAmount.toFixed(2) }}
-                      </td>
+                      <td class="px-5 py-3 text-sm text-gray-700">{{ c.userName || 'Sin nombre' }}</td>
+                      <td class="px-5 py-3 text-sm text-gray-500 text-right">{{ c.ticketCount }}</td>
                       <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">
-                        S/ {{ session.totalCollected.toFixed(2) }}
-                      </td>
-                      <td class="px-5 py-3">
-                        <span
-                          class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
-                          [class]="
-                            session.status === 'open'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-500'
-                          "
-                        >
-                          {{ session.status === 'open' ? 'Abierta' : 'Cerrada' }}
-                        </span>
+                        {{ money(c.total) }}
                       </td>
                     </tr>
                   }
@@ -303,6 +260,88 @@ import { ReportsService } from '../services/reports.service';
             }
           </div>
         </section>
+
+        <!-- ═══════════════════════════════════ -->
+        <!-- SECCIÓN 4b: VENTAS POR CATEGORÍA    -->
+        <!-- ═══════════════════════════════════ -->
+        <section class="space-y-4">
+          <h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
+            <span class="text-lg">🏷️</span> Ventas por categoría
+          </h2>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            @if (reportsService.categoriesReport().length === 0) {
+              <p class="px-5 py-8 text-center text-sm text-gray-400">Sin ventas en este período</p>
+            } @else {
+              <table class="w-full">
+                <thead>
+                  <tr class="border-b border-gray-100 bg-gray-50">
+                    <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Categoría</th>
+                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Unidades</th>
+                    <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Ingresos</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  @for (c of reportsService.categoriesReport(); track c.categoryId) {
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-5 py-3 text-sm text-gray-700">{{ c.categoryName || 'Sin categoría' }}</td>
+                      <td class="px-5 py-3 text-sm text-gray-500 text-right">{{ c.units }}</td>
+                      <td class="px-5 py-3 text-sm font-bold text-gray-900 text-right">{{ money(c.revenue) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </div>
+        </section>
+
+        <!-- ═══════════════════════════════════ -->
+        <!-- SECCIÓN 4c: RENTABILIDAD            -->
+        <!-- ═══════════════════════════════════ -->
+        @if (reportsService.profitability(); as prof) {
+          <section class="space-y-4">
+            <h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
+              <span class="text-lg">📈</span> Rentabilidad
+            </h2>
+            <div class="grid grid-cols-3 gap-4">
+              <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Ingresos</p>
+                <p class="text-xl font-bold text-gray-900 mt-1">{{ money(prof.revenue) }}</p>
+              </div>
+              <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <p class="text-xs text-gray-400 uppercase tracking-wide font-medium">Costo (COGS)</p>
+                <p class="text-xl font-bold text-gray-900 mt-1">{{ money(prof.cogs) }}</p>
+              </div>
+              <div class="bg-white rounded-2xl p-4 shadow-sm border border-emerald-100">
+                <p class="text-xs text-emerald-500 uppercase tracking-wide font-medium">Margen</p>
+                <p class="text-xl font-bold text-emerald-600 mt-1">{{ money(prof.margin) }}</p>
+              </div>
+            </div>
+            @if (prof.byCategory.length > 0) {
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full">
+                  <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Categoría</th>
+                      <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Ingresos</th>
+                      <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Costo</th>
+                      <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Margen</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-50">
+                    @for (r of prof.byCategory; track r.categoryId) {
+                      <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-5 py-3 text-sm text-gray-700">{{ r.categoryName || 'Sin categoría' }}</td>
+                        <td class="px-5 py-3 text-sm text-gray-500 text-right">{{ money(r.revenue) }}</td>
+                        <td class="px-5 py-3 text-sm text-gray-500 text-right hidden md:table-cell">{{ money(r.cogs) }}</td>
+                        <td class="px-5 py-3 text-sm font-bold text-emerald-600 text-right">{{ money(r.margin) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        }
 
         <!-- ═══════════════════════════════════ -->
         <!-- SECCIÓN 5: INVENTARIO BAJO         -->
@@ -487,6 +526,10 @@ export class ReportsPageComponent implements OnInit {
     if (value) {
       this.reportsService.setSelectedDate(value);
     }
+  }
+
+  money(n: number): string {
+    return `S/ ${(n ?? 0).toFixed(2)}`;
   }
 
   barWidth(product: TopProduct): number {

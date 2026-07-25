@@ -74,6 +74,9 @@ export interface Sale {
   tax: string;
   tip: string;
   total: string;
+  /** Efectivo recibido y cambio entregado (RF-029). */
+  paid_amount?: string | null;
+  change_given?: string | null;
   status: string;
   sold_at: string;
   items?: SaleItem[];

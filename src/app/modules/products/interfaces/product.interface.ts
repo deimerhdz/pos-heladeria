@@ -20,6 +20,8 @@ export interface Product {
   preparation_type: PreparationType;
   image_url: string | null;
   active: boolean;
+  /** Disponibilidad operativa ('agotado temporal'), distinta de `active` (RF-006). */
+  available: boolean;
   created_at: string;
   updated_at?: string | null;
 }
@@ -50,6 +52,7 @@ export interface ProductUpdatePayload {
   preparation_type?: PreparationType;
   image_url?: string | null;
   active?: boolean;
+  available?: boolean;
 }
 
 // --- Variants ---
@@ -157,6 +160,52 @@ export interface RecipeItem {
 /** `PUT /variants/{id}/recipe` (`RecipeSet`). */
 export interface RecipeSetPayload {
   items: RecipeItem[];
+}
+
+// --- Draft (single-page create/edit) ---
+//
+// El backend no admite creación anidada; el draft es el modelo de UI que la
+// página unifica y que `ProductService.saveProduct` orquesta en varias llamadas.
+
+/** Una línea de receta en el draft (insumo fijo). */
+export interface RecipeLineDraft {
+  inventory_item_id: string;
+  quantity: number;
+}
+
+/** Una variante en el draft. `id === null` = aún no existe en el backend. */
+export interface VariantDraft {
+  /** Id de backend, o null si es nueva. */
+  id: string | null;
+  /** Clave local estable para `@for` mientras no hay id. */
+  localId: string;
+  name: string;
+  price: number;
+  recipe: RecipeLineDraft[];
+}
+
+/** Asignación de un grupo de opciones al producto. `assigned` = ya persistida. */
+export interface OptionGroupAssignmentDraft {
+  option_group_id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  /** true si ya está asignada en el backend (no se puede quitar: sin endpoint). */
+  assigned: boolean;
+}
+
+/** Draft completo del producto para la página unificada de crear/editar. */
+export interface ProductDraft {
+  id: string | null;
+  name: string;
+  category_id: string;
+  description: string;
+  preparation_type: PreparationType;
+  image_url: string;
+  active: boolean;
+  hasSizes: boolean;
+  variants: VariantDraft[];
+  optionGroups: OptionGroupAssignmentDraft[];
 }
 
 // --- Public menu (`GET /menu`) ---

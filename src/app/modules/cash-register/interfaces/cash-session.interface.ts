@@ -1,13 +1,22 @@
 // Tipos de VISTA del Módulo de Caja (SkeiloPOS). Modelan lo que las pantallas
 // necesitan para renderizar; los DTOs del backend viven en `cash.interface.ts`.
 
-import { MovementKind } from './cash.interface';
+import { CashRegister, CashShift, MovementKind } from './cash.interface';
 
-/** Pantalla activa del módulo. */
-export type CashScreen = 'apertura' | 'dashboard' | 'report';
+/** Pantalla activa del módulo. `overview`/`history` = gestión (solo admin). */
+export type CashScreen = 'overview' | 'history' | 'apertura' | 'dashboard' | 'report';
 
-/** Modal abierto (o `null`). */
+/** Modal abierto (o `null`). El arqueo parcial vive en el dashboard, no aquí. */
 export type CashModal = MovementKind | 'arqueo' | null;
+
+/** Estado de una caja para la vista de gestión del admin. */
+export interface RegisterStatus {
+  register: CashRegister;
+  /** Turno abierto de la caja, o `null` si no tiene. */
+  shift: CashShift | null;
+  /** Efectivo esperado del turno abierto (de la reconciliación), o `null`. */
+  expected: number | null;
+}
 
 /** Vista de la línea de tiempo de movimientos. */
 export type MovementView = 'tabla' | 'timeline';

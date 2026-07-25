@@ -39,3 +39,35 @@ export interface LowStockIngredient {
   reorder_point: number;
   category: string;
 }
+
+/** Fila de ventas por categoría (`GET /reports/categories`). */
+export interface CategoryReportRow {
+  categoryId: string | null;
+  categoryName: string | null;
+  units: number;
+  revenue: number;
+}
+
+/** Fila de ventas por cajero (`GET /reports/cashiers`). */
+export interface CashierReportRow {
+  userId: string | null;
+  userName: string | null;
+  ticketCount: number;
+  total: number;
+}
+
+/** Rentabilidad por categoría (`GET /reports/profitability`). */
+export interface ProfitabilityRow {
+  categoryId: string | null;
+  categoryName: string | null;
+  revenue: number;
+  cogs: number;
+  margin: number;
+}
+
+export interface ProfitabilityReport {
+  revenue: number;
+  cogs: number;
+  margin: number;
+  byCategory: ProfitabilityRow[];
+}

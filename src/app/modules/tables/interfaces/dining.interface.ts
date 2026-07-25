@@ -74,6 +74,55 @@ export interface KitchenTransitionPayload {
   estado_cocina: KitchenStatus;
 }
 
+// ── Cobro / cierre (Fase 7) ────────────────────────────────────────────────
+
+/** Una línea de pago (`PaymentIn`). */
+export interface PaymentLine {
+  payment_method_id: string;
+  amount: number;
+  reference?: string | null;
+}
+
+/** Body for `POST /orders/{id}/pay` (`PayIn`). */
+export interface PayInPayload {
+  cash_shift_id: string;
+  discount: number;
+  tax: number;
+  tip: number;
+  payments: PaymentLine[];
+}
+
+/** Body for `POST /orders/{id}/block` (`BlockIn`). */
+export interface BlockPayload {
+  version: number;
+}
+
+/** Body for `POST /orders/items/{id}/void` (`VoidItemIn`). */
+export interface VoidItemPayload {
+  motivo: string;
+}
+
+/** `BillResponse` — cuenta de la mesa (total + split por comensal). */
+export interface Bill {
+  dining_table_id: string;
+  total: string;
+  orders: {
+    order_id: string;
+    status: string;
+    subtotal: string;
+    items: {
+      order_item_id: string;
+      product_variant_id: string;
+      session_id?: string | null;
+      quantity: number;
+      unit_price: string;
+      line_total: string;
+      estado_cocina: string;
+    }[];
+  }[];
+  split: { session_id?: string | null; customer_name?: string | null; subtotal: string }[];
+}
+
 /** Response of `POST /orders` and `GET /orders` (`OrderResponse`). */
 export interface DiningOrder {
   id: string;
