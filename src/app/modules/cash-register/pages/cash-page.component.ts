@@ -3,6 +3,8 @@ import { CashArqueoModalComponent } from '../components/cash-arqueo-modal.compon
 import { CashDashboardComponent } from '../components/cash-dashboard.component';
 import { CashMovementModalComponent } from '../components/cash-movement-modal.component';
 import { CashOpenComponent } from '../components/cash-open.component';
+import { CashHistoryComponent } from '../components/cash-history.component';
+import { CashOverviewComponent } from '../components/cash-overview.component';
 import { CashReportComponent } from '../components/cash-report.component';
 import { CashSessionStore } from '../services/cash-session.store';
 
@@ -20,6 +22,8 @@ import { CashSessionStore } from '../services/cash-session.store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [CashSessionStore],
   imports: [
+    CashOverviewComponent,
+    CashHistoryComponent,
     CashOpenComponent,
     CashDashboardComponent,
     CashReportComponent,
@@ -31,13 +35,19 @@ import { CashSessionStore } from '../services/cash-session.store';
       <!-- Barra superior -->
       <div class="flex items-center justify-between gap-4 px-4 py-3 border-b-2 border-gray-100 bg-white">
         <div class="flex items-center gap-4">
+          @if (store.isAdmin() && store.screen() !== 'overview') {
+            <button (click)="store.backToOverview()" class="text-[13px] text-gray-500 hover:text-gray-800 font-medium">← Cajas</button>
+            <div class="w-px h-[22px] bg-gray-200"></div>
+          }
           <div class="text-lg font-extrabold text-gray-900">SkeiloPOS</div>
           <div class="w-px h-[22px] bg-gray-200"></div>
           <div class="text-sm text-gray-700">Módulo de Caja</div>
         </div>
         <div class="flex items-center gap-4">
-          <div class="text-[13px] text-gray-400">{{ store.cajaLabel() }}</div>
-          <span class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-md" [class]="statusClass()">{{ statusLabel() }}</span>
+          @if (store.screen() !== 'overview' && store.screen() !== 'history') {
+            <div class="text-[13px] text-gray-400">{{ store.cajaLabel() }}</div>
+            <span class="inline-flex items-center text-[11px] px-2.5 py-0.5 rounded-md" [class]="statusClass()">{{ statusLabel() }}</span>
+          }
           @if (store.screen() === 'dashboard') {
             <div class="flex items-center gap-1.5 text-[13px] text-gray-500">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -56,6 +66,8 @@ import { CashSessionStore } from '../services/cash-session.store';
         <div class="flex-1 flex items-center justify-center p-10 text-sm text-gray-400">Cargando caja…</div>
       } @else {
         @switch (store.screen()) {
+          @case ('overview') { <app-cash-overview /> }
+          @case ('history') { <app-cash-history /> }
           @case ('apertura') { <app-cash-open /> }
           @case ('dashboard') { <app-cash-dashboard /> }
           @case ('report') { <app-cash-report /> }

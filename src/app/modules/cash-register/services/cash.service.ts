@@ -7,10 +7,12 @@ import {
   CashMovementPayload,
   CashRegister,
   CashShift,
+  Page,
   PartialCount,
   Reconciliation,
   ShiftClosePayload,
   ShiftReport,
+  ShiftSummary,
 } from '../interfaces/cash.interface';
 
 const REGISTER_STORAGE_KEY = 'cash.register';
@@ -112,6 +114,22 @@ export class CashService {
 
   getReport(shiftId: string): Promise<ShiftReport> {
     return firstValueFrom(this.http.get<ShiftReport>(`${this.baseUrl}/shifts/${shiftId}/report`));
+  }
+
+  /** Histórico de turnos (cierres). Admin. `status` por defecto 'closed'. */
+  listShifts(opts: {
+    status?: string;
+    cashRegisterId?: string;
+    page?: number;
+    size?: number;
+  }): Promise<Page<ShiftSummary>> {
+    const params: Record<string, string> = {
+      status: opts.status ?? 'closed',
+      page: String(opts.page ?? 1),
+      size: String(opts.size ?? 20),
+    };
+    if (opts.cashRegisterId) params['cash_register_id'] = opts.cashRegisterId;
+    return firstValueFrom(this.http.get<Page<ShiftSummary>>(`${this.baseUrl}/shifts`, { params }));
   }
 
   /** Arqueo parcial (RF-046): conteo intermedio sin cerrar el turno. */

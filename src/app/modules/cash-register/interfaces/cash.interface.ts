@@ -106,3 +106,28 @@ export interface PartialCount {
   user_name?: string | null;
   counted_at: string;
 }
+
+/** Respuesta paginada genérica del backend (`Page[T]`). */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+/** `ShiftSummaryResponse` — fila del histórico de cierres (montos como string). */
+export interface ShiftSummary {
+  id: string;
+  cash_register_id: string;
+  register_name: string;
+  user_name?: string | null;
+  opening_amount: string;
+  counted_amount?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  status: string;
+  close_note?: string | null;
+  expected: string;
+  difference?: string | null;
+}

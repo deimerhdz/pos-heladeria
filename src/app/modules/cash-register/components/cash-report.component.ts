@@ -93,9 +93,15 @@ import { CashSessionStore } from '../services/cash-session.store';
         <button (click)="store.imprimirReporte()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
           Imprimir / Exportar reporte
         </button>
-        <button (click)="store.nuevoTurno()" class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-          Iniciar nuevo turno
-        </button>
+        @if (store.reportContext() === 'history') {
+          <button (click)="store.backToHistory()" class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            ← Volver al historial
+          </button>
+        } @else {
+          <button (click)="store.nuevoTurno()" class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+            Iniciar nuevo turno
+          </button>
+        }
       </div>
     </div>
   `,

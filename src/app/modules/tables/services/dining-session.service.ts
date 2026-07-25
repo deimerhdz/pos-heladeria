@@ -4,14 +4,23 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { MenuCategory } from '../../products/interfaces/product.interface';
 import {
+  Bill,
   DiningOrder,
   DiningOrderItem,
   DiningOrderStatus,
   DiningSession,
   KitchenStatus,
   OrderCreatePayload,
+  OrderItemPayload,
+  PayInPayload,
   SessionOpenPayload,
 } from '../interfaces/dining.interface';
+
+/** Venta creada al cobrar una orden (`SaleResponse`); solo se usa el id/total. */
+export interface PaidSale {
+  id: string;
+  total?: string;
+}
 
 /** Minimal table info resolved from the QR (for display). */
 export interface ResolvedTable {
@@ -170,6 +179,45 @@ export class DiningSessionService {
     );
   }
 
+  // ── Cobro / cierre de comedor (Fase 7) ───────────────────────────────────
+
+  /** Add a single item directly to a table's open order (waiter). Creates the
+   *  order if none and deducts inventory. Returns the updated order. */
+  async addTableItem(tableId: string, item: OrderItemPayload): Promise<DiningOrder> {
+    return firstValueFrom(
+      this.http.post<DiningOrder>(`${this.api}/orders/tables/${tableId}/items`, item),
+    );
+  }
+
+  /** Void (and optionally replace) an order item. Reverses inventory if pendiente. */
+  async voidItem(itemId: string, motivo: string): Promise<DiningOrder> {
+    return firstValueFrom(
+      this.http.post<DiningOrder>(`${this.api}/orders/items/${itemId}/void`, { motivo }),
+    );
+  }
+
+  /** Table bill (total + per-diner split). */
+  async getTableBill(tableId: string): Promise<Bill> {
+    return firstValueFrom(this.http.get<Bill>(`${this.api}/orders/tables/${tableId}/bill`));
+  }
+
+  /** Block an order for checkout (optimistic lock + kitchen-ready validation). */
+  async blockOrder(orderId: string, version: number): Promise<DiningOrder> {
+    return firstValueFrom(
+      this.http.post<DiningOrder>(`${this.api}/orders/${orderId}/block`, { version }),
+    );
+  }
+
+  /** Charge a blocked order → creates the sale, marks it `pagada`. */
+  async payOrder(orderId: string, payload: PayInPayload): Promise<PaidSale> {
+    return firstValueFrom(this.http.post<PaidSale>(`${this.api}/orders/${orderId}/pay`, payload));
+  }
+
+  /** Free a table (hard rule: no non-terminal orders). Sets it `libre`. */
+  async releaseTable(tableId: string): Promise<unknown> {
+    return firstValueFrom(this.http.post(`${this.api}/orders/tables/${tableId}/release`, {}));
+  }
+
   // ── Session persistence (survives reloads, keyed by QR token) ─────────────
 
   storeSession(token: string, session: StoredSession): void {
@@ -198,6 +246,10 @@ export class DiningSessionService {
       if (typeof detail === 'string') return detail;
       if (Array.isArray(detail) && detail.length > 0) {
         return (detail[0] as { msg?: string })?.msg ?? fallback;
+      }
+      // El bloqueo por cocina devuelve `detail` como objeto `{error, items}`.
+      if (detail && typeof detail === 'object') {
+        return (detail as { error?: string }).error ?? fallback;
       }
       return body?.message ?? fallback;
     }

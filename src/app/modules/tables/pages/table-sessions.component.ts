@@ -1,218 +1,120 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DiningSessionService } from '../services/dining-session.service';
-import { TableService } from '../services/table.service';
-import { DiningOrder } from '../interfaces/dining.interface';
-import { CheckoutComponent } from '../../sales/components/checkout.component';
-import { orderStatusClass, orderStatusLabel } from '../../orders/order-status.util';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  HostListener,
+  OnDestroy,
+  OnInit,
+  inject,
+  viewChild,
+} from '@angular/core';
+import { PosTerminalStore } from '../services/pos-terminal.store';
+import { PosTablesPanelComponent } from '../components/pos-tables-panel.component';
+import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
+import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
+import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.component';
 
-interface SessionGroup {
-  sessionId: string;
-  tableLabel: string;
-  customerName: string;
-  diningTableId: string | null;
-  orders: DiningOrder[];
-}
-
+/**
+ * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
+ * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F4/F8/ESC/Ctrl+P).
+ * Reemplaza el antiguo tablero de sesiones. Cobra por el ciclo de comedor
+ * (block → pay) del backend.
+ */
 @Component({
   selector: 'app-table-sessions',
   standalone: true,
-  imports: [CheckoutComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [PosTerminalStore],
+  imports: [
+    PosTablesPanelComponent,
+    PosOrderPanelComponent,
+    PosCheckoutPanelComponent,
+    PosCatalogDrawerComponent,
+  ],
   template: `
-    <div class="space-y-6">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-bold text-gray-900">Sesiones de mesa</h1>
-          <p class="text-gray-500 text-sm mt-1">Comandas activas por mesa. Avanza su estado o cierra la sesión.</p>
+    <div class="flex flex-col -m-4 md:-m-6 bg-gray-50 h-[calc(100dvh-57px)]">
+      <!-- Barra superior -->
+      <div class="flex items-center justify-between gap-4 px-4 py-2.5 border-b border-gray-200 bg-white shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-lg">🪑</span>
+          <span class="font-bold text-gray-900 truncate">Terminal de mesas</span>
         </div>
-        <button
-          (click)="reload()"
-          [disabled]="loading()"
-          class="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
-        >
-          ↻ Refrescar
-        </button>
+        <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
+          <span>F2 Buscar</span><span>F4 Descuento</span><span>F8 Cobrar</span><span>ESC Cancelar</span>
+        </div>
       </div>
 
-      @if (error()) {
-        <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{{ error() }}</div>
-      }
-
-      <p class="text-xs text-gray-400">
-        Solo se muestran mesas con comandas activas (la API no expone un listado de sesiones abiertas).
-      </p>
-
-      @if (loading() && groups().length === 0) {
-        <div class="flex justify-center py-12">
-          <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      } @else if (groups().length === 0) {
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center py-16 text-center px-4">
-          <div class="text-5xl mb-4">🍽️</div>
-          <p class="text-gray-600 font-medium">No hay sesiones con comandas activas</p>
-          <p class="text-gray-400 text-sm mt-1">Cuando un cliente pida desde el QR, aparecerá aquí</p>
-        </div>
+      @if (store.loading()) {
+        <div class="flex-1 flex items-center justify-center text-sm text-gray-400">Cargando terminal…</div>
       } @else {
-        <div class="grid gap-4 md:grid-cols-2">
-          @for (group of groups(); track group.sessionId) {
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <!-- Session header -->
-              <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-gray-100 bg-gray-50">
-                <div class="min-w-0">
-                  <p class="font-semibold text-gray-900 truncate">{{ group.tableLabel }}</p>
-                  <p class="text-xs text-gray-500 truncate">{{ group.customerName }}</p>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <button
-                    (click)="openCheckout(group)"
-                    [disabled]="submitting()"
-                    class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    💵 Cobrar
-                  </button>
-                  <button
-                    (click)="closeSession(group.sessionId)"
-                    [disabled]="submitting()"
-                    class="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-
-              <!-- Orders -->
-              <div class="divide-y divide-gray-50">
-                @for (order of group.orders; track order.id) {
-                  <div class="px-5 py-3">
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusClass(order.status)">
-                        {{ statusLabel(order.status) }}
-                      </span>
-                      <div class="flex items-center gap-2 text-xs text-gray-400">
-                        <span>{{ itemCount(order) }} ítem(s)</span>
-                        <span class="text-green-600">{{ readyCount(order) }} listos 🍳</span>
-                      </div>
-                    </div>
-                    @if (order.notes) {
-                      <p class="text-xs text-gray-400 italic mt-1 truncate">“{{ order.notes }}”</p>
-                    }
-                  </div>
-                }
-              </div>
-            </div>
-          }
+        @if (store.error()) {
+          <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">{{ store.error() }}</div>
+        }
+        <div class="flex-1 flex min-h-0">
+          <app-pos-tables-panel />
+          <div class="flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white">
+            <app-pos-order-panel />
+          </div>
+          <app-pos-checkout-panel />
         </div>
       }
     </div>
 
-    @if (checkoutGroup(); as g) {
-      <app-checkout
-        [sessionId]="g.sessionId"
-        [diningTableId]="g.diningTableId"
-        [customerName]="g.customerName"
-        [tableLabel]="g.tableLabel"
-        [orders]="g.orders"
-        (paid)="onPaid()"
-        (cancelled)="checkoutGroup.set(null)"
-      />
+    @if (store.catalogOpen()) {
+      <app-pos-catalog-drawer />
+    }
+
+    <!-- Diálogo de éxito -->
+    @if (store.successOpen()) {
+      <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 text-center">
+          <div class="text-4xl">✅</div>
+          <h2 class="text-lg font-bold text-gray-900">Pago registrado</h2>
+          @if (store.lastSale(); as s) {
+            <p class="text-sm text-gray-500">Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario se actualizó.</p>
+          }
+          <div class="flex gap-2 justify-center pt-1">
+            <button (click)="store.printReceipt()" class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir</button>
+            <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
+          </div>
+        </div>
+      </div>
     }
   `,
 })
-export class TableSessionsComponent implements OnInit {
-  private readonly api = inject(DiningSessionService);
-  private readonly tableService = inject(TableService);
-
-  readonly orders = signal<DiningOrder[]>([]);
-  readonly loading = signal(false);
-  readonly submitting = signal(false);
-  readonly error = signal<string | null>(null);
-  readonly checkoutGroup = signal<SessionGroup | null>(null);
-
-  /** table id → "Mesa N · Nombre" label. */
-  private readonly tableLabels = computed(() => {
-    const map = new Map<string, string>();
-    for (const t of this.tableService.tables()) {
-      map.set(t.id, t.name ? `Mesa ${t.number} · ${t.name}` : `Mesa ${t.number}`);
-    }
-    return map;
-  });
-
-  /** Active orders grouped by session. */
-  readonly groups = computed<SessionGroup[]>(() => {
-    const labels = this.tableLabels();
-    const bySession = new Map<string, SessionGroup>();
-    for (const order of this.orders()) {
-      if (order.status === 'pagada' || order.status === 'cancelada') continue;
-      const sessionId = order.dining_session_id;
-      if (!sessionId) continue;
-      let group = bySession.get(sessionId);
-      if (!group) {
-        group = {
-          sessionId,
-          tableLabel: (order.dining_table_id && labels.get(order.dining_table_id)) || 'Mesa',
-          customerName: order.customer_name ?? 'Cliente',
-          diningTableId: order.dining_table_id ?? null,
-          orders: [],
-        };
-        bySession.set(sessionId, group);
-      }
-      group.orders.push(order);
-    }
-    return [...bySession.values()];
-  });
+export class TableSessionsComponent implements OnInit, OnDestroy {
+  readonly store = inject(PosTerminalStore);
+  private readonly tablesPanel = viewChild(PosTablesPanelComponent);
 
   ngOnInit(): void {
-    this.reload();
+    void this.store.init();
   }
 
-  openCheckout(group: SessionGroup): void {
-    this.checkoutGroup.set(group);
+  ngOnDestroy(): void {
+    this.store.stop();
   }
 
-  /** Sale emitted + session closed inside the checkout → refresh the board. */
-  onPaid(): void {
-    this.checkoutGroup.set(null);
-    this.reload();
-  }
-
-  async reload(): Promise<void> {
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      // Tables give us readable labels; orders drive the active sessions.
-      await this.tableService.loadTables();
-      this.orders.set(await this.api.listOrders());
-    } catch (err) {
-      this.error.set(this.api.extractError(err, 'No se pudieron cargar las sesiones.'));
-    } finally {
-      this.loading.set(false);
+  @HostListener('window:keydown', ['$event'])
+  onKey(e: KeyboardEvent): void {
+    const tag = (document.activeElement?.tagName ?? '').toUpperCase();
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if (e.key === 'F2') {
+      e.preventDefault();
+      this.tablesPanel()?.focusSearch();
+    } else if (e.key === 'F4') {
+      e.preventDefault();
+      if (this.store.hasActiveOrder()) this.store.toggleDiscountPanel();
+    } else if (e.key === 'F8') {
+      e.preventDefault();
+      void this.store.cobrar();
+    } else if (e.key === 'Escape') {
+      if (this.store.catalogOpen()) this.store.closeCatalog();
+      else if (this.store.discountPanelOpen()) this.store.toggleDiscountPanel();
+      else this.store.cancelSelection();
+    } else if (!typing && e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey)) {
+      if (this.store.successOpen()) {
+        e.preventDefault();
+        this.store.printReceipt();
+      }
     }
   }
-
-  async closeSession(sessionId: string): Promise<void> {
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      await this.api.closeSession(sessionId);
-      this.orders.set(await this.api.listOrders());
-    } catch (err) {
-      this.error.set(this.api.extractError(err, 'No se pudo cerrar la sesión.'));
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  itemCount(order: DiningOrder): number {
-    return (order.items ?? []).reduce((n, i) => n + i.quantity, 0);
-  }
-
-  /** Items already prepared (listo/entregado) for this order. */
-  readyCount(order: DiningOrder): number {
-    return (order.items ?? []).filter(
-      (i) => i.estado_cocina === 'listo' || i.estado_cocina === 'entregado',
-    ).length;
-  }
-
-  statusLabel = orderStatusLabel;
-  statusClass = orderStatusClass;
 }

@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
@@ -16,7 +25,7 @@ import { ProductService } from '../services/product.service';
 @Component({
   selector: 'app-product-form',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="max-w-3xl mx-auto space-y-5">
@@ -46,8 +55,8 @@ import { ProductService } from '../services/product.service';
           <h3 class="text-sm font-semibold text-gray-900 mb-4">Datos generales</h3>
           <div class="flex flex-col sm:flex-row gap-5">
             <div class="shrink-0">
-              @if (draft().image_url) {
-                <img [src]="draft().image_url" alt="" class="w-32 h-32 rounded-xl object-cover border border-gray-100" />
+              @if (previewUrl() ?? draft().image_url; as img) {
+                <img [src]="img" alt="" class="w-32 h-32 rounded-xl object-cover border border-gray-100" />
               } @else {
                 <div class="w-32 h-32 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-3xl">🍦</div>
               }
@@ -55,6 +64,10 @@ import { ProductService } from '../services/product.service';
                 {{ uploading() ? 'Subiendo…' : 'Cambiar imagen' }}
                 <input type="file" accept="image/*" (change)="onImageSelected($event)" class="hidden" [disabled]="uploading()" />
               </label>
+              @if (pendingImage()) {
+                <p class="mt-1 text-[11px] text-gray-400">Se subirá al guardar</p>
+                <button type="button" (click)="clearPendingImage()" class="text-[11px] text-red-600 hover:text-red-700">Cancelar imagen</button>
+              }
             </div>
             <div class="flex-1 space-y-3">
               <div>
@@ -64,7 +77,7 @@ import { ProductService } from '../services/product.service';
               </div>
               <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Categoría</label>
-                <select [value]="draft().category_id" (change)="setField('category_id', $any($event.target).value)"
+                <select [ngModel]="draft().category_id" (ngModelChange)="setField('category_id', $event)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="">Seleccionar categoría…</option>
                   @for (c of categoryService.categories(); track c.id) {
@@ -74,7 +87,7 @@ import { ProductService } from '../services/product.service';
               </div>
               <div>
                 <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tipo de preparación</label>
-                <select [value]="draft().preparation_type" (change)="setField('preparation_type', $any($event.target).value)"
+                <select [ngModel]="draft().preparation_type" (ngModelChange)="setField('preparation_type', $event)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="prepared">Preparado (al momento)</option>
                   <option value="packaged">Empacado</option>
@@ -162,7 +175,7 @@ import { ProductService } from '../services/product.service';
               }
               @for (line of av.recipe; track $index) {
                 <div class="flex items-center gap-2">
-                  <select [value]="line.inventory_item_id" (change)="setRecipeField(av.localId, $index, 'inventory_item_id', $any($event.target).value)"
+                  <select [ngModel]="line.inventory_item_id" (ngModelChange)="setRecipeField(av.localId, $index, 'inventory_item_id', $event)"
                     class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
                     <option value="">Insumo…</option>
                     @for (i of inventoryService.items(); track i.id) {
@@ -236,7 +249,7 @@ import { ProductService } from '../services/product.service';
     </div>
   `,
 })
-export class ProductFormComponent implements OnInit {
+export class ProductFormComponent implements OnInit, OnDestroy {
   readonly service = inject(ProductService);
   readonly categoryService = inject(CategoryService);
   readonly inventoryService = inject(InventoryService);
@@ -250,6 +263,10 @@ export class ProductFormComponent implements OnInit {
   readonly loading = signal(false);
   readonly uploading = signal(false);
   readonly productActive = signal(true);
+  /** Imagen elegida pero aún NO subida (se sube al guardar para evitar huérfanos). */
+  readonly pendingImage = signal<File | null>(null);
+  /** Preview local (`URL.createObjectURL`) de la imagen pendiente. */
+  readonly previewUrl = signal<string | null>(null);
   readonly activeLocalId = signal('');
   readonly newGroupId = signal('');
   readonly draft = signal<ProductDraft>(this.emptyDraft());
@@ -284,17 +301,24 @@ export class ProductFormComponent implements OnInit {
   });
 
   async ngOnInit(): Promise<void> {
-    if (this.categoryService.categories().length === 0) this.categoryService.loadCategories();
-    if (this.inventoryService.items().length === 0) this.inventoryService.loadItems();
-    if (this.unitMeasureService.unitMeasures().length === 0) this.unitMeasureService.loadUnitMeasures();
-    if (this.optionGroupService.groups().length === 0) this.optionGroupService.loadGroups();
+    this.loading.set(true);
+    // Se esperan los datos de referencia ANTES de armar el draft: los `<select>`
+    // con valor preseleccionado (categoría, insumo de receta) necesitan que sus
+    // `<option>` ya existan cuando se aplica `[value]`, o quedan en blanco.
+    await Promise.all([
+      this.categoryService.categories().length === 0 ? this.categoryService.loadCategories() : null,
+      this.inventoryService.items().length === 0 ? this.inventoryService.loadItems() : null,
+      this.unitMeasureService.unitMeasures().length === 0
+        ? this.unitMeasureService.loadUnitMeasures()
+        : null,
+      this.optionGroupService.groups().length === 0 ? this.optionGroupService.loadGroups() : null,
+    ]);
 
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
-      this.loading.set(true);
       const draft = await this.service.getProductDraft(id);
-      this.loading.set(false);
       if (!draft) {
+        this.loading.set(false);
         this.router.navigate(['/dashboard/products']);
         return;
       }
@@ -306,6 +330,7 @@ export class ProductFormComponent implements OnInit {
       this.draft.set(d);
       this.activeLocalId.set(d.variants[0].localId);
     }
+    this.loading.set(false);
   }
 
   private emptyDraft(): ProductDraft {
@@ -332,20 +357,43 @@ export class ProductFormComponent implements OnInit {
     this.draft.update((d) => ({ ...d, [field]: value as ProductDraft[K] }));
   }
 
-  async onImageSelected(event: Event): Promise<void> {
+  /**
+   * Sólo prepara la imagen (preview local); NO la sube. La subida ocurre en
+   * `save()`, de modo que si el usuario cancela o se sale, no queda un objeto
+   * huérfano en R2.
+   */
+  onImageSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
+    input.value = ''; // permite reelegir el mismo archivo
     if (!file) return;
-    this.uploading.set(true);
-    try {
-      const url = await this.service.uploadProductImage(file);
-      this.draft.update((d) => ({ ...d, image_url: url }));
-    } catch {
-      this.service.error.set('No se pudo subir la imagen.');
-    } finally {
-      this.uploading.set(false);
-      input.value = '';
+    if (!file.type.startsWith('image/')) {
+      this.service.error.set('El archivo debe ser una imagen.');
+      return;
     }
+    if (file.size > 5 * 1024 * 1024) {
+      this.service.error.set('La imagen supera el máximo de 5 MB.');
+      return;
+    }
+    this.service.error.set(null);
+    this.revokePreview();
+    this.pendingImage.set(file);
+    this.previewUrl.set(URL.createObjectURL(file));
+  }
+
+  clearPendingImage(): void {
+    this.revokePreview();
+    this.pendingImage.set(null);
+    this.previewUrl.set(null);
+  }
+
+  private revokePreview(): void {
+    const url = this.previewUrl();
+    if (url) URL.revokeObjectURL(url);
+  }
+
+  ngOnDestroy(): void {
+    this.revokePreview();
   }
 
   // --- Variantes ---
@@ -470,7 +518,25 @@ export class ProductFormComponent implements OnInit {
   }
 
   async save(): Promise<void> {
-    if (!this.canSave()) return;
+    if (!this.canSave() || this.service.isSubmitting() || this.uploading()) return;
+
+    // Sube la imagen pendiente ahora (una sola vez); si falla, aborta sin guardar.
+    const file = this.pendingImage();
+    if (file) {
+      this.uploading.set(true);
+      this.service.error.set(null);
+      try {
+        const url = await this.service.uploadProductImage(file);
+        this.draft.update((d) => ({ ...d, image_url: url }));
+        this.clearPendingImage();
+      } catch {
+        this.service.error.set('No se pudo subir la imagen.');
+        return;
+      } finally {
+        this.uploading.set(false);
+      }
+    }
+
     const id = await this.service.saveProduct(this.draft());
     if (id) this.router.navigate(['/dashboard/products']);
   }
