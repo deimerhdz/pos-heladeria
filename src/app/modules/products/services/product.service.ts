@@ -282,6 +282,7 @@ export class ProductService {
       hasSizes: variantDrafts.length > 1,
       variants: variantDrafts,
       optionGroups,
+      originalOptionGroupIds: optionGroups.map((g) => g.option_group_id),
     };
   }
 
@@ -364,7 +365,15 @@ export class ProductService {
       }
     }
 
-    // Asigna solo los grupos nuevos (los existentes no se pueden quitar: sin endpoint).
+    // Desasigna los grupos que el usuario quitó del draft.
+    const keptGroupIds = new Set(draft.optionGroups.map((g) => g.option_group_id));
+    for (const groupId of draft.originalOptionGroupIds) {
+      if (!keptGroupIds.has(groupId)) {
+        await this.deleteAssignGroup(productId, groupId);
+      }
+    }
+
+    // Asigna solo los grupos nuevos (los ya persistidos no se vuelven a enviar).
     for (const g of draft.optionGroups.filter((x) => !x.assigned)) {
       await this.postAssignGroup(productId, g.option_group_id, g.min_select, g.max_select);
     }
@@ -419,6 +428,12 @@ export class ProductService {
     };
     return firstValueFrom(
       this.http.post(`${this.productsUrl}/${productId}/option-groups`, payload),
+    );
+  }
+
+  private deleteAssignGroup(productId: string, optionGroupId: string): Promise<unknown> {
+    return firstValueFrom(
+      this.http.delete(`${this.productsUrl}/${productId}/option-groups/${optionGroupId}`),
     );
   }
 

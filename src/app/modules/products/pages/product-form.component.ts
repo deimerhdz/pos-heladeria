@@ -209,11 +209,7 @@ import { ProductService } from '../services/product.service';
                     <span class="text-sm font-medium text-gray-900">{{ g.name }}</span>
                     <span class="text-xs text-gray-400 ml-2">elige {{ g.min_select }}–{{ g.max_select }}</span>
                   </div>
-                  @if (g.assigned) {
-                    <span class="text-xs text-gray-400">Asignado</span>
-                  } @else {
-                    <button type="button" (click)="removeGroup(g.option_group_id)" class="text-xs font-medium text-red-600 hover:text-red-700">Quitar</button>
-                  }
+                  <button type="button" (click)="removeGroup(g.option_group_id)" class="text-xs font-medium text-red-600 hover:text-red-700">Quitar</button>
                 </li>
               }
             </ul>
@@ -275,10 +271,10 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     () => this.draft().variants.find((v) => v.localId === this.activeLocalId()) ?? null,
   );
 
-  /** Grupos que aún no están en el draft (para el selector de asignación). */
+  /** Grupos activos que aún no están en el draft (para el selector de asignación). */
   readonly assignableGroups = computed(() => {
     const used = new Set(this.draft().optionGroups.map((g) => g.option_group_id));
-    return this.optionGroupService.groups().filter((g) => !used.has(g.id));
+    return this.optionGroupService.groups().filter((g) => g.active && !used.has(g.id));
   });
 
   private readonly unitByItem = computed(() => {
@@ -346,6 +342,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       hasSizes: false,
       variants: [v],
       optionGroups: [],
+      originalOptionGroupIds: [],
     };
   }
 
@@ -503,9 +500,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   removeGroup(optionGroupId: string): void {
     this.draft.update((d) => ({
       ...d,
-      optionGroups: d.optionGroups.filter(
-        (g) => g.assigned || g.option_group_id !== optionGroupId,
-      ),
+      optionGroups: d.optionGroups.filter((g) => g.option_group_id !== optionGroupId),
     }));
   }
 
