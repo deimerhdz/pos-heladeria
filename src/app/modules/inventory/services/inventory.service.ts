@@ -1,5 +1,5 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
@@ -9,8 +9,11 @@ import {
   InventoryItem,
   InventoryItemCreatePayload,
   InventoryItemForm,
+  InventoryItemType,
   InventoryItemUpdatePayload,
   InventoryMovement,
+  LowStockItem,
+  Page,
   Purchase,
   PurchaseCreatePayload,
   PurchaseForm,
@@ -58,42 +61,122 @@ interface PurchaseResponse {
   items?: PurchaseItemResponse[];
 }
 
+/** Raw backend low-stock row (decimals arrive as strings). */
+interface LowStockResponse {
+  id: string;
+  name: string;
+  current_stock: string;
+  min_stock: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class InventoryService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/inventory`;
 
+  /** Página actual de la tabla de Insumos. */
   readonly items = signal<InventoryItem[]>([]);
+  /** Lista completa (tope 100) para pickers: select de compras y de kardex. */
+  readonly allItems = signal<InventoryItem[]>([]);
+  /** Insumos activos en o bajo su mínimo, cargados desde `/items/low-stock`. */
+  readonly lowStockItems = signal<LowStockItem[]>([]);
   readonly purchases = signal<Purchase[]>([]);
   readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
 
-  /** Active items whose current stock is at or below their minimum. */
-  readonly lowStockItems = computed(() =>
-    this.items().filter(i => i.active && i.current_stock <= i.min_stock)
-  );
+  // Estado de paginación y filtros de Insumos (reflejo del `Page<T>` del backend).
+  readonly itemsPage = signal(1);
+  readonly itemsSize = signal(20);
+  readonly itemsTotal = signal(0);
+  readonly itemsTotalPages = signal(0);
+  readonly itemsSearch = signal('');
+  readonly itemsType = signal<InventoryItemType | ''>('');
+  readonly itemsActive = signal<'' | 'active' | 'inactive'>('');
+  readonly itemsLowStock = signal(false);
 
-  async loadItems(active?: boolean): Promise<void> {
+  // Estado de paginación de Compras (tamaño fijo, sin selector).
+  readonly purchasesPage = signal(1);
+  readonly purchasesTotal = signal(0);
+  readonly purchasesTotalPages = signal(1);
+  private readonly purchasesSize = 20;
+
+  async loadItems(page: number = this.itemsPage(), size: number = this.itemsSize()): Promise<void> {
     this.isLoading.set(true);
     this.error.set(null);
 
-    let params = new HttpParams();
-    if (active !== undefined) params = params.set('active', String(active));
+    let params = new HttpParams().set('page', page).set('size', size);
+    const search = this.itemsSearch().trim();
+    if (search) params = params.set('search', search);
+    if (this.itemsType()) params = params.set('type', this.itemsType());
+    if (this.itemsActive() === 'active') params = params.set('active', 'true');
+    if (this.itemsActive() === 'inactive') params = params.set('active', 'false');
+    if (this.itemsLowStock()) params = params.set('low_stock', 'true');
 
     try {
       const data = await firstValueFrom(
-        this.http.get<InventoryItemResponse[]>(`${this.baseUrl}/items`, { params })
+        this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params })
       );
-      const items = data
-        .map(i => this.toItem(i))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      this.items.set(items);
+      this.items.set(data.items.map(i => this.toItem(i)));
+      this.itemsPage.set(data.page);
+      this.itemsSize.set(data.size);
+      this.itemsTotal.set(data.total);
+      this.itemsTotalPages.set(data.pages);
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  /** Lista completa (tope 100) para pickers: select de compras y de kardex. */
+  async loadAllItems(): Promise<void> {
+    try {
+      const data = await firstValueFrom(
+        this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params: { size: 100 } })
+      );
+      this.allItems.set(data.items.map(i => this.toItem(i)));
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    }
+  }
+
+  async loadLowStock(): Promise<void> {
+    try {
+      const data = await firstValueFrom(
+        this.http.get<LowStockResponse[]>(`${this.baseUrl}/items/low-stock`)
+      );
+      this.lowStockItems.set(
+        data.map(i => ({
+          id: i.id,
+          name: i.name,
+          current_stock: Number(i.current_stock),
+          min_stock: Number(i.min_stock),
+        }))
+      );
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    }
+  }
+
+  async setItemsSearch(value: string): Promise<void> {
+    this.itemsSearch.set(value);
+    await this.loadItems(1);
+  }
+
+  async setItemsType(value: InventoryItemType | ''): Promise<void> {
+    this.itemsType.set(value);
+    await this.loadItems(1);
+  }
+
+  async setItemsActive(value: '' | 'active' | 'inactive'): Promise<void> {
+    this.itemsActive.set(value);
+    await this.loadItems(1);
+  }
+
+  async setItemsLowStock(value: boolean): Promise<void> {
+    this.itemsLowStock.set(value);
+    await this.loadItems(1);
   }
 
   async createItem(form: InventoryItemForm): Promise<boolean> {
@@ -143,31 +226,31 @@ export class InventoryService {
   }
 
   /** Fetch the kardex (movements) of a single item, newest first. */
-  async loadMovements(itemId: string): Promise<InventoryMovement[]> {
+  async loadMovements(itemId: string, page = 1, size = 20): Promise<Page<InventoryMovement>> {
     try {
+      const params = new HttpParams().set('page', page).set('size', size);
       const data = await firstValueFrom(
-        this.http.get<MovementResponse[]>(`${this.baseUrl}/items/${itemId}/movements`)
+        this.http.get<Page<MovementResponse>>(`${this.baseUrl}/items/${itemId}/movements`, { params })
       );
-      return data
-        .map(m => this.toMovement(m))
-        .sort((a, b) => b.moved_at.localeCompare(a.moved_at));
+      return { ...data, items: data.items.map(m => this.toMovement(m)) };
     } catch (err) {
       this.error.set(this.extractError(err));
-      return [];
+      return { items: [], total: 0, page: 1, size, pages: 0 };
     }
   }
 
-  async loadPurchases(): Promise<void> {
+  async loadPurchases(page: number = this.purchasesPage()): Promise<void> {
     this.isLoading.set(true);
     this.error.set(null);
+    const params = new HttpParams().set('page', page).set('size', this.purchasesSize);
     try {
       const data = await firstValueFrom(
-        this.http.get<PurchaseResponse[]>(`${this.baseUrl}/purchases`)
+        this.http.get<Page<PurchaseResponse>>(`${this.baseUrl}/purchases`, { params })
       );
-      const purchases = data
-        .map(p => this.toPurchase(p))
-        .sort((a, b) => b.purchased_at.localeCompare(a.purchased_at));
-      this.purchases.set(purchases);
+      this.purchases.set(data.items.map(p => this.toPurchase(p)));
+      this.purchasesPage.set(data.page);
+      this.purchasesTotal.set(data.total);
+      this.purchasesTotalPages.set(data.pages);
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
@@ -199,7 +282,7 @@ export class InventoryService {
     this.error.set(null);
     try {
       await firstValueFrom(this.http.post<PurchaseResponse>(url, payload));
-      await Promise.all([this.loadItems(), this.loadPurchases()]);
+      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock(), this.loadPurchases()]);
       return true;
     } catch (err) {
       this.error.set(this.extractError(err));
@@ -220,7 +303,7 @@ export class InventoryService {
       await firstValueFrom(
         this.http.post<PurchaseResponse>(`${this.baseUrl}/purchases/${purchaseId}/receive`, { items }),
       );
-      await Promise.all([this.loadItems(), this.loadPurchases()]);
+      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock(), this.loadPurchases()]);
       return true;
     } catch (err) {
       this.error.set(this.extractError(err));
@@ -239,7 +322,7 @@ export class InventoryService {
     this.error.set(null);
     try {
       await firstValueFrom(request());
-      await this.loadItems();
+      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock()]);
       return true;
     } catch (err) {
       this.error.set(this.extractError(err));

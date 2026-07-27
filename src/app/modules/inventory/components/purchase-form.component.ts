@@ -76,7 +76,7 @@ import { InventoryService } from '../services/inventory.service';
                   <select class="col-span-5 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     [ngModel]="row.inventory_item_id" (ngModelChange)="updateRow($index, 'inventory_item_id', $event)">
                     <option value="">Seleccionar...</option>
-                    @for (i of inventoryService.items(); track i.id) {
+                    @for (i of inventoryService.allItems(); track i.id) {
                       <option [value]="i.id">{{ i.name }}</option>
                     }
                   </select>
@@ -154,7 +154,7 @@ export class PurchaseFormComponent implements OnInit {
   );
 
   ngOnInit(): void {
-    if (this.inventoryService.items().length === 0) this.inventoryService.loadItems();
+    if (this.inventoryService.allItems().length === 0) this.inventoryService.loadAllItems();
     if (this.suppliersService.suppliers().length === 0) this.suppliersService.loadSuppliers(true);
   }
 

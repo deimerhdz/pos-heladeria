@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  OnDestroy,
   OnInit,
   computed,
   inject,
@@ -26,6 +27,8 @@ import { PurchaseFormComponent } from '../components/purchase-form.component';
 type Tab = 'items' | 'purchases' | 'movements';
 type TypeFilter = '' | InventoryItemType;
 type ActiveFilter = '' | 'active' | 'inactive';
+
+const PAGE_SIZES = [10, 20, 50, 100];
 
 @Component({
   selector: 'app-inventory-page',
@@ -94,7 +97,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
         <!-- Alert -->
         <button type="button" (click)="toggleLowFilter()"
           class="text-left rounded-xl border p-4 transition-colors max-w-xs w-full"
-          [class]="onlyLow()
+          [class]="service.itemsLowStock()
             ? 'bg-amber-100 border-amber-300'
             : 'bg-amber-50 border-amber-100 hover:bg-amber-100'">
           <p class="text-xs text-amber-700 font-medium uppercase tracking-wide">Bajo mínimo</p>
@@ -103,16 +106,16 @@ type ActiveFilter = '' | 'active' | 'inactive';
 
         <!-- Filters -->
         <div class="bg-white rounded-xl border border-gray-100 p-4 flex flex-wrap gap-3">
-          <input [ngModel]="searchSignal()" (ngModelChange)="searchSignal.set($event)" type="text"
+          <input [ngModel]="searchSignal()" (ngModelChange)="onSearchInput($event)" type="text"
             placeholder="Buscar por nombre..."
             class="flex-1 min-w-48 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <select [ngModel]="typeFilter()" (ngModelChange)="typeFilter.set($event)"
+          <select [ngModel]="service.itemsType()" (ngModelChange)="onTypeFilterChange($event)"
             class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">Todos los tipos</option>
             <option value="raw_material">Materia prima</option>
             <option value="packaged">Empacado</option>
           </select>
-          <select [ngModel]="activeFilter()" (ngModelChange)="activeFilter.set($event)"
+          <select [ngModel]="service.itemsActive()" (ngModelChange)="onActiveFilterChange($event)"
             class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">Activos e inactivos</option>
             <option value="active">Solo activos</option>
@@ -124,7 +127,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
         <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
           @if (service.isLoading()) {
             <div class="flex items-center justify-center py-12"><p class="text-sm text-gray-400">Cargando insumos...</p></div>
-          } @else if (filteredItems().length === 0) {
+          } @else if (service.items().length === 0) {
             <div class="flex flex-col items-center justify-center py-12"><p class="text-sm text-gray-400">No se encontraron insumos</p></div>
           } @else {
             <div class="overflow-x-auto">
@@ -142,7 +145,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-50">
-                  @for (i of filteredItems(); track i.id) {
+                  @for (i of service.items(); track i.id) {
                     <tr class="hover:bg-gray-50 transition-colors" [class.opacity-50]="!i.active">
                       <td class="px-4 py-3"><p class="font-medium text-gray-900">{{ i.name }}</p></td>
                       <td class="px-4 py-3 text-gray-600">{{ typeLabel(i.type) }}</td>
@@ -179,6 +182,30 @@ type ActiveFilter = '' | 'active' | 'inactive';
                 </tbody>
               </table>
             </div>
+            @if (service.itemsTotalPages() > 1) {
+              <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                  <span>Por página</span>
+                  <select [ngModel]="service.itemsSize()" (ngModelChange)="onItemsSizeChange($event)" [disabled]="service.isLoading()"
+                    class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    @for (s of pageSizes; track s) { <option [ngValue]="s">{{ s }}</option> }
+                  </select>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs text-gray-500">Página {{ service.itemsPage() }} de {{ service.itemsTotalPages() || 1 }}</span>
+                  <div class="flex items-center gap-1">
+                    <button (click)="goToItemsPage(service.itemsPage() - 1)" [disabled]="service.itemsPage() <= 1 || service.isLoading()"
+                      class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Anterior
+                    </button>
+                    <button (click)="goToItemsPage(service.itemsPage() + 1)" [disabled]="service.itemsPage() >= service.itemsTotalPages() || service.isLoading()"
+                      class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
           }
         </div>
       }
@@ -239,6 +266,17 @@ type ActiveFilter = '' | 'active' | 'inactive';
                 </div>
               }
             </div>
+            @if (service.purchasesTotalPages() > 1) {
+              <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                <span class="text-xs text-gray-500">Página {{ service.purchasesPage() }} de {{ service.purchasesTotalPages() }}</span>
+                <div class="flex gap-2">
+                  <button type="button" (click)="goToPurchasesPage(service.purchasesPage() - 1)" [disabled]="service.purchasesPage() <= 1 || service.isLoading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-xs font-medium">Anterior</button>
+                  <button type="button" (click)="goToPurchasesPage(service.purchasesPage() + 1)" [disabled]="service.purchasesPage() >= service.purchasesTotalPages() || service.isLoading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-xs font-medium">Siguiente</button>
+                </div>
+              </div>
+            }
           }
         </div>
       }
@@ -250,7 +288,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
           <select [ngModel]="movementItemId()" (ngModelChange)="onMovementItemChange($event)"
             class="w-full max-w-md px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="">Seleccionar insumo...</option>
-            @for (i of service.items(); track i.id) {
+            @for (i of service.allItems(); track i.id) {
               <option [value]="i.id">{{ i.name }}</option>
             }
           </select>
@@ -288,6 +326,17 @@ type ActiveFilter = '' | 'active' | 'inactive';
                 </tbody>
               </table>
             </div>
+            @if (movementsTotalPages() > 1) {
+              <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+                <span class="text-xs text-gray-500">Página {{ movementsPage() }} de {{ movementsTotalPages() }}</span>
+                <div class="flex gap-2">
+                  <button type="button" (click)="goToMovementsPage(movementsPage() - 1)" [disabled]="movementsPage() <= 1 || movementsLoading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-xs font-medium">Anterior</button>
+                  <button type="button" (click)="goToMovementsPage(movementsPage() + 1)" [disabled]="movementsPage() >= movementsTotalPages() || movementsLoading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-xs font-medium">Siguiente</button>
+                </div>
+              </div>
+            }
           }
         </div>
       }
@@ -340,18 +389,18 @@ type ActiveFilter = '' | 'active' | 'inactive';
     }
   `,
 })
-export class InventoryPageComponent implements OnInit {
+export class InventoryPageComponent implements OnInit, OnDestroy {
   readonly service = inject(InventoryService);
   readonly unitMeasureService = inject(UnitMeasureService);
   readonly suppliersService = inject(SuppliersService);
   private readonly toast = inject(ToastService);
 
   readonly tab = signal<Tab>('items');
+  readonly pageSizes = PAGE_SIZES;
 
+  /** Local echo of the search box; the actual query to the service is debounced. */
   readonly searchSignal = signal('');
-  readonly typeFilter = signal<TypeFilter>('');
-  readonly activeFilter = signal<ActiveFilter>('');
-  readonly onlyLow = signal(false);
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
   readonly showForm = signal(false);
   readonly showAdjust = signal(false);
@@ -367,39 +416,31 @@ export class InventoryPageComponent implements OnInit {
   readonly movementItemId = signal('');
   readonly movements = signal<InventoryMovement[]>([]);
   readonly movementsLoading = signal(false);
+  readonly movementsPage = signal(1);
+  readonly movementsTotalPages = signal(1);
 
   private readonly unitMap = computed(
     () => new Map(this.unitMeasureService.unitMeasures().map(u => [u.id, u.abbreviation]))
   );
   private readonly itemMap = computed(
-    () => new Map(this.service.items().map(i => [i.id, i.name]))
+    () => new Map(this.service.allItems().map(i => [i.id, i.name]))
   );
   private readonly supplierMap = computed(
     () => new Map(this.suppliersService.suppliers().map(s => [s.id, s.name]))
   );
 
-  readonly filteredItems = computed(() => {
-    const q = this.searchSignal().toLowerCase().trim();
-    const type = this.typeFilter();
-    const active = this.activeFilter();
-    const low = this.onlyLow();
-
-    return this.service.items().filter(i => {
-      if (q && !i.name.toLowerCase().includes(q)) return false;
-      if (type && i.type !== type) return false;
-      if (active === 'active' && !i.active) return false;
-      if (active === 'inactive' && i.active) return false;
-      if (low && !(i.active && i.current_stock <= i.min_stock)) return false;
-      return true;
-    });
-  });
-
   async ngOnInit(): Promise<void> {
     await Promise.all([
       this.service.loadItems(),
+      this.service.loadAllItems(),
+      this.service.loadLowStock(),
       this.unitMeasureService.loadUnitMeasures(),
       this.suppliersService.loadSuppliers(),
     ]);
+  }
+
+  ngOnDestroy(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
   }
 
   setTab(tab: Tab): void {
@@ -407,6 +448,34 @@ export class InventoryPageComponent implements OnInit {
     if (tab === 'purchases' && this.service.purchases().length === 0) {
       this.service.loadPurchases();
     }
+  }
+
+  // --- filtros de Insumos (server-side) ---
+  onSearchInput(value: string): void {
+    this.searchSignal.set(value);
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => this.service.setItemsSearch(value), 300);
+  }
+  onTypeFilterChange(value: TypeFilter): void {
+    this.service.setItemsType(value);
+  }
+  onActiveFilterChange(value: ActiveFilter): void {
+    this.service.setItemsActive(value);
+  }
+
+  // --- paginación de Insumos ---
+  goToItemsPage(page: number): void {
+    if (page < 1 || page > this.service.itemsTotalPages()) return;
+    this.service.loadItems(page, this.service.itemsSize());
+  }
+  onItemsSizeChange(size: number): void {
+    this.service.loadItems(1, size);
+  }
+
+  // --- paginación de Compras ---
+  goToPurchasesPage(page: number): void {
+    if (page < 1 || page > this.service.purchasesTotalPages()) return;
+    this.service.loadPurchases(page);
   }
 
   // --- helpers ---
@@ -428,7 +497,7 @@ export class InventoryPageComponent implements OnInit {
   }
 
   toggleLowFilter(): void {
-    this.onlyLow.update(v => !v);
+    this.service.setItemsLowStock(!this.service.itemsLowStock());
   }
   toggleExpanded(id: string): void {
     this.expandedId.update(current => (current === id ? null : id));
@@ -498,20 +567,29 @@ export class InventoryPageComponent implements OnInit {
 
   onAdjusted(): void {
     this.showAdjust.set(false);
-    // Refresh the kardex if we're viewing this item's movements.
-    if (this.movementItemId()) this.onMovementItemChange(this.movementItemId());
+    // Refresh the kardex (preserving its current page) if we're viewing this item's movements.
+    if (this.movementItemId()) this.onMovementItemChange(this.movementItemId(), this.movementsPage());
   }
 
   // --- movements ---
-  async onMovementItemChange(itemId: string): Promise<void> {
+  async onMovementItemChange(itemId: string, page = 1): Promise<void> {
     this.movementItemId.set(itemId);
     if (!itemId) {
       this.movements.set([]);
+      this.movementsPage.set(1);
+      this.movementsTotalPages.set(1);
       return;
     }
     this.movementsLoading.set(true);
-    const data = await this.service.loadMovements(itemId);
-    this.movements.set(data);
+    const data = await this.service.loadMovements(itemId, page);
+    this.movements.set(data.items);
+    this.movementsPage.set(data.page);
+    this.movementsTotalPages.set(data.pages || 1);
     this.movementsLoading.set(false);
+  }
+
+  goToMovementsPage(page: number): void {
+    if (page < 1 || page > this.movementsTotalPages()) return;
+    this.onMovementItemChange(this.movementItemId(), page);
   }
 }
