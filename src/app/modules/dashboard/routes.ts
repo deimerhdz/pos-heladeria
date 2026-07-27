@@ -25,6 +25,9 @@ export const dashboardRoutes: Routes = [
           import('../cash-register/pages/cash-page.component').then((m) => m.CashPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
+      // Mesas salió de Ajustes a Operaciones; va antes del bloque 'ajustes'
+      // para que el redirect gane al match de la ruta padre.
+      { path: 'ajustes/mesas', pathMatch: 'full', redirectTo: 'mesas' },
       {
         path: 'ajustes',
         loadComponent: () =>
@@ -43,11 +46,6 @@ export const dashboardRoutes: Routes = [
               import('../sales/pages/payment-methods-page.component').then(
                 (m) => m.PaymentMethodsPageComponent,
               ),
-          },
-          {
-            path: 'mesas',
-            loadComponent: () =>
-              import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
           },
           {
             path: 'unidades',
@@ -84,11 +82,11 @@ export const dashboardRoutes: Routes = [
           },
         ],
       },
-      // Rutas migradas a Ajustes — se conservan como redirect (deep links/marcadores).
+      // Rutas reubicadas — se conservan como redirect (deep links/marcadores).
       { path: 'metodos-pago', pathMatch: 'full', redirectTo: 'ajustes/metodos-pago' },
       { path: 'unit-measures', pathMatch: 'full', redirectTo: 'ajustes/unidades' },
       { path: 'option-groups', pathMatch: 'full', redirectTo: 'ajustes/grupos-opciones' },
-      { path: 'tables', pathMatch: 'full', redirectTo: 'ajustes/mesas' },
+      { path: 'tables', pathMatch: 'full', redirectTo: 'mesas' },
       {
         path: 'ventas',
         loadComponent: () =>
@@ -132,6 +130,12 @@ export const dashboardRoutes: Routes = [
         path: 'menu',
         loadComponent: () =>
           import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'mesas',
+        loadComponent: () =>
+          import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {

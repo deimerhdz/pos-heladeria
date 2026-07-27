@@ -10,7 +10,8 @@ export const NAV_ITEMS: NavItem[] = [
   // ── OPERACIONES ────────────────────────────────────────────────────────
   { label: 'Cocina', icon: 'kitchen', route: '/dashboard/cocina', group: 'OPERACIONES', roles: [UserRole.STAFF, UserRole.ADMIN] },
   { label: 'Órdenes', icon: 'orders', route: '/dashboard/orders', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF] },
-  { label: 'Sesiones de mesa', icon: 'sessions', route: '/dashboard/mesas-sesiones', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF] },
+  { label: 'Mesas', icon: 'tables', route: '/dashboard/mesas', group: 'OPERACIONES', roles: [UserRole.ADMIN] },
+  { label: 'Terminal de mesas', icon: 'sessions', route: '/dashboard/mesas-sesiones', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF] },
 
   // ── CATÁLOGO ───────────────────────────────────────────────────────────
   { label: 'Menú', icon: 'menu', route: '/dashboard/menu', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },

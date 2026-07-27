@@ -45,7 +45,6 @@ export class SettingsPageComponent {
   readonly tabs: SettingsTab[] = [
     { label: 'Información básica', path: 'informacion' },
     { label: 'Métodos de pago', path: 'metodos-pago' },
-    { label: 'Mesas', path: 'mesas' },
     { label: 'Unidades de medida', path: 'unidades' },
     { label: 'Grupos de opciones', path: 'grupos-opciones' },
     { label: 'Promociones', path: 'promociones' },

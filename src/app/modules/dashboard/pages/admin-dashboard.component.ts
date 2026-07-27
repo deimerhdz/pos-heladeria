@@ -172,12 +172,12 @@ export class AdminDashboardComponent implements OnInit {
   });
 
   readonly quickActions: QuickAction[] = [
-    { label: 'Sesiones de mesa', icon: '🍽️', route: '/dashboard/mesas-sesiones', description: 'Cobrar y cerrar' },
+    { label: 'Terminal de mesas', icon: '🍽️', route: '/dashboard/mesas-sesiones', description: 'Cobrar y cerrar' },
     { label: 'Cocina', icon: '🍳', route: '/dashboard/cocina', description: 'Comandas en curso' },
     { label: 'Ventas', icon: '🧾', route: '/dashboard/ventas', description: 'Historial de cobros' },
     { label: 'Gestión de Caja', icon: '💰', route: '/dashboard/caja', description: 'Turnos y arqueo' },
     { label: 'Productos', icon: '🍦', route: '/dashboard/products', description: 'Catálogo y precios' },
-    { label: 'Mesas', icon: '🪑', route: '/dashboard/ajustes/mesas', description: 'Estado y QR' },
+    { label: 'Mesas', icon: '🪑', route: '/dashboard/mesas', description: 'Estado y QR' },
   ];
 
   ngOnInit(): void {
