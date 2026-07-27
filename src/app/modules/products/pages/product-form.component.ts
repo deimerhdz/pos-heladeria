@@ -280,7 +280,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   private readonly unitByItem = computed(() => {
     const units = new Map(this.unitMeasureService.unitMeasures().map((u) => [u.id, u.abbreviation]));
     const map = new Map<string, string>();
-    for (const item of this.inventoryService.items()) {
+    for (const item of this.inventoryService.allItems()) {
       map.set(item.id, units.get(item.unit_measure_id) ?? '');
     }
     return map;
@@ -288,7 +288,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
 
   /** Opciones para el select con buscador de insumos de la receta. */
   readonly inventoryOptions = computed(() =>
-    this.inventoryService.items().map((i) => ({ id: i.id, label: i.name })),
+    this.inventoryService.allItems().map((i) => ({ id: i.id, label: i.name })),
   );
 
   readonly canSave = computed(() => {
@@ -308,7 +308,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     // `<option>` ya existan cuando se aplica `[value]`, o quedan en blanco.
     await Promise.all([
       this.categoryService.categories().length === 0 ? this.categoryService.loadCategories() : null,
-      this.inventoryService.items().length === 0 ? this.inventoryService.loadItems() : null,
+      this.inventoryService.allItems().length === 0 ? this.inventoryService.loadAllItems() : null,
       this.unitMeasureService.unitMeasures().length === 0
         ? this.unitMeasureService.loadUnitMeasures()
         : null,
@@ -444,7 +444,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
 
   // --- Receta ---
   addRecipeLine(localId: string): void {
-    const first = this.inventoryService.items()[0]?.id ?? '';
+    const first = this.inventoryService.allItems()[0]?.id ?? '';
     this.draft.update((d) => ({
       ...d,
       variants: d.variants.map((v) =>

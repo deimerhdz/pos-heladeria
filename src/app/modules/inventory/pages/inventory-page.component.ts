@@ -23,6 +23,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 import { InventoryItemFormComponent } from '../components/inventory-item-form.component';
 import { StockAdjustModalComponent } from '../components/stock-adjust-modal.component';
 import { PurchaseFormComponent } from '../components/purchase-form.component';
+import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 
 type Tab = 'items' | 'purchases' | 'movements';
 type TypeFilter = '' | InventoryItemType;
@@ -40,6 +41,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
     InventoryItemFormComponent,
     StockAdjustModalComponent,
     PurchaseFormComponent,
+    SearchableSelectComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -285,13 +287,8 @@ const PAGE_SIZES = [10, 20, 50, 100];
       @if (tab() === 'movements') {
         <div class="bg-white rounded-xl border border-gray-100 p-4">
           <label class="block text-sm font-medium text-gray-700 mb-1">Insumo</label>
-          <select [ngModel]="movementItemId()" (ngModelChange)="onMovementItemChange($event)"
-            class="w-full max-w-md px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">Seleccionar insumo...</option>
-            @for (i of service.allItems(); track i.id) {
-              <option [value]="i.id">{{ i.name }}</option>
-            }
-          </select>
+          <app-searchable-select [ngModel]="movementItemId()" (ngModelChange)="onMovementItemChange($event)"
+            [options]="movementItemOptions()" placeholder="Seleccionar insumo..." class="w-full max-w-md" />
         </div>
 
         <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -424,6 +421,10 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
   );
   private readonly itemMap = computed(
     () => new Map(this.service.allItems().map(i => [i.id, i.name]))
+  );
+  /** Opciones para el select con buscador de insumos del tab Movimientos. */
+  readonly movementItemOptions = computed(() =>
+    this.service.allItems().map(i => ({ id: i.id, label: i.name }))
   );
   private readonly supplierMap = computed(
     () => new Map(this.suppliersService.suppliers().map(s => [s.id, s.name]))
