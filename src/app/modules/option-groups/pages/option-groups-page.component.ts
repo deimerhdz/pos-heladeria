@@ -6,7 +6,9 @@ import {
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { OptionGroup } from '../../products/interfaces/product.interface';
+import { Option, OptionGroup } from '../../products/interfaces/product.interface';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { ToastService } from '../../../shared/feedback/toast.service';
 import { OptionGroupService } from '../services/option-group.service';
 import { OptionGroupFormComponent } from '../components/option-group-form.component';
 import { OptionFormComponent } from '../components/option-form.component';
@@ -24,7 +26,7 @@ import { OptionFormComponent } from '../components/option-form.component';
           <h1 class="text-xl font-bold text-gray-900">Grupos de opciones</h1>
           <p class="text-sm text-gray-500 mt-0.5">Sabores, toppings y extras que se asignan a los productos</p>
         </div>
-        <button (click)="showGroupForm.set(true)"
+        <button (click)="openCreateGroup()"
           class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -46,31 +48,64 @@ import { OptionFormComponent } from '../components/option-form.component';
       } @else {
         <div class="grid gap-4 md:grid-cols-2">
           @for (g of service.groups(); track g.id) {
-            <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div class="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
-                <div>
-                  <p class="font-semibold text-gray-900">{{ g.name }}</p>
+            <div class="bg-white rounded-xl border border-gray-100 overflow-hidden" [class.opacity-60]="!g.active">
+              <div class="px-4 py-3 border-b border-gray-50 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="font-semibold text-gray-900 flex items-center gap-2">
+                    <span class="truncate">{{ g.name }}</span>
+                    @if (!g.active) {
+                      <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                        Inactivo
+                      </span>
+                    }
+                  </p>
                   <p class="text-xs text-gray-500">Elige {{ g.min_select }}–{{ g.max_select }}</p>
                 </div>
-                <button (click)="openOptionForm(g)"
-                  class="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
-                  + Opción
-                </button>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button (click)="openOptionForm(g)"
+                    class="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+                    + Opción
+                  </button>
+                  <button (click)="openEditGroup(g)" title="Editar grupo"
+                    class="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                    ✏️
+                  </button>
+                  <button (click)="toggleGroup(g)" [title]="g.active ? 'Desactivar grupo' : 'Reactivar grupo'"
+                    class="p-1.5 rounded-lg transition-colors"
+                    [class]="g.active
+                      ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                      : 'text-gray-400 hover:text-green-600 hover:bg-green-50'">
+                    {{ g.active ? '🔴' : '🟢' }}
+                  </button>
+                </div>
               </div>
               @if (g.options.length === 0) {
                 <p class="px-4 py-3 text-sm text-gray-400">Sin opciones todavía</p>
               } @else {
                 <ul class="divide-y divide-gray-50">
                   @for (o of g.options; track o.id) {
-                    <li class="px-4 py-2 flex items-center justify-between text-sm" [class.opacity-50]="!o.active">
-                      <span class="text-gray-800">
+                    <li class="px-4 py-2 flex items-center justify-between gap-2 text-sm" [class.opacity-50]="!o.active">
+                      <span class="text-gray-800 min-w-0 truncate">
                         {{ o.name }}
                         @if (o.inventory_item_id) {
                           <span class="text-xs text-gray-400">· consume insumo</span>
                         }
                       </span>
-                      <span class="text-gray-600">
-                        @if (o.extra_price > 0) { +{{ o.extra_price | number:'1.2-2' }} } @else { — }
+                      <span class="flex items-center gap-1 shrink-0">
+                        <span class="text-gray-600">
+                          @if (o.extra_price > 0) { +{{ o.extra_price | number:'1.2-2' }} } @else { — }
+                        </span>
+                        <button (click)="openEditOption(g, o)" title="Editar opción"
+                          class="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
+                          ✏️
+                        </button>
+                        <button (click)="toggleOption(o)" [title]="o.active ? 'Desactivar opción' : 'Reactivar opción'"
+                          class="p-1.5 rounded-lg transition-colors"
+                          [class]="o.active
+                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            : 'text-gray-400 hover:text-green-600 hover:bg-green-50'">
+                          {{ o.active ? '🔴' : '🟢' }}
+                        </button>
                       </span>
                     </li>
                   }
@@ -84,26 +119,101 @@ import { OptionFormComponent } from '../components/option-form.component';
 
     <!-- Modals -->
     @if (showGroupForm()) {
-      <app-option-group-form (close)="showGroupForm.set(false)" (saved)="showGroupForm.set(false)"></app-option-group-form>
+      <app-option-group-form [group]="editingGroup()" (close)="closeGroupForm()" (saved)="closeGroupForm()"></app-option-group-form>
     }
     @if (showOptionForm()) {
-      <app-option-form [group]="selectedGroup()" (close)="showOptionForm.set(false)" (saved)="showOptionForm.set(false)"></app-option-form>
+      <app-option-form
+        [group]="selectedGroup()"
+        [option]="editingOption()"
+        (close)="closeOptionForm()"
+        (saved)="closeOptionForm()"></app-option-form>
     }
   `,
 })
 export class OptionGroupsPageComponent implements OnInit {
   readonly service = inject(OptionGroupService);
+  private readonly confirm = inject(ConfirmService);
+  private readonly toast = inject(ToastService);
 
   readonly showGroupForm = signal(false);
   readonly showOptionForm = signal(false);
   readonly selectedGroup = signal<OptionGroup | null>(null);
+  readonly editingGroup = signal<OptionGroup | null>(null);
+  readonly editingOption = signal<Option | null>(null);
 
   async ngOnInit(): Promise<void> {
     await this.service.loadGroups();
   }
 
+  openCreateGroup(): void {
+    this.editingGroup.set(null);
+    this.showGroupForm.set(true);
+  }
+
+  openEditGroup(g: OptionGroup): void {
+    this.editingGroup.set(g);
+    this.showGroupForm.set(true);
+  }
+
+  closeGroupForm(): void {
+    this.showGroupForm.set(false);
+    this.editingGroup.set(null);
+  }
+
   openOptionForm(g: OptionGroup): void {
     this.selectedGroup.set(g);
+    this.editingOption.set(null);
     this.showOptionForm.set(true);
+  }
+
+  openEditOption(g: OptionGroup, o: Option): void {
+    this.selectedGroup.set(g);
+    this.editingOption.set(o);
+    this.showOptionForm.set(true);
+  }
+
+  closeOptionForm(): void {
+    this.showOptionForm.set(false);
+    this.editingOption.set(null);
+  }
+
+  async toggleGroup(g: OptionGroup): Promise<void> {
+    if (g.active) {
+      const ok = await this.confirm.ask({
+        title: `Desactivar "${g.name}"`,
+        message:
+          'El grupo y sus opciones dejarán de aparecer en el menú y en el POS. ' +
+          'Las ventas anteriores no se ven afectadas y puedes reactivarlo cuando quieras.',
+        confirmText: 'Desactivar',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    const done = await this.service.toggleGroupActive(g.id, g.active);
+    if (done) {
+      this.toast.success(g.active ? 'Grupo desactivado' : 'Grupo reactivado');
+    } else {
+      this.toast.error(this.service.error() ?? 'No se pudo actualizar el grupo.');
+    }
+  }
+
+  async toggleOption(o: Option): Promise<void> {
+    if (o.active) {
+      const ok = await this.confirm.ask({
+        title: `Desactivar "${o.name}"`,
+        message:
+          'La opción dejará de aparecer en el menú y en el POS. ' +
+          'Las ventas anteriores no se ven afectadas y puedes reactivarla cuando quieras.',
+        confirmText: 'Desactivar',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    const done = await this.service.toggleOptionActive(o.id, o.active);
+    if (done) {
+      this.toast.success(o.active ? 'Opción desactivada' : 'Opción reactivada');
+    } else {
+      this.toast.error(this.service.error() ?? 'No se pudo actualizar la opción.');
+    }
   }
 }

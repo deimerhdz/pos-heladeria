@@ -2,11 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   EventEmitter,
+  Input,
+  OnInit,
   Output,
   inject,
 } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { OptionGroupForm } from '../../products/interfaces/product.interface';
+import { OptionGroup, OptionGroupForm } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
 
 @Component({
@@ -18,7 +20,9 @@ import { OptionGroupService } from '../services/option-group.service';
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 class="text-base font-bold text-gray-900">Nuevo grupo de opciones</h2>
+          <h2 class="text-base font-bold text-gray-900">
+            {{ group ? 'Editar grupo de opciones' : 'Nuevo grupo de opciones' }}
+          </h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -58,7 +62,7 @@ import { OptionGroupService } from '../services/option-group.service';
             </button>
             <button type="submit" [disabled]="form.invalid || service.isSubmitting()"
               class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-              {{ service.isSubmitting() ? 'Guardando...' : 'Crear grupo' }}
+              {{ service.isSubmitting() ? 'Guardando...' : group ? 'Guardar cambios' : 'Crear grupo' }}
             </button>
           </div>
         </form>
@@ -66,7 +70,9 @@ import { OptionGroupService } from '../services/option-group.service';
     </div>
   `,
 })
-export class OptionGroupFormComponent {
+export class OptionGroupFormComponent implements OnInit {
+  /** Grupo a editar; `null` crea uno nuevo. */
+  @Input() group: OptionGroup | null = null;
   @Output() close = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
 
@@ -79,6 +85,17 @@ export class OptionGroupFormComponent {
     max_select: [1, [Validators.required, Validators.min(1)]],
   });
 
+  ngOnInit(): void {
+    this.service.error.set(null);
+    if (this.group) {
+      this.form.setValue({
+        name: this.group.name,
+        min_select: this.group.min_select,
+        max_select: this.group.max_select,
+      });
+    }
+  }
+
   async onSubmit(): Promise<void> {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -90,7 +107,9 @@ export class OptionGroupFormComponent {
       min_select: Number(val.min_select),
       max_select: Number(val.max_select),
     };
-    const ok = await this.service.createGroup(formData);
+    const ok = this.group
+      ? await this.service.updateGroup(this.group.id, formData)
+      : await this.service.createGroup(formData);
     if (ok) {
       this.saved.emit();
       this.close.emit();

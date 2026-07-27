@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { InventoryService } from '../../inventory/services/inventory.service';
-import { OptionForm, OptionGroup } from '../../products/interfaces/product.interface';
+import { Option, OptionForm, OptionGroup } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
 
 @Component({
@@ -22,7 +22,7 @@ import { OptionGroupService } from '../services/option-group.service';
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-base font-bold text-gray-900">
-            Nueva opción @if (group) { · {{ group.name }} }
+            {{ option ? 'Editar opción' : 'Nueva opción' }} @if (group) { · {{ group.name }} }
           </h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -75,7 +75,7 @@ import { OptionGroupService } from '../services/option-group.service';
             </button>
             <button type="submit" [disabled]="form.invalid || service.isSubmitting()"
               class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-              {{ service.isSubmitting() ? 'Guardando...' : 'Agregar opción' }}
+              {{ service.isSubmitting() ? 'Guardando...' : option ? 'Guardar cambios' : 'Agregar opción' }}
             </button>
           </div>
         </form>
@@ -84,7 +84,10 @@ import { OptionGroupService } from '../services/option-group.service';
   `,
 })
 export class OptionFormComponent implements OnInit {
+  /** Grupo al que pertenece la opción (siempre presente). */
   @Input() group: OptionGroup | null = null;
+  /** Opción a editar; `null` crea una nueva dentro de `group`. */
+  @Input() option: Option | null = null;
   @Output() close = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
 
@@ -101,10 +104,19 @@ export class OptionFormComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.inventoryService.items().length === 0) this.inventoryService.loadItems();
+    this.service.error.set(null);
+    if (this.option) {
+      this.form.setValue({
+        name: this.option.name,
+        extra_price: this.option.extra_price,
+        inventory_item_id: this.option.inventory_item_id,
+        item_quantity: this.option.item_quantity,
+      });
+    }
   }
 
   async onSubmit(): Promise<void> {
-    if (this.form.invalid || !this.group) {
+    if (this.form.invalid || (!this.option && !this.group)) {
       this.form.markAllAsTouched();
       return;
     }
@@ -116,7 +128,9 @@ export class OptionFormComponent implements OnInit {
       inventory_item_id: inventoryItemId,
       item_quantity: inventoryItemId ? Number(val.item_quantity) : 0,
     };
-    const ok = await this.service.addOption(this.group.id, formData);
+    const ok = this.option
+      ? await this.service.updateOption(this.option.id, formData)
+      : await this.service.addOption(this.group!.id, formData);
     if (ok) {
       this.saved.emit();
       this.close.emit();

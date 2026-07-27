@@ -109,6 +109,7 @@ export interface OptionGroup {
   name: string;
   min_select: number;
   max_select: number;
+  active: boolean;
   options: Option[];
 }
 
@@ -126,6 +127,14 @@ export interface OptionGroupCreatePayload {
   max_select: number;
 }
 
+/** `PATCH /option-groups/{id}` (`OptionGroupUpdate`). Partial: only sent fields apply. */
+export interface OptionGroupUpdatePayload {
+  name?: string;
+  min_select?: number;
+  max_select?: number;
+  active?: boolean;
+}
+
 /** Editable fields captured by the option form. */
 export interface OptionForm {
   name: string;
@@ -140,6 +149,18 @@ export interface OptionCreatePayload {
   extra_price: number;
   inventory_item_id?: string | null;
   item_quantity: number;
+}
+
+/**
+ * `PATCH /options/{id}` (`OptionUpdate`). Partial: only sent fields apply.
+ * `inventory_item_id: null` explicitly unlinks the inventory item.
+ */
+export interface OptionUpdatePayload {
+  name?: string;
+  extra_price?: number;
+  inventory_item_id?: string | null;
+  item_quantity?: number;
+  active?: boolean;
 }
 
 /** `POST /products/{pid}/option-groups` (`ProductOptionGroupCreate`). */
@@ -190,7 +211,7 @@ export interface OptionGroupAssignmentDraft {
   name: string;
   min_select: number;
   max_select: number;
-  /** true si ya está asignada en el backend (no se puede quitar: sin endpoint). */
+  /** true si ya está asignada en el backend (al quitarla se hace DELETE). */
   assigned: boolean;
 }
 
@@ -206,6 +227,8 @@ export interface ProductDraft {
   hasSizes: boolean;
   variants: VariantDraft[];
   optionGroups: OptionGroupAssignmentDraft[];
+  /** Grupos asignados al cargar el draft; los que ya no estén se desasignan al guardar. */
+  originalOptionGroupIds: string[];
 }
 
 // --- Public menu (`GET /menu`) ---

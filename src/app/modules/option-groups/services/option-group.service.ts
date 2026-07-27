@@ -10,6 +10,8 @@ import {
   OptionGroup,
   OptionGroupCreatePayload,
   OptionGroupForm,
+  OptionGroupUpdatePayload,
+  OptionUpdatePayload,
 } from '../../products/interfaces/product.interface';
 
 /** Raw backend option (decimals arrive as strings). */
@@ -28,6 +30,7 @@ interface OptionGroupResponse {
   name: string;
   min_select: number;
   max_select: number;
+  active: boolean;
   options?: OptionResponse[];
 }
 
@@ -36,6 +39,8 @@ interface OptionGroupResponse {
 export class OptionGroupService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/option-groups`;
+  /** Las opciones cuelgan de la raíz (`/options/{id}`), no del grupo. */
+  private readonly optionsUrl = `${environment.apiBaseUrl}/options`;
 
   readonly groups = signal<OptionGroup[]>([]);
   readonly isLoading = signal(false);
@@ -67,6 +72,21 @@ export class OptionGroupService {
     return this.submit(() => this.http.post<OptionGroupResponse>(this.baseUrl, payload));
   }
 
+  async updateGroup(id: string, form: OptionGroupForm): Promise<boolean> {
+    const payload: OptionGroupUpdatePayload = {
+      name: form.name,
+      min_select: form.min_select,
+      max_select: form.max_select,
+    };
+    return this.submit(() => this.http.patch<OptionGroupResponse>(`${this.baseUrl}/${id}`, payload));
+  }
+
+  /** Desactiva/reactiva un grupo (soft-delete: nunca se borra físicamente). */
+  async toggleGroupActive(id: string, current: boolean): Promise<boolean> {
+    const payload: OptionGroupUpdatePayload = { active: !current };
+    return this.submit(() => this.http.patch<OptionGroupResponse>(`${this.baseUrl}/${id}`, payload));
+  }
+
   async addOption(groupId: string, form: OptionForm): Promise<boolean> {
     const payload: OptionCreatePayload = {
       name: form.name,
@@ -76,6 +96,26 @@ export class OptionGroupService {
     };
     return this.submit(() =>
       this.http.post<OptionResponse>(`${this.baseUrl}/${groupId}/options`, payload),
+    );
+  }
+
+  async updateOption(id: string, form: OptionForm): Promise<boolean> {
+    const payload: OptionUpdatePayload = {
+      name: form.name,
+      extra_price: form.extra_price,
+      inventory_item_id: form.inventory_item_id,
+      item_quantity: form.inventory_item_id ? form.item_quantity : 0,
+    };
+    return this.submit(() =>
+      this.http.patch<OptionResponse>(`${this.optionsUrl}/${id}`, payload),
+    );
+  }
+
+  /** Desactiva/reactiva una opción. Las ventas anteriores la siguen referenciando. */
+  async toggleOptionActive(id: string, current: boolean): Promise<boolean> {
+    const payload: OptionUpdatePayload = { active: !current };
+    return this.submit(() =>
+      this.http.patch<OptionResponse>(`${this.optionsUrl}/${id}`, payload),
     );
   }
 
@@ -116,6 +156,7 @@ export class OptionGroupService {
       name: g.name,
       min_select: g.min_select,
       max_select: g.max_select,
+      active: g.active,
       options: (g.options ?? []).map((o) => this.toOption(o)),
     };
   }
