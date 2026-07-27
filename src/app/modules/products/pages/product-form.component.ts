@@ -15,6 +15,7 @@ import { OptionGroupService } from '../../option-groups/services/option-group.se
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { PreparationType, ProductDraft, VariantDraft } from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
+import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 
 /**
  * Página unificada de crear/editar producto (rediseño del prototipo, adaptado al
@@ -25,7 +26,7 @@ import { ProductService } from '../services/product.service';
 @Component({
   selector: 'app-product-form',
   standalone: true,
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, SearchableSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="max-w-3xl mx-auto space-y-5">
@@ -175,13 +176,9 @@ import { ProductService } from '../services/product.service';
               }
               @for (line of av.recipe; track $index) {
                 <div class="flex items-center gap-2">
-                  <select [ngModel]="line.inventory_item_id" (ngModelChange)="setRecipeField(av.localId, $index, 'inventory_item_id', $event)"
-                    class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    <option value="">Insumo…</option>
-                    @for (i of inventoryService.items(); track i.id) {
-                      <option [value]="i.id">{{ i.name }}</option>
-                    }
-                  </select>
+                  <app-searchable-select [ngModel]="line.inventory_item_id"
+                    (ngModelChange)="setRecipeField(av.localId, $index, 'inventory_item_id', $event)"
+                    [options]="inventoryOptions()" placeholder="Insumo…" class="flex-1" />
                   <input type="number" min="0" step="0.001" [value]="line.quantity"
                     (input)="setRecipeField(av.localId, $index, 'quantity', +$any($event.target).value)" placeholder="Cant."
                     class="w-24 px-2 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
@@ -216,13 +213,8 @@ import { ProductService } from '../services/product.service';
           }
 
           <div class="flex flex-wrap items-center gap-2">
-            <select [value]="newGroupId()" (change)="newGroupId.set($any($event.target).value)"
-              class="flex-1 min-w-48 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value="">Agregar grupo existente…</option>
-              @for (g of assignableGroups(); track g.id) {
-                <option [value]="g.id">{{ g.name }} (elige {{ g.min_select }}–{{ g.max_select }})</option>
-              }
-            </select>
+            <app-searchable-select [ngModel]="newGroupId()" (ngModelChange)="newGroupId.set($event)"
+              [options]="assignableGroupOptions()" placeholder="Agregar grupo existente…" class="flex-1 min-w-48" />
             <button type="button" (click)="addGroup()" [disabled]="!newGroupId()"
               class="px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 transition-colors">
               + Asignar
@@ -277,6 +269,14 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     return this.optionGroupService.groups().filter((g) => g.active && !used.has(g.id));
   });
 
+  /** Opciones para el select con buscador de grupos de opciones asignables. */
+  readonly assignableGroupOptions = computed(() =>
+    this.assignableGroups().map((g) => ({
+      id: g.id,
+      label: `${g.name} (elige ${g.min_select}–${g.max_select})`,
+    })),
+  );
+
   private readonly unitByItem = computed(() => {
     const units = new Map(this.unitMeasureService.unitMeasures().map((u) => [u.id, u.abbreviation]));
     const map = new Map<string, string>();
@@ -285,6 +285,11 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     }
     return map;
   });
+
+  /** Opciones para el select con buscador de insumos de la receta. */
+  readonly inventoryOptions = computed(() =>
+    this.inventoryService.items().map((i) => ({ id: i.id, label: i.name })),
+  );
 
   readonly canSave = computed(() => {
     const d = this.draft();
