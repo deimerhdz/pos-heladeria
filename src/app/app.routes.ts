@@ -42,10 +42,18 @@ export const routes: Routes = [
       import('./modules/dashboard/routes').then(m => m.dashboardRoutes),
   },
   {
-    // Diner QR entry: `token` is the table's UUID `qr_token` from the printed QR.
-    path: 'menu/qr/:token',
+    // Entrada del comensal. `token` es el JWT **firmado** de la mesa: lleva el
+    // tenant dentro, así que esta ruta funciona en cualquier dominio.
+    path: 'menu/t/:token',
     loadComponent: () =>
       import('./modules/tables/pages/public-menu.component').then(m => m.PublicMenuComponent),
+  },
+  {
+    // QR antiguos (UUID plano). El backend ya no acepta ese formato, pero hay
+    // códigos impresos pegados en las mesas: mejor explicarlo que dar un 404 mudo.
+    path: 'menu/qr/:token',
+    loadComponent: () =>
+      import('./modules/tables/pages/expired-qr.component').then(m => m.ExpiredQrComponent),
   },
   {
     path: '**',

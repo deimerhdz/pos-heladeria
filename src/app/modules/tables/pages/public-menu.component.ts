@@ -1,11 +1,20 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
-import { DiningSessionService } from '../services/dining-session.service';
+import { DinerService, DinerSessionExpiredError } from '../services/diner.service';
+import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import {
+  esperaConfirmacion,
+  kitchenStatusClass,
+  kitchenStatusLabel,
+  orderStatusClass,
+  orderStatusLabel,
+  puedeCancelarComensal,
+} from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
 import {
   ProductSelectComponent,
@@ -13,6 +22,9 @@ import {
 } from '../components/product-select.component';
 
 type MenuView = 'loading' | 'error' | 'name' | 'menu';
+
+/** Cada cuánto se refresca el avance de cocina (no hay websockets). */
+const ORDERS_POLL_MS = 10_000;
 
 @Component({
   selector: 'app-public-menu',
@@ -178,7 +190,12 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
           <!-- Cart (desktop) -->
           <div class="hidden md:block w-80 shrink-0 sticky top-20">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 min-h-64">
-              <app-cart [submitting]="submitting()" [error]="orderError()" (submitOrder)="sendOrder()" />
+              <app-cart
+                [submitting]="submitting()"
+                [error]="orderError()"
+                (submitOrder)="sendOrder()"
+                (quantityChanged)="changeQuantity($event.itemId, $event.quantity)"
+              />
             </div>
           </div>
         </div>
@@ -205,7 +222,12 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
                 <span class="text-base font-bold text-gray-900">Mi pedido</span>
                 <button (click)="cartDrawerOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
               </div>
-              <app-cart [submitting]="submitting()" [error]="orderError()" (submitOrder)="sendOrder()" />
+              <app-cart
+                [submitting]="submitting()"
+                [error]="orderError()"
+                (submitOrder)="sendOrder()"
+                (quantityChanged)="changeQuantity($event.itemId, $event.quantity)"
+              />
             </div>
           }
         </div>
@@ -223,9 +245,18 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
             @for (order of myOrders(); track order.id) {
               <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">🍳 En cocina</span>
+                  <span class="text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusClass(order)">
+                    {{ statusLabel(order) }}
+                  </span>
                   <span class="text-xs text-gray-400">{{ orderTime(order) }}</span>
                 </div>
+
+                @if (esperaConfirmacion(order)) {
+                  <p class="text-xs text-violet-600 mb-2">
+                    Esperando a que el personal lo acepte.
+                  </p>
+                }
+
                 <ul class="space-y-1">
                   @for (item of order.items ?? []; track item.id) {
                     <li class="text-sm text-gray-700">
@@ -233,16 +264,34 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
                       @if (optionLabels(item)) {
                         <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
                       }
+                      @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
+                        <span class="block text-xs pl-5" [class]="kitchenClass(item)">
+                          {{ kitchenLabel(item) }}
+                        </span>
+                      }
                     </li>
                   }
                 </ul>
+
+                @if (canCancel(order)) {
+                  <button
+                    (click)="cancelOrder(order)"
+                    [disabled]="cancelling() === order.id"
+                    class="mt-3 w-full py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+                  >
+                    {{ cancelling() === order.id ? 'Cancelando...' : 'Cancelar pedido' }}
+                  </button>
+                }
               </div>
             } @empty {
               <p class="text-center text-sm text-gray-400 py-8">Aún no has enviado pedidos</p>
             }
           </div>
           <div class="px-5 py-3 border-t border-gray-100">
-            <p class="text-xs text-gray-400 text-center">El personal está preparando tus pedidos 🍨</p>
+            @if (orderError()) {
+              <p class="text-xs text-red-600 text-center mb-2">{{ orderError() }}</p>
+            }
+            <p class="text-xs text-gray-400 text-center">Se actualiza solo cada pocos segundos 🍨</p>
           </div>
         </div>
       }
@@ -258,9 +307,10 @@ type MenuView = 'loading' | 'error' | 'name' | 'menu';
     </div>
   `,
 })
-export class PublicMenuComponent implements OnInit {
+export class PublicMenuComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
-  private readonly api = inject(DiningSessionService);
+  private readonly api = inject(DinerService);
+  private readonly tokenStore = inject(DinerTokenStore);
   readonly cart = inject(DiningCartService);
 
   readonly view = signal<MenuView>('loading');
@@ -272,7 +322,11 @@ export class PublicMenuComponent implements OnInit {
   /** Branding del negocio, que viaja dentro de la respuesta del menú del QR. */
   readonly businessName = signal<string | null>(null);
   readonly businessLogo = signal<string | null>(null);
-  readonly customerName = signal<string>('');
+  /**
+   * Nombre a saludar. Se lee del carrito, no de un estado propio: el backend lo
+   * devuelve en `GET /cart`, así que sobrevive a la recarga de la página.
+   */
+  readonly customerName = computed(() => this.cart.dinerName());
 
   readonly nameInput = signal('');
   readonly nameError = signal(false);
@@ -284,9 +338,14 @@ export class PublicMenuComponent implements OnInit {
   readonly orderError = signal<string | null>(null);
   readonly orderSuccess = signal(false);
 
-  /** Orders this diner has submitted in this session (local; no public status API). */
+  /**
+   * Pedidos de este comensal. Se refrescan desde `GET /cart/orders`, nunca se
+   * reconstruyen con estado local: el avance de cocina solo lo sabe el backend.
+   */
   readonly myOrders = signal<DiningOrder[]>([]);
   readonly ordersOpen = signal(false);
+  /** Id del pedido que se está cancelando (para deshabilitar su botón). */
+  readonly cancelling = signal<string | null>(null);
 
   private readonly lookup = computed(() => buildMenuLookup(this.categories()));
 
@@ -298,14 +357,14 @@ export class PublicMenuComponent implements OnInit {
     return name ?? '';
   });
 
-  /** The URL token IS the table's UUID `qr_token` (used to open the session). */
+  /** Token **firmado** del QR (JWT): lleva tenant + mesa. */
   private token = '';
-  private sessionId: string | null = null;
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
 
   async ngOnInit(): Promise<void> {
     this.token = this.route.snapshot.paramMap.get('token') ?? '';
 
-    // Resolve the table + menu from the QR token.
+    // 1. Resolver mesa + menú desde el token firmado.
     try {
       const { table, business, categories } = await this.api.resolveByToken(this.token);
       this.tableNumber.set(table.number);
@@ -313,21 +372,30 @@ export class PublicMenuComponent implements OnInit {
       this.businessName.set(business?.name ?? null);
       this.businessLogo.set(business?.logo_url ?? null);
       this.categories.set(categories);
+      this.cart.indexMenu(categories);
     } catch (err) {
       this.handleResolveError(err);
       return;
     }
 
-    // Resume a stored session (survives reloads) or ask for the name.
-    const stored = this.api.restoreSession(this.token);
-    if (stored) {
-      this.sessionId = stored.sessionId;
-      this.customerName.set(stored.customerName);
-      this.restoreOrders();
-      this.view.set('menu');
+    // 2. ¿Hay sesión que restaurar? Se comprueba contra el backend, no contra
+    //    el estado local: un 401 aquí significa "vuelve a escanear el QR".
+    if (!this.tokenStore.token()) {
+      this.view.set('name');
       return;
     }
-    this.view.set('name');
+    try {
+      await Promise.all([this.cart.load(), this.refreshOrders()]);
+      this.view.set('menu');
+      this.startPolling();
+    } catch {
+      // Token inválido, sesión cerrada o mesa ya cobrada.
+      this.expireSession('Tu sesión terminó. Ingresa tu nombre de nuevo.');
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.stopPolling();
   }
 
   priceLabel(product: MenuProduct): string {
@@ -353,13 +421,16 @@ export class PublicMenuComponent implements OnInit {
 
     this.joining.set(true);
     try {
-      const session = await this.api.openSession(this.token, name);
-      this.sessionId = session.id;
-      this.customerName.set(session.customer_name);
-      this.api.storeSession(this.token, { sessionId: session.id, customerName: session.customer_name });
+      // Si la mesa ya tiene sesión activa, esto **une** al comensal a ella.
+      await this.api.openSession(this.token, name);
+      // El nombre a mostrar sale de aquí: el carrito trae el `display_label` ya
+      // desambiguado ("Ana (2)"), el mismo que ven cocina y staff.
+      await this.cart.load();
+      await this.refreshOrders();
       this.view.set('menu');
+      this.startPolling();
     } catch (err) {
-      this.errorMessage.set(this.api.extractError(err, 'No se pudo abrir la sesión de la mesa.'));
+      this.errorMessage.set(this.api.extractError(err, 'No se pudo unirte a la mesa.'));
     } finally {
       this.joining.set(false);
     }
@@ -370,35 +441,54 @@ export class PublicMenuComponent implements OnInit {
     this.selectedProduct.set(product);
   }
 
-  onProductAdded(selection: ProductSelection): void {
-    this.cart.add(
-      selection.product,
-      selection.variant,
-      selection.options,
-      selection.quantity,
-      selection.notes,
-    );
+  async onProductAdded(selection: ProductSelection): Promise<void> {
     this.selectedProduct.set(null);
+    this.orderError.set(null);
+    try {
+      await this.cart.add(
+        selection.product,
+        selection.variant,
+        selection.options,
+        selection.quantity,
+        selection.notes,
+      );
+    } catch (err) {
+      this.showCartError(err);
+    }
+  }
+
+  /** Cambia la cantidad de una línea (el carrito vive en el backend). */
+  async changeQuantity(itemId: string, quantity: number): Promise<void> {
+    this.orderError.set(null);
+    try {
+      await this.cart.setQuantity(itemId, quantity);
+    } catch (err) {
+      this.showCartError(err);
+    }
+  }
+
+  async removeLine(itemId: string): Promise<void> {
+    this.orderError.set(null);
+    try {
+      await this.cart.remove(itemId);
+    } catch (err) {
+      this.showCartError(err);
+    }
   }
 
   async sendOrder(): Promise<void> {
-    if (this.cart.isEmpty() || !this.sessionId) return;
+    if (this.cart.isEmpty()) return;
     this.submitting.set(true);
     this.orderError.set(null);
     try {
-      const order = await this.api.createOrder({
-        channel: 'qr',
-        dining_session_id: this.sessionId,
-        items: this.cart.toOrderItems(),
-      });
-      this.myOrders.update((list) => [order, ...list]);
-      this.persistOrders();
+      await this.api.submitCart();
       this.cart.clear();
+      await this.refreshOrders();
       this.orderSuccess.set(true);
       this.cartDrawerOpen.set(false);
     } catch (err) {
-      if (err instanceof HttpErrorResponse && err.status === 401) {
-        this.expireSession();
+      if (err instanceof DinerSessionExpiredError) {
+        this.expireSession(err.message);
         return;
       }
       this.orderError.set(this.api.extractError(err, 'No se pudo enviar el pedido.'));
@@ -407,18 +497,75 @@ export class PublicMenuComponent implements OnInit {
     }
   }
 
+  /** ¿Puede el comensal cancelar este pedido? Cocina aún no lo ha empezado. */
+  canCancel(order: DiningOrder): boolean {
+    return puedeCancelarComensal(order);
+  }
+
+  esperaConfirmacion(order: DiningOrder): boolean {
+    return esperaConfirmacion(order);
+  }
+
+  statusLabel(order: DiningOrder): string {
+    return orderStatusLabel(order.status);
+  }
+
+  statusClass(order: DiningOrder): string {
+    return orderStatusClass(order.status);
+  }
+
+  kitchenLabel(item: DiningOrderItem): string {
+    return kitchenStatusLabel(item.estado_cocina);
+  }
+
+  kitchenClass(item: DiningOrderItem): string {
+    return kitchenStatusClass(item.estado_cocina);
+  }
+
+  async cancelOrder(order: DiningOrder): Promise<void> {
+    this.orderError.set(null);
+    this.cancelling.set(order.id);
+    try {
+      await this.api.cancelMyOrder(order.id, 'Cancelado por el comensal');
+      await this.refreshOrders();
+    } catch (err) {
+      if (err instanceof DinerSessionExpiredError) {
+        this.expireSession(err.message);
+        return;
+      }
+      // 409 = cocina ya empezó: se refresca para que el botón desaparezca.
+      this.orderError.set(this.api.extractError(err, 'No se pudo cancelar el pedido.'));
+      await this.refreshOrders().catch(() => undefined);
+    } finally {
+      this.cancelling.set(null);
+    }
+  }
+
   /**
-   * Diner-side exit. The backend only lets STAFF close a session
-   * (`POST /orders/sessions/{id}/close` requires auth), so here we just clear the
-   * local session and thank the diner; staff closes it server-side afterwards.
+   * Salida del comensal.
+   *
+   * Avisa al backend para que deje de contarlo como presente: si era el último y
+   * no pidió nada, la mesa queda libre en el acto. Si la llamada falla se sigue
+   * adelante igual — el barrido lo resuelve solo, y bloquear la salida por un
+   * error de red sería peor que la fuga.
    */
-  exit(): void {
-    this.api.clearSession(this.token);
-    this.clearOrders();
+  async exit(): Promise<void> {
+    const tenia = this.myOrders().length > 0;
+    this.stopPolling();
+    try {
+      await this.api.leave();
+    } catch {
+      /* best-effort: el barrido cierra la sesión de todos modos */
+    }
     this.cart.clear();
-    this.sessionId = null;
+    this.cart.clearDiner();
+    this.myOrders.set([]);
     this.ordersOpen.set(false);
-    this.errorMessage.set('Gracias por tu visita 🍦 El personal cerrará tu cuenta.');
+    this.errorMessage.set(
+      tenia
+        ? 'Gracias por tu visita 🍦 El personal cerrará tu cuenta.'
+        : 'Gracias por tu visita 🍦 La mesa queda libre.',
+    );
     this.view.set('error');
   }
 
@@ -434,31 +581,51 @@ export class PublicMenuComponent implements OnInit {
     return new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  // ── Local persistence of submitted orders (no public status endpoint) ──────
-  private ordersKey(): string {
-    return `dining.orders.${this.token}`;
+  // ── Historial (fuente única: el backend, por polling) ─────────────────────
+
+  private async refreshOrders(): Promise<void> {
+    this.myOrders.set(await this.api.myOrders());
   }
 
-  private persistOrders(): void {
-    sessionStorage.setItem(this.ordersKey(), JSON.stringify(this.myOrders()));
+  private startPolling(): void {
+    this.stopPolling();
+    // No hay websockets: el avance de cocina se consulta periódicamente.
+    this.pollHandle = setInterval(() => {
+      this.refreshOrders().catch((err) => {
+        if (err instanceof DinerSessionExpiredError) {
+          this.expireSession('Tu sesión terminó. Ingresa tu nombre de nuevo.');
+        }
+      });
+    }, ORDERS_POLL_MS);
   }
 
-  private restoreOrders(): void {
-    const raw = sessionStorage.getItem(this.ordersKey());
-    if (!raw) return;
-    try {
-      this.myOrders.set(JSON.parse(raw) as DiningOrder[]);
-    } catch {
-      /* ignore corrupt storage */
+  private stopPolling(): void {
+    if (this.pollHandle !== null) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
     }
   }
 
-  private clearOrders(): void {
-    sessionStorage.removeItem(this.ordersKey());
+  // ── Errores ──────────────────────────────────────────────────────────────
+
+  /** Muestra el conflicto de stock señalando el insumo concreto que falta. */
+  private showCartError(err: unknown): void {
+    if (err instanceof DinerSessionExpiredError) {
+      this.expireSession(err.message);
+      return;
+    }
+    const stock = this.api.stockConflict(err);
+    this.orderError.set(
+      stock
+        ? `No queda suficiente ${stock.insumo} para esa cantidad.`
+        : this.api.extractError(err, 'No se pudo actualizar el carrito.'),
+    );
   }
 
   private handleResolveError(err: unknown): void {
-    if (err instanceof HttpErrorResponse && err.status === 404) {
+    if (err instanceof HttpErrorResponse && err.status === 401) {
+      this.errorMessage.set('Este QR no es válido. Pide ayuda al personal.');
+    } else if (err instanceof HttpErrorResponse && err.status === 404) {
       this.errorMessage.set('Mesa no encontrada');
     } else {
       this.errorMessage.set(this.api.extractError(err, 'No se pudo cargar el menú.'));
@@ -466,14 +633,15 @@ export class PublicMenuComponent implements OnInit {
     this.view.set('error');
   }
 
-  /** Session rejected (401): clear it and return to the name screen. */
-  private expireSession(): void {
-    this.api.clearSession(this.token);
-    this.clearOrders();
+  /** La sesión dejó de valer: se descarta el token y se vuelve a pedir nombre. */
+  private expireSession(message: string): void {
+    this.stopPolling();
+    this.tokenStore.clear();
+    this.cart.clear();
+    this.cart.clearDiner();
     this.myOrders.set([]);
-    this.sessionId = null;
     this.orderError.set(null);
-    this.errorMessage.set('Tu sesión expiró. Ingresa tu nombre de nuevo.');
+    this.errorMessage.set(message);
     this.view.set('name');
   }
 }

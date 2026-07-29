@@ -11,7 +11,15 @@ import { Table } from '../interfaces/table.interface';
 const base = `${environment.apiBaseUrl}/orders/tables`;
 
 function table(partial: Partial<Table>): Table {
-  return { id: 't1', number: 1, name: null, qr_token: 'uuid-1', active: true, ...partial };
+  return {
+    id: 't1',
+    number: 1,
+    name: null,
+    qr_token: 'uuid-1',
+    active: true,
+    status: 'libre',
+    ...partial,
+  };
 }
 
 /** Drain pending microtasks so a chained `loadTables()` reload dispatches its GET. */

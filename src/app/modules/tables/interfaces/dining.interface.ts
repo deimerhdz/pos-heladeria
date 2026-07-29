@@ -1,32 +1,28 @@
-// Types for the real QR menu / table-session flow (tags `menu` + `orders`).
-// The diner scans a table QR, opens a session, builds a client-side cart and
-// submits it as a single order. There is no server-side cart.
-
-// ── Sessions (`/orders/sessions`) ──────────────────────────────────────────
-
-/** Body for `POST /orders/sessions` (`SessionOpen`). */
-export interface SessionOpenPayload {
-  /** The table's UUID `qr_token` (from the resolved menu). */
-  qr_token: string;
-  customer_name: string;
-}
-
-/** Response of the session endpoints (`SessionResponse`). */
-export interface DiningSession {
-  id: string;
-  dining_table_id: string;
-  customer_name: string;
-  status: string;
-  opened_at: string;
-  closed_at?: string | null;
-}
+// Tipos del lado **staff** del flujo de mesas (tags `orders` + `table-sessions`).
+//
+// El contrato del comensal (carrito, sesión, pedidos propios) vive en
+// `diner.interface.ts`: son rutas públicas con un modelo de auth distinto y no
+// deben mezclarse con estas.
+//
+// Ver `pos-backend/docs/flujo-qr.md`.
 
 // ── Orders (`/orders`) ─────────────────────────────────────────────────────
 
 export type OrderChannel = 'qr' | 'counter' | 'waiter';
 
-/** Order (comanda/cuenta) lifecycle — a billing status, NOT kitchen prep. */
-export type DiningOrderStatus = 'abierta' | 'bloqueada' | 'pagada' | 'cancelada';
+/**
+ * Ciclo de vida del **pedido** (facturación), independiente del de cocina.
+ *
+ * `recibida` es el pedido que el comensal ya envió pero que el personal aún no
+ * ha aceptado: **no ha descontado inventario y cocina no lo ve**. El stock se
+ * compromete al confirmar (`recibida` → `abierta`).
+ */
+export type DiningOrderStatus =
+  | 'recibida'
+  | 'abierta'
+  | 'bloqueada'
+  | 'pagada'
+  | 'cancelada';
 
 /** Per-item kitchen status (`KitchenStatus`). The kitchen board works on this. */
 export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'anulado';
@@ -59,7 +55,12 @@ export interface DiningOrderItemOption {
 export interface DiningOrderItem {
   id: string;
   product_variant_id: string;
-  session_id?: string | null;
+  /**
+   * Comensal al que se le cobra esta línea. La asignación es **por ítem**, no
+   * por pedido: por eso la cuenta dividida es exacta aunque un pedido mezcle
+   * personas. `null` = lo añadió el mesero.
+   */
+  participant_id?: string | null;
   quantity: number;
   unit_price: string;
   /** Kitchen status of this item. */
@@ -102,37 +103,93 @@ export interface VoidItemPayload {
   motivo: string;
 }
 
-/** `BillResponse` — cuenta de la mesa (total + split por comensal). */
-export interface Bill {
-  dining_table_id: string;
-  total: string;
-  orders: {
-    order_id: string;
-    status: string;
-    subtotal: string;
-    items: {
-      order_item_id: string;
-      product_variant_id: string;
-      session_id?: string | null;
-      quantity: number;
-      unit_price: string;
-      line_total: string;
-      estado_cocina: string;
-    }[];
-  }[];
-  split: { session_id?: string | null; customer_name?: string | null; subtotal: string }[];
-}
-
 /** Response of `POST /orders` and `GET /orders` (`OrderResponse`). */
 export interface DiningOrder {
   id: string;
   channel: string;
   status: DiningOrderStatus;
   version?: number;
-  dining_session_id?: string | null;
+  /** Sesión de mesa a la que pertenece (agrupa los pedidos de todos los comensales). */
+  table_session_id?: string | null;
+  /** Comensal que lo envió; `null` si lo creó el staff. */
+  participant_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;
   notes?: string | null;
   created_at: string;
   items?: DiningOrderItem[];
+}
+
+// ── Sesión de mesa (`/table-sessions`) ─────────────────────────────────────
+
+export type BillingMode = 'unified' | 'split';
+
+/** Un comensal de la mesa (`ParticipantResponse`). */
+export interface SessionParticipant {
+  id: string;
+  display_name: string;
+  /** Nombre desambiguado ("Ana (2)"). **Es el que se muestra**, no `display_name`. */
+  display_label: string | null;
+  status: string;
+  joined_at: string;
+  expires_at?: string | null;
+  closed_at?: string | null;
+}
+
+/** Sesión de mesa (`TableSessionResponse`). Una activa por mesa como máximo. */
+export interface TableSession {
+  id: string;
+  dining_table_id: string;
+  status: string;
+  opened_at: string;
+  closed_at?: string | null;
+  closed_by_user_name?: string | null;
+  billing_mode?: BillingMode | null;
+  participants: SessionParticipant[];
+}
+
+/** Una línea del desglose de la cuenta (`SessionBillLine`). */
+export interface SessionBillLine {
+  /** `null` = ítems añadidos por el mesero, sin comensal asignado. */
+  participant_id: string | null;
+  display_label: string | null;
+  subtotal: string;
+}
+
+/** Cuenta de la sesión (`SessionBillResponse`). */
+export interface SessionBill {
+  table_session_id: string;
+  dining_table_id: string;
+  total: string;
+  order_ids: string[];
+  split: SessionBillLine[];
+}
+
+/** Pago de un comensal concreto en modo `split` (`SplitPaymentIn`). */
+export interface SplitPayment {
+  participant_id: string | null;
+  payments: PaymentLine[];
+  discount?: number;
+  tax?: number;
+  tip?: number;
+}
+
+/** Body de `POST /table-sessions/{id}/close` (`CloseSessionIn`). */
+export interface CloseSessionPayload {
+  cash_shift_id: string;
+  billing_mode: BillingMode;
+  /** Solo en `unified`. */
+  payments?: PaymentLine[];
+  discount?: number;
+  tax?: number;
+  tip?: number;
+  /** Solo en `split`: uno por **cada** comensal con consumo. */
+  splits?: SplitPayment[];
+}
+
+/** Respuesta del cierre (`CloseSessionResponse`). */
+export interface CloseSessionResponse {
+  table_session: TableSession;
+  /** Una venta en `unified`, una por comensal en `split`. */
+  sale_ids: string[];
 }

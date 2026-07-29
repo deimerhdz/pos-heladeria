@@ -5,6 +5,7 @@ import {
   OnDestroy,
   OnInit,
   inject,
+  signal,
   viewChild,
 } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
@@ -12,6 +13,7 @@ import { PosTablesPanelComponent } from '../components/pos-tables-panel.componen
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
 import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.component';
+import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.component';
 
 /**
  * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
@@ -29,6 +31,7 @@ import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.comp
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
     PosCatalogDrawerComponent,
+    PendingOrdersPanelComponent,
   ],
   template: `
     <div class="flex flex-col -m-4 md:-m-6 bg-gray-50 h-[calc(100dvh-57px)]">
@@ -38,8 +41,21 @@ import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.comp
           <span class="text-lg">🪑</span>
           <span class="font-bold text-gray-900 truncate">Terminal de mesas</span>
         </div>
-        <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
-          <span>F2 Buscar</span><span>F4 Descuento</span><span>F8 Cobrar</span><span>ESC Cancelar</span>
+        <div class="flex items-center gap-3">
+          @if (store.pendingOrders().length > 0) {
+            <button
+              (click)="pendingOpen.set(!pendingOpen())"
+              class="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 transition-colors"
+            >
+              🔔 Por confirmar
+              <span class="ml-1 px-1.5 py-0.5 rounded-full bg-white text-violet-700 text-xs font-bold">
+                {{ store.pendingOrders().length }}
+              </span>
+            </button>
+          }
+          <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
+            <span>F2 Buscar</span><span>F4 Descuento</span><span>ESC Cancelar</span>
+          </div>
         </div>
       </div>
 
@@ -61,6 +77,25 @@ import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.comp
 
     @if (store.catalogOpen()) {
       <app-pos-catalog-drawer />
+    }
+
+    <!-- Pedidos enviados por comensales, a la espera de que el personal los acepte -->
+    @if (pendingOpen()) {
+      <div class="fixed inset-0 bg-black/40 z-40" (click)="pendingOpen.set(false)"></div>
+      <div class="fixed inset-y-0 right-0 w-full max-w-md bg-gray-50 shadow-xl z-50 overflow-y-auto p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-bold text-gray-900">Pedidos de los comensales</h2>
+          <button (click)="pendingOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">
+          Confirmar descuenta el inventario y manda el pedido a cocina.
+        </p>
+        <app-pending-orders-panel
+          [orders]="store.pendingOrders()"
+          [categories]="store.categories()"
+          (refresh)="store.reload()"
+        />
+      </div>
     }
 
     <!-- Diálogo de éxito -->
@@ -85,6 +120,9 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
   private readonly tablesPanel = viewChild(PosTablesPanelComponent);
 
+  /** Drawer de pedidos enviados por comensales pendientes de confirmar. */
+  readonly pendingOpen = signal(false);
+
   ngOnInit(): void {
     void this.store.init();
   }
@@ -103,9 +141,6 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     } else if (e.key === 'F4') {
       e.preventDefault();
       if (this.store.hasActiveOrder()) this.store.toggleDiscountPanel();
-    } else if (e.key === 'F8') {
-      e.preventDefault();
-      void this.store.cobrar();
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
       else if (this.store.discountPanelOpen()) this.store.toggleDiscountPanel();

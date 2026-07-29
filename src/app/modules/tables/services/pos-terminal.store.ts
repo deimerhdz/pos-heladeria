@@ -12,11 +12,17 @@ import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { Table, TableStatus } from '../interfaces/table.interface';
-import { DiningOrder, DiningOrderItem, PaymentLine } from '../interfaces/dining.interface';
+import {
+  DiningOrder,
+  DiningOrderItem,
+  PaymentLine,
+  SessionBill,
+} from '../interfaces/dining.interface';
 import { ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
 import { DiningSessionService } from './dining-session.service';
+import { TableSessionService } from './table-session.service';
 
 /** Una línea de pedido nueva sin guardar (draft del staff). */
 interface DraftLine {
@@ -46,14 +52,16 @@ const NOT_READY: DiningOrderItem['estado_cocina'][] = ['pendiente', 'en_preparac
 
 /**
  * Store de la terminal POS de mesas (staff). Orquesta el catálogo, el armado del
- * pedido (draft + ítems persistidos), y el cobro por el ciclo de comedor
- * (`block → pay`). Se provee a nivel de la página.
+ * pedido (draft + ítems persistidos), y la cuenta de la mesa. El cobro lo cierra
+ * `SessionBillPanelComponent` contra la **sesión de mesa**, no pedido a pedido.
+ * Se provee a nivel de la página.
  */
 @Injectable()
 export class PosTerminalStore {
   private readonly tableService = inject(TableService);
   private readonly api = inject(DiningSessionService);
   private readonly menuService = inject(MenuService);
+  private readonly tableSessions = inject(TableSessionService);
   private readonly paymentMethodService = inject(PaymentMethodService);
   private readonly cash = inject(CashService);
   private readonly toast = inject(ToastService);
@@ -82,11 +90,6 @@ export class PosTerminalStore {
   readonly appliedDiscount = signal<{ type: 'percent' | 'fixed'; value: number } | null>(null);
   readonly tax = signal(0);
 
-  // Pago
-  readonly paymentMethod = signal<string>(''); // id de método | 'mixto'
-  readonly cashReceived = signal('');
-  readonly mixedLines = signal<{ payment_method_id: string; amount: string }[]>([]);
-
   readonly loading = signal(false);
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
@@ -104,9 +107,20 @@ export class PosTerminalStore {
 
   private readonly lookup = computed<MenuLookup>(() => buildMenuLookup(this.menuService.categories()));
 
-  /** Órdenes activas (no pagadas/canceladas) por mesa. */
+  /**
+   * Pedidos que el comensal envió y esperan que el personal los acepte.
+   *
+   * Se excluyen del flujo del terminal (`activeOrders`) porque todavía no han
+   * descontado inventario ni están en cocina: no se pueden editar ni cobrar
+   * hasta confirmarlos.
+   */
+  readonly pendingOrders = computed(() => this.orders().filter((o) => o.status === 'recibida'));
+
+  /** Órdenes activas por mesa: ni terminales ni pendientes de confirmar. */
   private readonly activeOrders = computed(() =>
-    this.orders().filter((o) => o.status !== 'pagada' && o.status !== 'cancelada'),
+    this.orders().filter(
+      (o) => o.status !== 'pagada' && o.status !== 'cancelada' && o.status !== 'recibida',
+    ),
   );
 
   private ordersOfTable(tableId: string): DiningOrder[] {
@@ -233,29 +247,6 @@ export class PosTerminalStore {
     return items.length > 0 && items.every((i) => !NOT_READY.includes(i.estado_cocina));
   });
 
-  readonly selectedMethodIsCash = computed(() => {
-    const m = this.paymentMethods().find((x) => x.id === this.paymentMethod());
-    return !!m?.is_cash;
-  });
-
-  readonly change = computed(() =>
-    Math.max(0, (Number(this.cashReceived()) || 0) - this.totals().total),
-  );
-
-  readonly mixedReceived = computed(() =>
-    this.mixedLines().reduce((s, l) => s + (Number(l.amount) || 0), 0),
-  );
-
-  readonly chargeDisabled = computed(() => {
-    const order = this.selectedOrder();
-    if (this.submitting() || !order || this.totals().total <= 0) return true;
-    const method = this.paymentMethod();
-    if (!method) return true;
-    if (method === 'mixto') return this.mixedReceived() < this.totals().total;
-    if (this.selectedMethodIsCash()) return (Number(this.cashReceived()) || 0) < this.totals().total;
-    return false;
-  });
-
   readonly catalogProducts = computed<MenuProduct[]>(() => {
     const cat = this.menuService.categories().find((c) => c.id === this.catalogCategoryId());
     return cat?.products ?? [];
@@ -276,10 +267,6 @@ export class PosTerminalStore {
       ]);
       const cats = this.menuService.categories();
       if (cats.length && !this.catalogCategoryId()) this.catalogCategoryId.set(cats[0].id);
-      const methods = this.paymentMethods();
-      if (methods.length && !this.paymentMethod()) {
-        this.paymentMethod.set((methods.find((m) => m.is_cash) ?? methods[0]).id);
-      }
     } catch (err) {
       this.error.set(this.api.extractError(err, 'No se pudo cargar la terminal.'));
     } finally {
@@ -296,14 +283,24 @@ export class PosTerminalStore {
     this.orders.set(await this.api.listOrders());
   }
 
+  /**
+   * Refresca mesas, pedidos **y la cuenta de la mesa seleccionada**.
+   *
+   * La cuenta tiene que ir aquí: es el embudo por el que pasan guardar el pedido,
+   * anular ítems, marcarlo listo y confirmar/rechazar desde el panel de pendientes.
+   * Si no, se cobraría con un total viejo y el backend responde
+   * "El pago no cubre el total".
+   */
   async reload(): Promise<void> {
     await Promise.all([this.tableService.loadTables(), this.reloadOrders()]);
+    await this.loadSessionBill(this.selectedTableId());
   }
 
   // ─── Selección de mesa / pedido ───────────────────────────────────────────────
   selectTable(tableId: string): void {
     const list = this.ordersOfTable(tableId);
     this.selectedTableId.set(tableId);
+    void this.loadSessionBill(tableId);
     this.resetTransient();
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
@@ -319,7 +316,6 @@ export class PosTerminalStore {
     this.selectedOrderId.set(orderId);
     this.customerName.set(this.selectedOrder()?.customer_name || '');
     this.draftLines.set([]);
-    this.resetPayment();
   }
 
   newOrderOnTable(): void {
@@ -327,7 +323,6 @@ export class PosTerminalStore {
     this.draftLines.set([]);
     const table = this.selectedTable();
     this.customerName.set(`Cliente · Mesa ${table?.number ?? ''}`.trim());
-    this.resetPayment();
   }
 
   cancelSelection(): void {
@@ -343,13 +338,8 @@ export class PosTerminalStore {
     this.catalogOpen.set(false);
     this.configuringProduct.set(null);
     this.error.set(null);
-    this.resetPayment();
   }
 
-  private resetPayment(): void {
-    this.cashReceived.set('');
-    this.mixedLines.set([]);
-  }
 
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
   openCatalog(): void {
@@ -499,84 +489,53 @@ export class PosTerminalStore {
   }
 
   // ─── Pago ─────────────────────────────────────────────────────────────────────
-  setPaymentMethod(v: string): void {
-    this.paymentMethod.set(v);
-  }
-  addMixedLine(): void {
-    const first = this.paymentMethods()[0];
-    this.mixedLines.update((l) => [...l, { payment_method_id: first?.id ?? '', amount: '' }]);
-  }
-  updateMixedLine(i: number, patch: Partial<{ payment_method_id: string; amount: string }>): void {
-    this.mixedLines.update((l) => l.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
-  }
-  removeMixedLine(i: number): void {
-    this.mixedLines.update((l) => l.filter((_, idx) => idx !== i));
-  }
 
-  // ─── Cobro (block → pay) ──────────────────────────────────────────────────────
-  async cobrar(): Promise<void> {
-    if (this.chargeDisabled()) return;
-    if (!this.cash.shift() || !this.cash.isOpen()) {
-      this.toast.error('No hay un turno de caja abierto. Ábrelo en el módulo de Caja.');
+  // ─── Cuenta y cobro por sesión de mesa ────────────────────────────────────────
+
+  /** Turno de caja abierto, o `null` si no hay: sin él no se puede cobrar. */
+  readonly cashShiftId = computed(() =>
+    this.cash.isOpen() ? (this.cash.shift()?.id ?? null) : null,
+  );
+
+  /** Cuenta de la sesión de la mesa seleccionada (total + desglose por comensal). */
+  readonly sessionBill = signal<SessionBill | null>(null);
+  readonly billLoading = signal(false);
+
+  /**
+   * Carga la cuenta de la mesa seleccionada.
+   *
+   * La unidad de cobro ya no es el pedido sino la **sesión de mesa**: cerrarla
+   * cobra todos sus pedidos, cierra a los comensales y libera la mesa en una
+   * sola operación, en vez del antiguo `block` → `pay` → `release` por orden.
+   */
+  async loadSessionBill(tableId: string | null): Promise<void> {
+    if (!tableId) {
+      this.sessionBill.set(null);
       return;
     }
-    // Guarda el draft pendiente antes de cobrar.
-    if (this.hasDraft() && !(await this.saveOrder())) return;
-
-    const order = this.selectedOrder();
-    if (!order) return;
-    const totals = this.totals();
-    const payments = this.buildPayments(totals.total);
-    if (!payments) return;
-
-    this.submitting.set(true);
-    this.error.set(null);
+    this.billLoading.set(true);
     try {
-      await this.api.blockOrder(order.id, order.version ?? 0);
-      await this.api.payOrder(order.id, {
-        cash_shift_id: this.cash.shift()!.id,
-        discount: totals.discount,
-        tax: totals.tax,
-        tip: 0,
-        payments,
-      });
-      const tableId = this.selectedTableId();
-      this.lastSale.set({ total: totals.total, customer: this.customerName() || 'Cliente' });
-      this.successOpen.set(true);
-      await this.reload();
-      // Libera la mesa si ya no le quedan órdenes activas.
-      if (tableId && this.ordersOfTable(tableId).length === 0) {
-        try {
-          await this.api.releaseTable(tableId);
-          await this.tableService.loadTables();
-        } catch {
-          /* la mesa puede tener otras órdenes; se ignora */
-        }
-      }
-      this.cancelSelection();
+      const sessions = await this.tableSessions.list();
+      const session = sessions.find((s) => s.dining_table_id === tableId);
+      this.sessionBill.set(session ? await this.tableSessions.bill(session.id) : null);
     } catch (err) {
-      this.toast.error(this.api.extractError(err, 'No se pudo cobrar el pedido.'));
+      this.sessionBill.set(null);
+      this.error.set(this.tableSessions.extractError(err, 'No se pudo cargar la cuenta.'));
     } finally {
-      this.submitting.set(false);
+      this.billLoading.set(false);
     }
   }
 
-  private buildPayments(total: number): PaymentLine[] | null {
-    const method = this.paymentMethod();
-    if (method === 'mixto') {
-      const lines = this.mixedLines()
-        .filter((l) => l.payment_method_id && Number(l.amount) > 0)
-        .map((l) => ({ payment_method_id: l.payment_method_id, amount: Number(l.amount) }));
-      if (lines.reduce((s, l) => s + l.amount, 0) < total) {
-        this.toast.error('Los pagos no cubren el total.');
-        return null;
-      }
-      return lines;
-    }
-    if (!method) return null;
-    // Método único: se cobra exactamente el total (el cambio se entrega en efectivo).
-    return [{ payment_method_id: method, amount: total }];
+  /** Tras cobrar: refresca todo y suelta la selección. */
+  async onCharged(): Promise<void> {
+    const total = Number(this.sessionBill()?.total ?? 0);
+    this.lastSale.set({ total, customer: this.customerName() || 'Mesa' });
+    this.successOpen.set(true);
+    this.sessionBill.set(null);
+    await this.reload();
+    this.cancelSelection();
   }
+
 
   closeSuccess(): void {
     this.successOpen.set(false);

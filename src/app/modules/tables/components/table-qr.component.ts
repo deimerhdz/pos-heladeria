@@ -8,8 +8,9 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import QRCode from 'qrcode';
 import { Table } from '../interfaces/table.interface';
+import { TableService } from '../services/table.service';
+import { buildTableQr } from '../services/table-qr.util';
 
 @Component({
   selector: 'app-table-qr',
@@ -71,12 +72,15 @@ export class TableQrComponent implements OnInit {
   readonly menuUrl = signal<string>('');
   readonly qrDataUrl = signal<string>('');
 
+  private readonly tables = inject(TableService);
+
   async ngOnInit(): Promise<void> {
     try {
-      // The QR encodes the SPA route with the table's UUID `qr_token`; the diner
-      // resolves the menu and opens the session with this same token.
-      this.menuUrl.set(`${window.location.origin}/menu/qr/${this.table.qr_token}`);
-      this.qrDataUrl.set(await QRCode.toDataURL(this.menuUrl(), { width: 256, margin: 2 }));
+      // El QR codifica un token **firmado** que el backend emite para esta mesa;
+      // lleva el tenant dentro, así que no depende del dominio ni de cabeceras.
+      const { menuUrl, dataUrl } = await buildTableQr(this.tables, this.table.id);
+      this.menuUrl.set(menuUrl);
+      this.qrDataUrl.set(dataUrl);
       this.loading.set(false);
     } catch {
       this.error.set('No se pudo generar el código QR de la mesa.');

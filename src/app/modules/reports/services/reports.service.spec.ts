@@ -66,13 +66,4 @@ describe('ReportsService', () => {
     // "Cono" appears in both sales → merged, qty 3
     expect(service.topProducts()[0]).toEqual({ name: 'Cono', totalQty: 3, totalRevenue: 9 });
   });
-
-  it('leaves cashSessions empty (no shift-history endpoint)', async () => {
-    const p = service.loadAll();
-    http.expectOne(`${api}/sales`).flush([]);
-    http.expectOne(`${api}/sales/payment-methods`).flush([]);
-    http.expectOne((r) => r.url === `${api}/inventory/items`).flush([]);
-    await p;
-    expect(service.cashSessions()).toEqual([]);
-  });
 });

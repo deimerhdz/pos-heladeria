@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClient } from '@angular/common/http';
 import {
   HttpTestingController,
   provideHttpClientTesting,
@@ -7,8 +7,13 @@ import {
 import { environment } from '../../../../environments/environment';
 import { DiningSessionService } from './dining-session.service';
 
-const api = environment.apiBaseUrl;
+const API = environment.apiBaseUrl;
 
+/**
+ * Lado **staff**. El flujo del comensal (menú por QR, sesión, carrito, pedidos
+ * propios) se prueba en `diner.service.spec.ts`: son rutas públicas con otro
+ * modelo de auth.
+ */
 describe('DiningSessionService', () => {
   let service: DiningSessionService;
   let http: HttpTestingController;
@@ -19,110 +24,69 @@ describe('DiningSessionService', () => {
     });
     service = TestBed.inject(DiningSessionService);
     http = TestBed.inject(HttpTestingController);
-    sessionStorage.clear();
   });
 
   afterEach(() => http.verify());
 
-  it('resolves a QR token (uuid) into table + menu', async () => {
-    const promise = service.resolveByToken('uuid-4');
-    const req = http.expectOne(`${api}/menu/qr/uuid-4`);
-    expect(req.request.method).toBe('GET');
-    req.flush({
-      table: { id: 't1', number: 4, name: 'Barra' },
-      menu: [
-        {
-          id: 'c1',
-          name: 'Helados',
-          products: [
-            {
-              id: 'p1',
-              name: 'Cono',
-              variants: [{ id: 'v1', name: 'Simple', price: '3000.00' }],
-              option_groups: [
-                {
-                  id: 'g1',
-                  name: 'Sabores',
-                  min_select: 1,
-                  max_select: 2,
-                  options: [{ id: 'o1', name: 'Vainilla', extra_price: '0.00' }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    const res = await promise;
-    expect(res.table.id).toBe('t1');
-    expect(res.table.number).toBe(4);
-    expect(res.categories[0].products[0].variants[0].price).toBe(3000);
-    expect(res.categories[0].products[0].option_groups[0].max_select).toBe(2);
-  });
+  it('lista comandas y filtra por estado', async () => {
+    const promise = service.listOrders('recibida');
+    const req = http.expectOne((r) => r.url === `${API}/orders`);
 
-  it('opens a session with qr_token + customer_name', async () => {
-    const promise = service.openSession('uuid-4', 'Ana');
-    const req = http.expectOne(`${api}/orders/sessions`);
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ qr_token: 'uuid-4', customer_name: 'Ana' });
-    req.flush({
-      id: 's1',
-      dining_table_id: 't1',
-      customer_name: 'Ana',
-      status: 'open',
-      opened_at: '2026-01-01T00:00:00Z',
-    });
-    expect((await promise).id).toBe('s1');
-  });
-
-  it('closes a session', async () => {
-    const promise = service.closeSession('s1');
-    const req = http.expectOne(`${api}/orders/sessions/s1/close`);
-    expect(req.request.method).toBe('POST');
-    req.flush({ id: 's1', dining_table_id: 't1', customer_name: 'Ana', status: 'closed', opened_at: 'x' });
-    expect((await promise).status).toBe('closed');
-  });
-
-  it('creates an order with items', async () => {
-    const promise = service.createOrder({
-      channel: 'qr',
-      dining_session_id: 's1',
-      items: [{ product_variant_id: 'v1', quantity: 2, option_ids: ['o1'], notes: null }],
-    });
-    const req = http.expectOne(`${api}/orders`);
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body.dining_session_id).toBe('s1');
-    expect(req.request.body.items[0].product_variant_id).toBe('v1');
-    req.flush({ id: 'ord1', channel: 'qr', status: 'pending', created_at: 'x', items: [] });
-    expect((await promise).id).toBe('ord1');
-  });
-
-  it('lists orders and filters by status', async () => {
-    const promise = service.listOrders('abierta');
-    const req = http.expectOne((r) => r.url === `${api}/orders`);
-    expect(req.request.params.get('status')).toBe('abierta');
+    expect(req.request.params.get('status')).toBe('recibida');
     req.flush([]);
     await promise;
   });
 
-  it('advances an item kitchen status', async () => {
-    const promise = service.updateItemKitchen('item1', 'en_preparacion');
-    const req = http.expectOne(`${api}/orders/items/item1/kitchen`);
+  /**
+   * Confirmar es el único punto que descuenta inventario en el flujo de mesa:
+   * ni el carrito, ni el envío del comensal, ni el cobro lo tocan.
+   */
+  it('confirma un pedido recibido', async () => {
+    const promise = service.confirmOrder('o1');
+    const req = http.expectOne(`${API}/orders/o1/confirm`);
+
+    expect(req.request.method).toBe('POST');
+    req.flush({ id: 'o1', status: 'abierta', channel: 'qr', created_at: '2026-07-28' });
+
+    const order = await promise;
+    expect(order.status).toBe('abierta');
+  });
+
+  it('cancela un pedido con motivo', async () => {
+    const promise = service.cancelOrder('o1', 'Rechazado por el personal');
+    const req = http.expectOne(`${API}/orders/o1/cancel`);
+
+    expect(req.request.body).toEqual({ motivo: 'Rechazado por el personal' });
+    req.flush({ id: 'o1', status: 'cancelada', channel: 'qr', created_at: '2026-07-28' });
+    await promise;
+  });
+
+  it('avanza el estado de cocina de un ítem', async () => {
+    const promise = service.updateItemKitchen('i1', 'listo');
+    const req = http.expectOne(`${API}/orders/items/i1/kitchen`);
+
     expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ estado_cocina: 'en_preparacion' });
-    req.flush({ id: 'item1', product_variant_id: 'v1', quantity: 1, unit_price: '3.00', estado_cocina: 'en_preparacion' });
-    expect((await promise).estado_cocina).toBe('en_preparacion');
+    expect(req.request.body).toEqual({ estado_cocina: 'listo' });
+    req.flush({ id: 'i1', estado_cocina: 'listo' });
+    await promise;
   });
 
-  it('persists and restores a session by token', () => {
-    service.storeSession('tok', { sessionId: 's1', customerName: 'Ana' });
-    expect(service.restoreSession('tok')).toEqual({ sessionId: 's1', customerName: 'Ana' });
-    service.clearSession('tok');
-    expect(service.restoreSession('tok')).toBeNull();
+  it('traduce el detail en array (422) de FastAPI', async () => {
+    const promise = service.getOrder('nope').catch((e: unknown) => e);
+    http
+      .expectOne(`${API}/orders/nope`)
+      .flush({ detail: [{ msg: 'Campo requerido' }] }, { status: 422, statusText: 'Unprocessable' });
+
+    expect(service.extractError(await promise)).toBe('Campo requerido');
   });
 
-  it('extracts FastAPI array-detail errors', () => {
-    const err = new HttpErrorResponse({ error: { detail: [{ msg: 'campo inválido' }] }, status: 422 });
-    expect(service.extractError(err)).toBe('campo inválido');
+  it('traduce el detail como objeto (bloqueo por cocina)', async () => {
+    const promise = service.getOrder('x').catch((e: unknown) => e);
+    http.expectOne(`${API}/orders/x`).flush(
+      { detail: { error: 'Hay ítems sin terminar en cocina', items: [] } },
+      { status: 409, statusText: 'Conflict' },
+    );
+
+    expect(service.extractError(await promise)).toBe('Hay ítems sin terminar en cocina');
   });
 });

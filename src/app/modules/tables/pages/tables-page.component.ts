@@ -1,3 +1,4 @@
+import { RouterLink } from '@angular/router';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import { TableService } from '../services/table.service';
@@ -8,7 +9,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 @Component({
   selector: 'app-tables-page',
   standalone: true,
-  imports: [TableFormComponent, TableQrComponent],
+  imports: [RouterLink, TableFormComponent, TableQrComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -17,12 +18,20 @@ import { ToastService } from '../../../shared/feedback/toast.service';
           <h1 class="text-2xl font-bold text-gray-900">Mesas</h1>
           <p class="text-gray-500 text-sm mt-1">Gestiona las mesas del local y sus códigos QR</p>
         </div>
-        <button
-          (click)="openCreate()"
-          class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
-        >
-          <span>+</span> Nueva mesa
-        </button>
+        <div class="flex items-center gap-2">
+          <a
+            routerLink="/dashboard/mesas/qr"
+            class="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Imprimir códigos QR
+          </a>
+          <button
+            (click)="openCreate()"
+            class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            <span>+</span> Nueva mesa
+          </button>
+        </div>
       </div>
 
       <!-- Error banner -->

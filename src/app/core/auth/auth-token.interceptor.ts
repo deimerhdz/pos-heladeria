@@ -5,9 +5,21 @@ import { environment } from '../../../environments/environment';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { TokenStorageService } from './token-storage.service';
 import { AuthService } from '../services/auth.service';
+import { DinerTokenStore } from '../../modules/tables/services/diner-token.store';
 
 const LOGIN_PATH = '/auth/login';
 const REFRESH_PATH = '/auth/refresh-token';
+
+/**
+ * Rutas públicas del comensal: se autentican con el `session_token` firmado
+ * (cabecera `x-session-token`), nunca con el Bearer del staff.
+ */
+const DINER_PATHS = ['/cart', '/menu/qr-token'];
+
+function isDinerPublicPath(url: string): boolean {
+  const path = url.slice(environment.apiBaseUrl.length);
+  return DINER_PATHS.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}?`));
+}
 
 /**
  * For requests to the own backend (`{apiBaseUrl}`):
@@ -15,10 +27,25 @@ const REFRESH_PATH = '/auth/refresh-token';
  *    (login is public; refresh sets its own bearer explicitly);
  *  - on a `401`, refreshes the access token once (shared) and retries;
  *    if the refresh fails, forces logout.
+ *
+ * Las rutas del comensal quedan **fuera de ese camino**: llevan
+ * `x-session-token` en vez de Bearer y su `401` se deja propagar. Para el
+ * comensal un `401` es rutina (mesa cobrada, sesión cerrada, TTL agotado) y
+ * significa "vuelve a escanear el QR" — pasarlo por el refresh de staff lo
+ * expulsaría a la pantalla de login, y arrastraría el Bearer de un empleado
+ * logueado en el mismo navegador.
  */
 export const authTokenInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith(environment.apiBaseUrl)) {
     return next(req);
+  }
+
+  if (isDinerPublicPath(req.url)) {
+    const dinerToken = inject(DinerTokenStore).token();
+    const dinerReq = dinerToken
+      ? req.clone({ setHeaders: { 'x-session-token': dinerToken } })
+      : req;
+    return next(dinerReq);
   }
 
   const tokenStorage = inject(TokenStorageService);

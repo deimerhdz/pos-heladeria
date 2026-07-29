@@ -22,7 +22,7 @@ function adminUser(partial: Partial<AdminUser>): AdminUser {
     name: 'A',
     role: UserRole.CASHIER,
     tenant_id: 1,
-    is_active: true,
+    active: true,
     created_at: '2026-01-01',
     ...partial,
   };
@@ -106,11 +106,11 @@ describe('SuperAdminUsersService', () => {
     const patch = http.expectOne(`${baseUrl}/7`);
     expect(patch.request.method).toBe('PATCH');
     expect(patch.request.body).toEqual({ is_active: false });
-    patch.flush(adminUser({ id: '7', is_active: false }));
+    patch.flush(adminUser({ id: '7', active: false }));
     await tick();
-    http.expectOne(baseUrl).flush(page([adminUser({ id: '7', is_active: false })]));
+    http.expectOne(baseUrl).flush(page([adminUser({ id: '7', active: false })]));
     await promise;
 
-    expect(service.users()[0].is_active).toBe(false);
+    expect(service.users()[0].active).toBe(false);
   });
 });

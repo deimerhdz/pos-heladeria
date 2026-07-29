@@ -11,14 +11,6 @@ import { DiningCartService } from '../services/dining-cart.service';
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-base font-bold text-gray-900">Mi pedido</h2>
-        @if (!cart.isEmpty()) {
-          <button
-            (click)="cart.clear()"
-            class="text-xs font-medium text-gray-400 hover:text-red-600 transition-colors"
-          >
-            Vaciar
-          </button>
-        }
       </div>
 
       <!-- Empty -->
@@ -29,15 +21,15 @@ import { DiningCartService } from '../services/dining-cart.service';
         </div>
       } @else {
         <div class="flex-1 overflow-y-auto space-y-3 mb-3">
-          @for (line of cart.lines(); track line.key) {
+          @for (line of cart.lines(); track line.id) {
             <div class="flex items-start gap-2">
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-800 truncate">
-                  {{ line.productName }} · {{ line.variant.name }}
+                  {{ line.productName }} · {{ line.variantName }}
                 </p>
-                @if (line.options.length > 0) {
+                @if (line.optionNames.length > 0) {
                   <p class="text-xs text-gray-400 truncate">
-                    {{ optionNames(line.options) }}
+                    {{ line.optionNames.join(', ') }}
                   </p>
                 }
                 @if (line.notes) {
@@ -47,21 +39,23 @@ import { DiningCartService } from '../services/dining-cart.service';
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <button
-                  (click)="cart.setQuantity(line.key, line.quantity - 1)"
-                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-bold flex items-center justify-center transition-colors"
+                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity - 1 })"
+                  [disabled]="cart.busy()"
+                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-40"
                 >
                   −
                 </button>
                 <span class="w-6 text-center text-sm font-semibold text-gray-900">{{ line.quantity }}</span>
                 <button
-                  (click)="cart.setQuantity(line.key, line.quantity + 1)"
-                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 text-sm font-bold flex items-center justify-center transition-colors"
+                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity + 1 })"
+                  [disabled]="cart.busy()"
+                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-40"
                 >
                   +
                 </button>
               </div>
               <span class="text-sm font-semibold text-indigo-600 w-16 text-right shrink-0">
-                $ {{ line.unitPrice * line.quantity | number:'1.2-2' }}
+                $ {{ line.lineTotal | number:'1.2-2' }}
               </span>
             </div>
           }
@@ -97,10 +91,8 @@ export class CartComponent {
   @Input() submitting = false;
   @Input() error: string | null = null;
   @Output() submitOrder = new EventEmitter<void>();
+  /** El carrito vive en el backend: la mutación la hace el padre y puede fallar. */
+  @Output() quantityChanged = new EventEmitter<{ itemId: string; quantity: number }>();
 
   readonly cart = inject(DiningCartService);
-
-  optionNames(options: { name: string }[]): string {
-    return options.map((o) => o.name).join(', ');
-  }
 }

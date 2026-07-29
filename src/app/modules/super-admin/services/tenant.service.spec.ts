@@ -35,7 +35,6 @@ const validPayload: TenantCreateWithUser = {
   host: 'nuevo.pos-sistem.com',
   name: 'Admin',
   email: 'admin@nuevo.com',
-  password: 'secret1',
 };
 
 describe('TenantService', () => {

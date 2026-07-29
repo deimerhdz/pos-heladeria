@@ -1,100 +1,157 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import {
   MenuOption,
   MenuProduct,
   MenuVariant,
 } from '../../products/interfaces/product.interface';
-import { OrderItemPayload } from '../interfaces/dining.interface';
+import { CartResponse } from '../interfaces/diner.interface';
+import { DinerService } from './diner.service';
 
-/** A single client-side cart line: a variant + chosen options + quantity. */
+/** Una línea del carrito, ya resuelta contra el menú para poder pintarla. */
 export interface CartLine {
-  /** Stable key per variant + selected-options combination. */
-  key: string;
+  /** Id de la línea en el backend (`cart_items.id`). */
+  id: string;
   productName: string;
-  variant: MenuVariant;
-  options: MenuOption[];
+  variantName: string;
+  optionNames: string[];
   quantity: number;
   notes: string | null;
-  /** variant.price + Σ options.extra_price. */
   unitPrice: number;
+  lineTotal: number;
+}
+
+/** Índice del menú para resolver ids → nombres al pintar el carrito. */
+interface MenuIndex {
+  variants: Map<string, { productName: string; variantName: string }>;
+  options: Map<string, string>;
 }
 
 /**
- * Client-side cart for the QR menu. The backend has no cart endpoint: the diner
- * builds this locally and it is posted as a single `POST /orders`.
+ * Carrito borrador del comensal. **Vive en el backend**, no en el navegador:
+ * cada cambio va a `/cart/items` y el estado local es la proyección de la
+ * respuesta (el backend devuelve el carrito completo en cada mutación).
+ *
+ * Eso es lo que hace que el carrito sobreviva a una recarga y que el aviso de
+ * stock insuficiente aparezca al añadir la línea, no al final.
  */
 @Injectable({ providedIn: 'root' })
 export class DiningCartService {
+  private readonly api = inject(DinerService);
+
   readonly lines = signal<CartLine[]>([]);
+  readonly total = signal(0);
+  /**
+   * Nombre desambiguado del comensal, que viaja en la respuesta del carrito.
+   *
+   * Vive aquí y no en la pantalla porque `GET /cart` es lo único que se recarga al
+   * reingresar: así el saludo sobrevive a un F5 sin guardar nada en el navegador.
+   */
+  readonly dinerName = signal('');
+  /** Hay una operación en vuelo: la UI debe bloquear los botones de cantidad. */
+  readonly busy = signal(false);
 
   readonly count = computed(() => this.lines().reduce((n, l) => n + l.quantity, 0));
-  readonly total = computed(() => this.lines().reduce((s, l) => s + l.unitPrice * l.quantity, 0));
   readonly isEmpty = computed(() => this.lines().length === 0);
 
-  /** Add a variant with the given options; merges into an existing matching line. */
-  add(
-    product: MenuProduct,
+  private index: MenuIndex = { variants: new Map(), options: new Map() };
+
+  /** Indexa el menú resuelto para poder mostrar nombres en las líneas. */
+  indexMenu(categories: { products: MenuProduct[] }[]): void {
+    const variants = new Map<string, { productName: string; variantName: string }>();
+    const options = new Map<string, string>();
+    for (const cat of categories) {
+      for (const product of cat.products) {
+        for (const v of product.variants) {
+          variants.set(v.id, { productName: product.name, variantName: v.name });
+        }
+        for (const g of product.option_groups) {
+          for (const o of g.options) options.set(o.id, o.name);
+        }
+      }
+    }
+    this.index = { variants, options };
+  }
+
+  /** Carga el carrito vigente del backend (al abrir o al reingresar). */
+  async load(): Promise<void> {
+    this.apply(await this.api.getCart());
+  }
+
+  /**
+   * Añade una línea. Propaga el error para que la pantalla muestre qué insumo
+   * falta cuando el backend responde el `409` estructurado.
+   */
+  async add(
+    _product: MenuProduct,
     variant: MenuVariant,
     options: MenuOption[],
     quantity: number,
     notes: string | null,
-  ): void {
-    const key = this.buildKey(variant.id, options);
-    const unitPrice = variant.price + options.reduce((s, o) => s + o.extra_price, 0);
-
-    this.lines.update((lines) => {
-      const existing = lines.find((l) => l.key === key && l.notes === (notes || null));
-      if (existing) {
-        return lines.map((l) =>
-          l === existing ? { ...l, quantity: l.quantity + quantity } : l,
-        );
-      }
-      return [
-        ...lines,
-        {
-          key,
-          productName: product.name,
-          variant,
-          options,
-          quantity,
-          notes: notes || null,
-          unitPrice,
-        },
-      ];
-    });
+  ): Promise<void> {
+    await this.mutate(() =>
+      this.api.addItem({
+        product_variant_id: variant.id,
+        quantity,
+        option_ids: options.map((o) => o.id),
+        notes: notes || null,
+      }),
+    );
   }
 
-  setQuantity(key: string, quantity: number): void {
-    if (quantity <= 0) {
-      this.remove(key);
-      return;
-    }
-    this.lines.update((lines) => lines.map((l) => (l.key === key ? { ...l, quantity } : l)));
+  async setQuantity(itemId: string, quantity: number): Promise<void> {
+    if (quantity <= 0) return this.remove(itemId);
+    await this.mutate(() => this.api.updateItem(itemId, { quantity }));
   }
 
-  remove(key: string): void {
-    this.lines.update((lines) => lines.filter((l) => l.key !== key));
+  async remove(itemId: string): Promise<void> {
+    await this.mutate(() => this.api.removeItem(itemId));
   }
 
+  /**
+   * Limpia las líneas (tras enviar el pedido o cerrar la sesión).
+   *
+   * **No toca `dinerName`**: al enviar un pedido el comensal sigue en la mesa y
+   * borrarlo dejaría el saludo en blanco. Para eso está `clearDiner()`.
+   */
   clear(): void {
     this.lines.set([]);
+    this.total.set(0);
   }
 
-  /** Map the cart to the `items` array of a `POST /orders` request. */
-  toOrderItems(): OrderItemPayload[] {
-    return this.lines().map((l) => ({
-      product_variant_id: l.variant.id,
-      quantity: l.quantity,
-      option_ids: l.options.map((o) => o.id),
-      notes: l.notes,
-    }));
+  /** Olvida al comensal (sesión expirada o salida de la mesa). */
+  clearDiner(): void {
+    this.dinerName.set('');
   }
 
-  private buildKey(variantId: string, options: MenuOption[]): string {
-    const opts = options
-      .map((o) => o.id)
-      .sort()
-      .join(',');
-    return `${variantId}|${opts}`;
+  private async mutate(fn: () => Promise<CartResponse>): Promise<void> {
+    this.busy.set(true);
+    try {
+      this.apply(await fn());
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /** Proyecta la respuesta del backend al estado local. */
+  private apply(cart: CartResponse): void {
+    this.dinerName.set(cart.display_label || cart.display_name);
+    this.lines.set(
+      cart.items.map((it) => {
+        const variant = this.index.variants.get(it.product_variant_id);
+        return {
+          id: it.id,
+          productName: variant?.productName ?? 'Producto',
+          variantName: variant?.variantName ?? '',
+          optionNames: it.options
+            .map((o) => this.index.options.get(o.option_id))
+            .filter((n): n is string => !!n),
+          quantity: it.quantity,
+          notes: it.notes,
+          unitPrice: Number(it.unit_price),
+          lineTotal: Number(it.line_total),
+        };
+      }),
+    );
+    this.total.set(Number(cart.total));
   }
 }

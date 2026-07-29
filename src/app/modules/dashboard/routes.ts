@@ -133,6 +133,13 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
+        // Antes que `mesas` para que no la capture como parámetro.
+        path: 'mesas/qr',
+        loadComponent: () =>
+          import('../tables/pages/table-qr-sheet.component').then((m) => m.TableQrSheetComponent),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
         path: 'mesas',
         loadComponent: () =>
           import('../tables/pages/tables-page.component').then((m) => m.TablesPageComponent),
