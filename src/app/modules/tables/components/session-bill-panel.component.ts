@@ -14,12 +14,14 @@ import { FormsModule } from '@angular/forms';
 import {
   BillingMode,
   CloseSessionPayload,
+  CloseSessionResponse,
   PaymentLine,
   SessionBill,
   SplitPayment,
 } from '../interfaces/dining.interface';
 import { PaymentMethod } from '../../sales/interfaces/sales.interface';
 import { TableSessionService } from '../services/table-session.service';
+import { formatMoney } from '../services/receipt.util';
 import { ToastService } from '../../../shared/feedback/toast.service';
 
 /** Cobro asignado a un comensal en modo `split`. */
@@ -28,6 +30,8 @@ interface SplitDraft {
   label: string;
   subtotal: number;
   methodId: string;
+  /** Con cuánto paga: en efectivo puede ser más que `subtotal` y generar vuelto. */
+  received: number;
 }
 
 /**
@@ -104,7 +108,7 @@ interface SplitDraft {
             <label class="block text-xs font-medium text-gray-600">Método de pago</label>
             <select
               [ngModel]="unifiedMethod()"
-              (ngModelChange)="unifiedMethod.set($event)"
+              (ngModelChange)="setUnifiedMethod($event)"
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
             >
               <option value="">Selecciona…</option>
@@ -112,6 +116,35 @@ interface SplitDraft {
                 <option [value]="m.id">{{ m.name }}</option>
               }
             </select>
+
+            @if (isCash()) {
+              <div class="pt-3 mt-1 border-t border-gray-100 space-y-2">
+                <label class="block text-xs font-medium text-gray-600" for="cash-received">
+                  Con cuánto paga
+                </label>
+                <input
+                  id="cash-received"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  [ngModel]="cashReceived()"
+                  (ngModelChange)="setCashReceived($event)"
+                  class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+                @if (missing() > 0) {
+                  <p class="text-xs font-medium text-red-600">
+                    Faltan {{ money(missing()) }} para cubrir la cuenta.
+                  </p>
+                } @else {
+                  <div class="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
+                    <span class="text-xs font-medium text-emerald-800">Vuelto</span>
+                    <span class="text-base font-bold text-emerald-700">
+                      {{ money(changeDue()) }}
+                    </span>
+                  </div>
+                }
+              </div>
+            }
           } @else {
             <p class="text-xs text-gray-500">Un método por cada comensal con consumo:</p>
             @for (d of splits(); track d.participantId) {
@@ -132,6 +165,34 @@ interface SplitDraft {
                     <option [value]="m.id">{{ m.name }}</option>
                   }
                 </select>
+
+                @if (isCashMethod(d.methodId)) {
+                  <div class="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+                    <label class="block text-[11px] font-medium text-gray-500">
+                      Con cuánto paga
+                    </label>
+                    <input
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      [ngModel]="d.received"
+                      (ngModelChange)="setSplitReceived(d.participantId, $event)"
+                      class="w-full px-2 py-1.5 border border-gray-200 rounded text-xs"
+                    />
+                    @if (d.received < d.subtotal) {
+                      <p class="text-[11px] font-medium text-red-600">
+                        Faltan {{ money(d.subtotal - d.received) }}
+                      </p>
+                    } @else {
+                      <div class="flex items-center justify-between text-xs">
+                        <span class="text-emerald-800">Vuelto</span>
+                        <span class="font-bold text-emerald-700">
+                          {{ money(d.received - d.subtotal) }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
             }
           }
@@ -158,7 +219,8 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() bill: SessionBill | null = null;
   @Input() methods: PaymentMethod[] = [];
   @Input() cashShiftId: string | null = null;
-  @Output() charged = new EventEmitter<string[]>();
+  /** Cierre completo: sus `sale_ids` son la fuente de la factura impresa. */
+  @Output() charged = new EventEmitter<CloseSessionResponse>();
 
   private readonly api = inject(TableSessionService);
   private readonly toast = inject(ToastService);
@@ -175,25 +237,59 @@ export class SessionBillPanelComponent implements OnChanges {
    */
   readonly unifiedMethod = signal('');
 
-  /** Dividir solo tiene sentido si hay consumo de más de un comensal. */
-  readonly canSplit = computed(() => (this.bill?.split.length ?? 0) > 1);
+  /** Con cuánto paga el cliente en efectivo; el exceso es el vuelto. */
+  readonly cashReceived = signal(0);
 
-  readonly ready = computed(() =>
-    this.mode() === 'unified'
-      ? !!this.unifiedMethod()
-      : this.splits().length > 0 && this.splits().every((s) => !!s.methodId),
-  );
+  /**
+   * Espejo de la cuenta que llega por `@Input`.
+   *
+   * Los `computed` de abajo dependen de ella: leer `this.bill` directamente los
+   * dejaría congelados en su primer valor, porque un campo normal no notifica
+   * cambios (es el mismo fallo que tenía `unifiedMethod`).
+   */
+  private readonly currentBill = signal<SessionBill | null>(null);
+
+  readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
+
+  /** Dividir solo tiene sentido si hay consumo de más de un comensal. */
+  readonly canSplit = computed(() => (this.currentBill()?.split.length ?? 0) > 1);
+
+  /** El método elegido para la cuenta única cobra en efectivo. */
+  readonly isCash = computed(() => !!this.method(this.unifiedMethod())?.is_cash);
+
+  /** Vuelto de la cuenta única. */
+  readonly changeDue = computed(() => Math.max(0, this.cashReceived() - this.total()));
+
+  /** Lo que falta para cubrir la cuenta única (0 si ya está cubierta). */
+  readonly missing = computed(() => Math.max(0, this.total() - this.cashReceived()));
+
+  readonly ready = computed(() => {
+    if (this.mode() === 'unified') {
+      if (!this.unifiedMethod()) return false;
+      // En efectivo el importe lo teclea el cajero: no puede quedarse corto.
+      return !this.isCash() || this.cashReceived() >= this.total();
+    }
+    return (
+      this.splits().length > 0 &&
+      this.splits().every(
+        (s) => !!s.methodId && (!this.isCashMethod(s.methodId) || s.received >= s.subtotal),
+      )
+    );
+  });
 
   ngOnChanges(): void {
     this.error.set(null);
+    this.currentBill.set(this.bill);
     // El método elegido es de esta cuenta: no debe arrastrarse a la siguiente mesa.
     this.unifiedMethod.set('');
+    this.cashReceived.set(0);
     this.splits.set(
       (this.bill?.split ?? []).map((l) => ({
         participantId: l.participant_id,
         label: this.lineLabel(l.display_label),
         subtotal: Number(l.subtotal),
         methodId: '',
+        received: Number(l.subtotal),
       })),
     );
     if (!this.canSplit()) this.mode.set('unified');
@@ -204,9 +300,41 @@ export class SessionBillPanelComponent implements OnChanges {
     return label ?? 'Sin asignar (mesero)';
   }
 
+  /** Importes con el mismo formato que la terminal y la factura. */
+  money(n: number): string {
+    return formatMoney(n);
+  }
+
+  isCashMethod(methodId: string): boolean {
+    return !!this.method(methodId)?.is_cash;
+  }
+
+  private method(methodId: string): PaymentMethod | undefined {
+    return this.methods.find((m) => m.id === methodId);
+  }
+
+  /** Al elegir método, el efectivo arranca en el importe justo (vuelto $ 0). */
+  setUnifiedMethod(methodId: string): void {
+    this.unifiedMethod.set(methodId);
+    this.cashReceived.set(this.isCashMethod(methodId) ? this.total() : 0);
+  }
+
+  setCashReceived(value: string | number): void {
+    this.cashReceived.set(Math.max(0, Number(value) || 0));
+  }
+
   setSplitMethod(participantId: string | null, methodId: string): void {
     this.splits.update((list) =>
-      list.map((s) => (s.participantId === participantId ? { ...s, methodId } : s)),
+      list.map((s) =>
+        s.participantId === participantId ? { ...s, methodId, received: s.subtotal } : s,
+      ),
+    );
+  }
+
+  setSplitReceived(participantId: string | null, value: string | number): void {
+    const received = Math.max(0, Number(value) || 0);
+    this.splits.update((list) =>
+      list.map((s) => (s.participantId === participantId ? { ...s, received } : s)),
     );
   }
 
@@ -218,9 +346,12 @@ export class SessionBillPanelComponent implements OnChanges {
     this.submitting.set(true);
     this.error.set(null);
     try {
-      await this.api.close(this.bill.table_session_id, this.buildPayload(this.cashShiftId));
+      const closed = await this.api.close(
+        this.bill.table_session_id,
+        this.buildPayload(this.cashShiftId),
+      );
       this.toast.success('Mesa cobrada y liberada');
-      this.charged.emit(this.bill.order_ids);
+      this.charged.emit(closed);
     } catch (err) {
       this.showChargeError(err);
     } finally {
@@ -228,16 +359,29 @@ export class SessionBillPanelComponent implements OnChanges {
     }
   }
 
+  /**
+   * En efectivo se manda **lo que entregó el cliente**, no el importe justo: el
+   * backend deriva de ahí `paid_amount` y `change_given`, y sin eso el vuelto no
+   * se descuenta del efectivo esperado del turno.
+   */
   private buildPayload(cashShiftId: string): CloseSessionPayload {
     if (this.mode() === 'unified') {
       const payments: PaymentLine[] = [
-        { payment_method_id: this.unifiedMethod(), amount: Number(this.bill!.total) },
+        {
+          payment_method_id: this.unifiedMethod(),
+          amount: this.isCash() ? this.cashReceived() : this.total(),
+        },
       ];
       return { cash_shift_id: cashShiftId, billing_mode: 'unified', payments };
     }
     const splits: SplitPayment[] = this.splits().map((s) => ({
       participant_id: s.participantId,
-      payments: [{ payment_method_id: s.methodId, amount: s.subtotal }],
+      payments: [
+        {
+          payment_method_id: s.methodId,
+          amount: this.isCashMethod(s.methodId) ? s.received : s.subtotal,
+        },
+      ],
     }));
     return { cash_shift_id: cashShiftId, billing_mode: 'split', splits };
   }

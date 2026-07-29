@@ -25,7 +25,7 @@ import { SessionBillPanelComponent } from './session-bill-panel.component';
             [bill]="store.sessionBill()"
             [methods]="store.paymentMethods()"
             [cashShiftId]="store.cashShiftId()"
-            (charged)="store.onCharged()"
+            (charged)="store.onCharged($event)"
           />
         }
       </div>

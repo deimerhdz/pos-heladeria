@@ -11,7 +11,12 @@ export interface TenantInfo {
   host: string;
   plan: string;
   logo_url: string | null;
+  /** Mensaje que cierra la factura impresa. `null` = usar el texto por defecto. */
+  receipt_message: string | null;
 }
+
+/** Cierre de la factura cuando el negocio no ha configurado uno propio. */
+export const DEFAULT_RECEIPT_MESSAGE = '¡Gracias por su compra!';
 
 /** Respuesta de `POST /uploads/presign`. */
 interface PresignResponse {
@@ -57,6 +62,11 @@ export class TenantInfoService {
 
   readonly logoUrl = computed(() => this.info()?.logo_url ?? null);
 
+  /** Mensaje de cierre de la factura; nunca vacío. */
+  readonly receiptMessage = computed(
+    () => this.info()?.receipt_message?.trim() || DEFAULT_RECEIPT_MESSAGE,
+  );
+
   async load(): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
@@ -66,6 +76,25 @@ export class TenantInfoService {
       this.error.set(this.extractError(err, 'No se pudo cargar la información del negocio.'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /**
+   * Guarda cambios sueltos del negocio (`PATCH /tenant`). Devuelve `true` si se
+   * guardó. La respuesta trae el tenant completo, así que refresca `info` y con
+   * ella el sidebar y todo lo que lea sus señales.
+   */
+  async update(patch: Partial<TenantInfo>): Promise<boolean> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    try {
+      this.info.set(await firstValueFrom(this.http.patch<TenantInfo>(this.baseUrl, patch)));
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err, 'No se pudo guardar la información del negocio.'));
+      return false;
+    } finally {
+      this.isSubmitting.set(false);
     }
   }
 

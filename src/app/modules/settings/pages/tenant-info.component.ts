@@ -1,7 +1,15 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { FormsModule } from '@angular/forms';
+import {
+  DEFAULT_RECEIPT_MESSAGE,
+  TenantInfoService,
+} from '../../../core/tenant/tenant-info.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
+import { ToastService } from '../../../shared/feedback/toast.service';
+
+/** Tope del campo en el backend (`TenantUpdate.receipt_message`). */
+const MAX_MESSAGE = 255;
 
 const ROLE_LABEL: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: 'Super Admin',
@@ -13,6 +21,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
 @Component({
   selector: 'app-tenant-info',
   standalone: true,
+  imports: [FormsModule],
   template: `
     <div class="max-w-3xl space-y-6">
       @if (tenantInfo.error()) {
@@ -59,6 +68,39 @@ const ROLE_LABEL: Record<UserRole, string> = {
               <p class="text-xs text-green-600 mt-1">Guardado ✓</p>
             }
           </div>
+        </div>
+      </div>
+
+      <!-- Mensaje del recibo -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🧾</span>
+          <div>
+            <h2 class="text-base font-semibold text-gray-900">Mensaje del recibo</h2>
+            <p class="text-xs text-gray-400">Cierra la factura que se imprime al cobrar una mesa</p>
+          </div>
+        </div>
+
+        <textarea
+          [(ngModel)]="message"
+          [maxlength]="maxMessage"
+          rows="2"
+          placeholder="¡Gracias por su compra!"
+          class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+        ></textarea>
+
+        <div class="flex items-center justify-between gap-3 mt-3">
+          <p class="text-xs text-gray-400">
+            {{ message().length }}/{{ maxMessage }} · si lo dejas vacío se imprime
+            «{{ defaultMessage }}»
+          </p>
+          <button
+            (click)="saveMessage()"
+            [disabled]="tenantInfo.isSubmitting()"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            {{ tenantInfo.isSubmitting() ? 'Guardando…' : 'Guardar' }}
+          </button>
         </div>
       </div>
 
@@ -121,8 +163,14 @@ const ROLE_LABEL: Record<UserRole, string> = {
 export class TenantInfoComponent implements OnInit {
   readonly tenantInfo = inject(TenantInfoService);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
 
   readonly saved = signal(false);
+
+  readonly maxMessage = MAX_MESSAGE;
+  readonly defaultMessage = DEFAULT_RECEIPT_MESSAGE;
+  /** Borrador del mensaje; se rellena cuando llega la info del negocio. */
+  readonly message = signal('');
 
   readonly host = computed(() => this.tenantInfo.info()?.host ?? '—');
   readonly plan = computed(() => this.tenantInfo.info()?.plan ?? '—');
@@ -133,8 +181,16 @@ export class TenantInfoComponent implements OnInit {
     return role ? ROLE_LABEL[role] : '—';
   });
 
-  ngOnInit(): void {
-    void this.tenantInfo.load();
+  async ngOnInit(): Promise<void> {
+    await this.tenantInfo.load();
+    this.message.set(this.tenantInfo.info()?.receipt_message ?? '');
+  }
+
+  /** Guarda el mensaje; vacío lo borra y vuelve al texto por defecto. */
+  async saveMessage(): Promise<void> {
+    const ok = await this.tenantInfo.update({ receipt_message: this.message().trim() });
+    if (ok) this.toast.success('Mensaje del recibo guardado');
+    else this.toast.error(this.tenantInfo.error() ?? 'No se pudo guardar el mensaje');
   }
 
   async onLogoSelected(event: Event): Promise<void> {

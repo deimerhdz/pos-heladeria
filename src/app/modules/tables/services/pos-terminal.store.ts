@@ -13,6 +13,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
+  CloseSessionResponse,
   DiningOrder,
   DiningOrderItem,
   PaymentLine,
@@ -23,6 +24,14 @@ import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
 import { DiningSessionService } from './dining-session.service';
 import { TableSessionService } from './table-session.service';
+import { SalesService } from '../../sales/services/sales.service';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import {
+  ReceiptData,
+  buildReceiptHtml,
+  formatMoney,
+  printReceiptHtml,
+} from './receipt.util';
 
 /** Una línea de pedido nueva sin guardar (draft del staff). */
 interface DraftLine {
@@ -64,6 +73,8 @@ export class PosTerminalStore {
   private readonly tableSessions = inject(TableSessionService);
   private readonly paymentMethodService = inject(PaymentMethodService);
   private readonly cash = inject(CashService);
+  private readonly sales = inject(SalesService);
+  private readonly tenantInfo = inject(TenantInfoService);
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
 
@@ -96,6 +107,8 @@ export class PosTerminalStore {
 
   readonly successOpen = signal(false);
   readonly lastSale = signal<{ total: number; customer: string } | null>(null);
+  /** Facturas del último cobro (una por venta) listas para imprimir. */
+  readonly lastReceipts = signal<ReceiptData[]>([]);
 
   private readonly nowTick = signal(Date.now());
   private timer?: ReturnType<typeof setInterval>;
@@ -526,27 +539,83 @@ export class PosTerminalStore {
     }
   }
 
-  /** Tras cobrar: refresca todo y suelta la selección. */
-  async onCharged(): Promise<void> {
+  /** Tras cobrar: arma las facturas, refresca todo y suelta la selección. */
+  async onCharged(closed: CloseSessionResponse): Promise<void> {
     const total = Number(this.sessionBill()?.total ?? 0);
     this.lastSale.set({ total, customer: this.customerName() || 'Mesa' });
+    // La etiqueta de la mesa hay que capturarla aquí: `cancelSelection()` la borra.
+    const tableLabel = this.tableLabel(this.selectedTable());
     this.successOpen.set(true);
     this.sessionBill.set(null);
-    await this.reload();
+    await Promise.all([this.loadReceipts(closed, tableLabel), this.reload()]);
     this.cancelSelection();
   }
 
+  /**
+   * Trae las ventas recién emitidas para poder imprimirlas.
+   *
+   * Un fallo aquí **no invalida el cobro** —ya está registrado—: solo deja el
+   * diálogo sin botón de imprimir.
+   */
+  private async loadReceipts(closed: CloseSessionResponse, tableLabel: string): Promise<void> {
+    this.lastReceipts.set([]);
+    try {
+      const sales = await Promise.all(closed.sale_ids.map((id) => this.sales.get(id)));
+      this.lastReceipts.set(
+        sales.map((sale) => ({
+          businessName: this.tenantInfo.businessName(),
+          logoUrl: this.tenantInfo.logoUrl(),
+          tableLabel,
+          soldAt: sale.sold_at,
+          cashier: sale.user_name ?? null,
+          customerName: sale.customer_name ?? null,
+          saleId: sale.id,
+          lines: (sale.items ?? []).map((it) => ({
+            quantity: it.quantity,
+            description: it.description,
+            lineTotal: Number(it.line_total),
+          })),
+          subtotal: Number(sale.subtotal),
+          discount: Number(sale.discount),
+          tax: Number(sale.tax),
+          tip: Number(sale.tip),
+          total: Number(sale.total),
+          payments: (sale.payments ?? []).map((p) => ({
+            name: this.methodName(p.payment_method_id),
+            amount: Number(p.amount),
+          })),
+          change: sale.change_given != null ? Number(sale.change_given) : null,
+          message: this.tenantInfo.receiptMessage(),
+        })),
+      );
+    } catch {
+      this.toast.error('El cobro se registró, pero no se pudo preparar la factura.');
+    }
+  }
 
   closeSuccess(): void {
     this.successOpen.set(false);
   }
+
+  /** Imprime la factura de 58 mm: una por venta (en cuenta dividida, una por comensal). */
   printReceipt(): void {
-    window.print();
+    const receipts = this.lastReceipts();
+    if (receipts.length === 0) return;
+    printReceiptHtml(buildReceiptHtml(receipts));
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
   fmt(n: number): string {
-    return '$ ' + Math.round(n || 0).toLocaleString('es-CO');
+    return formatMoney(n);
+  }
+
+  private methodName(id: string): string {
+    return this.paymentMethods().find((m) => m.id === id)?.name ?? 'Pago';
+  }
+
+  private tableLabel(table: Table | null): string {
+    if (!table) return '';
+    return table.name ? `Mesa ${table.number} · ${table.name}` : `Mesa ${table.number}`;
   }
 
   private orderSubtotal(o: DiningOrder): number {

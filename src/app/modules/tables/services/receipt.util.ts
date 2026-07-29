@@ -1,0 +1,221 @@
+/**
+ * Factura de 58 mm para impresora térmica.
+ *
+ * Se genera como un **documento HTML independiente** con su propio `@page`, y se
+ * imprime en un iframe oculto. No usa Tailwind ni los estilos de la app a
+ * propósito: el ancho del papel manda, y así imprimir el ticket no interfiere
+ * con las otras pantallas que ya llaman a `window.print()` (la hoja de QR y el
+ * arqueo de caja), que tienen sus propias reglas de impresión.
+ */
+
+/** Una línea del ticket. */
+export interface ReceiptLine {
+  quantity: number;
+  description: string;
+  lineTotal: number;
+}
+
+/** Un pago del ticket, con el nombre del método ya resuelto. */
+export interface ReceiptPayment {
+  name: string;
+  amount: number;
+}
+
+/** Todo lo que se imprime de una venta. Una venta = un ticket. */
+export interface ReceiptData {
+  businessName: string;
+  logoUrl: string | null;
+  /** "Mesa 5 · Terraza", o vacío si no se conoce. */
+  tableLabel: string;
+  /** ISO del backend (`Sale.sold_at`). */
+  soldAt: string;
+  cashier: string | null;
+  customerName: string | null;
+  saleId: string;
+  lines: ReceiptLine[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  tip: number;
+  total: number;
+  payments: ReceiptPayment[];
+  change: number | null;
+  /** Mensaje de cierre configurado en Ajustes. */
+  message: string;
+}
+
+/** Formato de moneda de la terminal. */
+export function formatMoney(n: number): string {
+  return '$ ' + Math.round(n || 0).toLocaleString('es-CO');
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  // Sin am/pm: en 58 mm cada carácter de más acerca la fila al borde del papel.
+  return date.toLocaleString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+/** Fila etiqueta/importe. Es el ladrillo de todos los bloques de totales. */
+function row(label: string, value: string, cls = ''): string {
+  return `<div class="row${cls ? ' ' + cls : ''}"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
+}
+
+/** Los 6 últimos del uuid bastan para identificar el ticket en el mostrador. */
+function shortId(saleId: string): string {
+  return saleId.replace(/-/g, '').slice(-6).toUpperCase();
+}
+
+function meta(label: string, value: string | null): string {
+  return value ? row(label, value, 'meta') : '';
+}
+
+function receiptBody(data: ReceiptData): string {
+  const lines = data.lines
+    .map(
+      (l) => `
+        <div class="line">
+          <div class="desc">${l.quantity} × ${escapeHtml(l.description)}</div>
+          <div class="amount">${escapeHtml(formatMoney(l.lineTotal))}</div>
+        </div>`,
+    )
+    .join('');
+
+  // Subtotal solo aporta información si hay algo que lo separe del total.
+  const hasBreakdown = data.discount > 0 || data.tax > 0 || data.tip > 0;
+
+  return `
+    <article class="ticket">
+      <header class="block center">
+        ${data.logoUrl ? `<img class="logo" src="${escapeHtml(data.logoUrl)}" alt="" />` : ''}
+        <h1>${escapeHtml(data.businessName)}</h1>
+        ${data.tableLabel ? `<p class="table">${escapeHtml(data.tableLabel)}</p>` : ''}
+      </header>
+
+      <section class="block">
+        ${meta('Fecha', formatDateTime(data.soldAt))}
+        ${meta('Cliente', data.customerName)}
+        ${meta('Atendió', data.cashier)}
+        ${meta('Ticket', '#' + shortId(data.saleId))}
+      </section>
+
+      <section class="block lines">${lines}</section>
+
+      <section class="block totals">
+        ${hasBreakdown ? row('Subtotal', formatMoney(data.subtotal)) : ''}
+        ${data.discount > 0 ? row('Descuento', '-' + formatMoney(data.discount)) : ''}
+        ${data.tax > 0 ? row('Impuesto', formatMoney(data.tax)) : ''}
+        ${data.tip > 0 ? row('Propina', formatMoney(data.tip)) : ''}
+        ${row('TOTAL', formatMoney(data.total), 'total')}
+      </section>
+
+      <section class="block">
+        ${data.payments.map((p) => row(p.name, formatMoney(p.amount))).join('')}
+        ${data.change !== null && data.change > 0 ? row('Cambio', formatMoney(data.change)) : ''}
+      </section>
+
+      <footer class="center message">${escapeHtml(data.message)}</footer>
+    </article>`;
+}
+
+const STYLES = `
+  @page { size: 58mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    width: 58mm;
+    margin: 0;
+    padding: 4mm 3mm 6mm;
+    font-family: "Courier New", ui-monospace, monospace;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+  }
+  /* Cada bloque respira y se separa del siguiente con una línea de puntos. */
+  .block { padding-bottom: 3mm; margin-bottom: 3mm; border-bottom: 1px dashed #000; }
+  /* Solo la última sección; la cabecera es <header> y conserva su separador. */
+  section.block:last-of-type { border-bottom: 0; padding-bottom: 0; }
+  .center { text-align: center; }
+  .logo { max-width: 26mm; max-height: 16mm; margin: 0 auto 2mm; display: block; }
+  h1 { font-size: 14px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: .5px; }
+  .table { margin: 1.5mm 0 0; }
+  .row { display: flex; justify-content: space-between; gap: 3mm; }
+  .row span:last-child { text-align: right; white-space: nowrap; }
+  .meta span:first-child { color: #000; }
+  /* La descripción parte de línea en vez de desbordar el papel. */
+  .line { display: flex; justify-content: space-between; gap: 3mm; margin-bottom: 1.5mm; }
+  .line:last-child { margin-bottom: 0; }
+  .desc { overflow-wrap: anywhere; }
+  .amount { text-align: right; white-space: nowrap; }
+  .totals .row { margin-bottom: 1mm; }
+  .total { font-size: 13px; font-weight: bold; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #000; }
+  .message { margin-top: 5mm; font-weight: bold; overflow-wrap: anywhere; }
+  /* Un ticket por venta: en cuenta dividida cada comensal se lleva el suyo. */
+  .ticket + .ticket { page-break-before: always; padding-top: 4mm; }
+`;
+
+/** Documento completo con un ticket por venta. */
+export function buildReceiptHtml(receipts: ReceiptData[]): string {
+  return `<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8" /><title>Factura</title><style>${STYLES}</style></head>
+<body>${receipts.map(receiptBody).join('')}</body>
+</html>`;
+}
+
+/**
+ * Imprime el documento en un iframe oculto y lo descarta al terminar.
+ *
+ * El iframe aísla el `@page` de 58 mm: imprimir la factura no puede alterar cómo
+ * se imprimen las demás pantallas de la app.
+ */
+export function printReceiptHtml(html: string): void {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.position = 'fixed';
+  frame.style.right = '0';
+  frame.style.bottom = '0';
+  frame.style.width = '0';
+  frame.style.height = '0';
+  frame.style.border = '0';
+  document.body.appendChild(frame);
+
+  const win = frame.contentWindow;
+  const doc = frame.contentDocument;
+  if (!win || !doc) {
+    frame.remove();
+    return;
+  }
+
+  const cleanup = (): void => frame.remove();
+  win.addEventListener('afterprint', cleanup, { once: true });
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  // Esperar al layout (y a las imágenes del logo) antes de abrir el diálogo.
+  const print = (): void => {
+    win.focus();
+    win.print();
+    // Si el navegador no emite `afterprint` (o el usuario cancela), no dejar basura.
+    setTimeout(cleanup, 60000);
+  };
+  if (doc.readyState === 'complete') print();
+  else win.addEventListener('load', print, { once: true });
+}

@@ -108,7 +108,13 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
             <p class="text-sm text-gray-500">Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario se actualizó.</p>
           }
           <div class="flex gap-2 justify-center pt-1">
-            <button (click)="store.printReceipt()" class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50">Imprimir</button>
+            <button
+              (click)="store.printReceipt()"
+              [disabled]="store.lastReceipts().length === 0"
+              class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              🧾 Imprimir factura
+            </button>
             <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
           </div>
         </div>
@@ -146,7 +152,7 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
       else if (this.store.discountPanelOpen()) this.store.toggleDiscountPanel();
       else this.store.cancelSelection();
     } else if (!typing && e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey)) {
-      if (this.store.successOpen()) {
+      if (this.store.successOpen() && this.store.lastReceipts().length > 0) {
         e.preventDefault();
         this.store.printReceipt();
       }
