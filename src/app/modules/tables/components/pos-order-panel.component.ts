@@ -6,6 +6,9 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
   selector: 'app-pos-order-panel',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // El host es `inline` por defecto: sin esto no ocupa el alto de la columna y
+  // el carrito no puede tener su propio scroll (la página entera se estiraba).
+  host: { class: 'flex-1 flex flex-col min-h-0' },
   template: `
     @if (!store.hasActiveOrder()) {
       <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-8 gap-3">
@@ -25,6 +28,25 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
             </div>
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">← Volver</button>
           </div>
+
+          @if (store.pendingOfSelectedTable().length; as pendientes) {
+            <!--
+              Sin esto la pantalla se contradice: la tarjeta de la mesa avisa de
+              un pedido por confirmar y aquí pone "Pedido nuevo sin guardar".
+            -->
+            <div class="flex items-center justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+              <p class="text-xs text-violet-800">
+                Esta mesa tiene {{ pendientes }}
+                {{ pendientes === 1 ? 'pedido' : 'pedidos' }} por confirmar.
+              </p>
+              <button
+                (click)="store.centerTab.set('pendientes')"
+                class="text-xs font-semibold text-violet-700 hover:text-violet-900 shrink-0"
+              >
+                Ver
+              </button>
+            </div>
+          }
 
           <div>
             <label class="block text-[11px] font-medium text-gray-500 mb-1">Cliente</label>

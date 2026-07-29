@@ -11,6 +11,7 @@ import { PaymentMethodService } from '../../sales/services/payment-method.servic
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { SoundService } from '../../../shared/feedback/sound.service';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
   CloseSessionResponse,
@@ -45,19 +46,77 @@ interface DraftLine {
 }
 
 /** Estado de mesa derivado para la vista. */
-type TableDisplayStatus = 'libre' | 'en_preparacion' | 'listo' | 'pago_pendiente' | 'ocupada';
+type TableDisplayStatus =
+  | 'libre'
+  | 'por_confirmar'
+  | 'en_preparacion'
+  | 'listo'
+  | 'pago_pendiente'
+  | 'ocupada'
+  | 'reservada';
 
 type TableFilter = 'todas' | 'libres' | 'ocupadas' | 'pendientes';
 
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
   libre: { label: 'Libre', chip: 'bg-gray-100 text-gray-600' },
+  por_confirmar: { label: 'Por confirmar', chip: 'bg-violet-600 text-white' },
   en_preparacion: { label: 'En preparación', chip: 'bg-amber-100 text-amber-700' },
   listo: { label: 'Listo', chip: 'bg-green-100 text-green-700' },
   pago_pendiente: { label: 'Pago pendiente', chip: 'bg-indigo-600 text-white' },
   ocupada: { label: 'Ocupada', chip: 'bg-blue-100 text-blue-700' },
+  reservada: { label: 'Reservada', chip: 'bg-slate-200 text-slate-700' },
 };
 
+/** Estados que reclaman que el personal haga algo ya. */
+const NEEDS_STAFF: TableDisplayStatus[] = ['por_confirmar', 'listo', 'pago_pendiente'];
+
 const NOT_READY: DiningOrderItem['estado_cocina'][] = ['pendiente', 'en_preparacion'];
+
+/** Cada cuánto se consulta si llegaron pedidos nuevos. No hay websockets. */
+const ORDERS_POLL_MS = 10_000;
+
+/** Qué pestaña ocupa la columna central. */
+export type CenterTab = 'pedido' | 'pendientes';
+
+/**
+ * Ids de pedidos por confirmar que aún no se habían visto.
+ *
+ * Se comparan **ids y no cantidades**: si un pedido entra y el personal lo
+ * confirma dentro de la misma ventana de sondeo, el contador vuelve a su sitio
+ * pero el aviso sí debe haber sonado.
+ */
+export function newPendingIds(seen: ReadonlySet<string>, orders: DiningOrder[]): string[] {
+  return orders.filter((o) => o.status === 'recibida' && !seen.has(o.id)).map((o) => o.id);
+}
+
+/**
+ * Estado que se pinta en la tarjeta de la mesa, por orden de urgencia.
+ *
+ * `orders` son los pedidos vivos de la mesa **incluidos los `recibida`**: un
+ * pedido esperando confirmación ocupa la mesa igual que cualquier otro, y
+ * dejarlo fuera era lo que hacía que toda mesa con pedido del QR se viera libre.
+ *
+ * Cuando no hay ningún pedido manda `tableStatus`, el estado que guarda el
+ * backend: un comensal puede haber escaneado el QR y no haber pedido todavía.
+ */
+export function deriveTableStatus(
+  orders: DiningOrder[],
+  tableStatus: TableStatus,
+): TableDisplayStatus {
+  if (orders.some((o) => o.status === 'recibida')) return 'por_confirmar';
+  if (orders.some((o) => o.status === 'bloqueada')) return 'pago_pendiente';
+
+  const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
+  if (items.some((i) => NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
+  if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo' || i.estado_cocina === 'entregado')) {
+    return 'listo';
+  }
+  if (orders.length > 0) return 'ocupada';
+
+  if (tableStatus === 'ocupada') return 'ocupada';
+  if (tableStatus === 'reservada') return 'reservada';
+  return 'libre';
+}
 
 /**
  * Store de la terminal POS de mesas (staff). Orquesta el catálogo, el armado del
@@ -77,6 +136,7 @@ export class PosTerminalStore {
   private readonly tenantInfo = inject(TenantInfoService);
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
+  readonly sound = inject(SoundService);
 
   // ─── Estado ────────────────────────────────────────────────────────────────
   readonly orders = signal<DiningOrder[]>([]);
@@ -110,8 +170,16 @@ export class PosTerminalStore {
   /** Facturas del último cobro (una por venta) listas para imprimir. */
   readonly lastReceipts = signal<ReceiptData[]>([]);
 
+  /** Pestaña visible en la columna central. */
+  readonly centerTab = signal<CenterTab>('pedido');
+
   private readonly nowTick = signal(Date.now());
   private timer?: ReturnType<typeof setInterval>;
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  /** Pedidos por confirmar ya conocidos: lo que llegue de más suena. */
+  private seenPending = new Set<string>();
+  /** La primera carga no avisa; solo deja constancia de lo que ya había. */
+  private pendingSeeded = false;
 
   // ─── Derivados ───────────────────────────────────────────────────────────────
   readonly tables = this.tableService.tables;
@@ -136,9 +204,29 @@ export class PosTerminalStore {
     ),
   );
 
+  /** Pedidos editables/cobrables de la mesa: los `recibida` aún no lo son. */
   private ordersOfTable(tableId: string): DiningOrder[] {
     return this.activeOrders().filter((o) => o.dining_table_id === tableId);
   }
+
+  /**
+   * Todo lo que la mesa tiene vivo, **incluidos los pedidos por confirmar**.
+   *
+   * Es lo que alimenta el tablero: una mesa con un pedido del QR esperando
+   * confirmación no está libre, y su consumo tampoco es cero.
+   */
+  private tableOrders(tableId: string): DiningOrder[] {
+    return this.orders().filter(
+      (o) =>
+        o.dining_table_id === tableId && o.status !== 'pagada' && o.status !== 'cancelada',
+    );
+  }
+
+  /** Pedidos por confirmar de la mesa seleccionada. */
+  readonly pendingOfSelectedTable = computed(() => {
+    const id = this.selectedTableId();
+    return id ? this.pendingOrders().filter((o) => o.dining_table_id === id) : [];
+  });
 
   readonly selectedTable = computed<Table | null>(
     () => this.tables().find((t) => t.id === this.selectedTableId()) ?? null,
@@ -166,17 +254,16 @@ export class PosTerminalStore {
     const f = this.filter();
     return this.tables()
       .filter((t) => {
-        const list = this.ordersOfTable(t.id);
-        const status = this.deriveStatus(list);
-        if (f === 'libres' && list.length > 0) return false;
-        if (f === 'ocupadas' && list.length === 0) return false;
-        if (f === 'pendientes' && status !== 'listo' && status !== 'pago_pendiente') return false;
+        const status = deriveTableStatus(this.tableOrders(t.id), t.status);
+        if (f === 'libres' && status !== 'libre') return false;
+        if (f === 'ocupadas' && status === 'libre') return false;
+        if (f === 'pendientes' && !NEEDS_STAFF.includes(status)) return false;
         if (term && !String(t.number).includes(term)) return false;
         return true;
       })
       .map((t) => {
-        const list = this.ordersOfTable(t.id);
-        const status = this.deriveStatus(list);
+        const list = this.tableOrders(t.id);
+        const status = deriveTableStatus(list, t.status);
         const meta = STATUS_META[status];
         const items = list.reduce(
           (n, o) => n + (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado').reduce((x, i) => x + i.quantity, 0),
@@ -285,15 +372,62 @@ export class PosTerminalStore {
     } finally {
       this.loading.set(false);
     }
+    this.startPolling();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    this.stopPolling();
+  }
+
+  /**
+   * Sondea los pedidos: sin esto la terminal no se entera de que un comensal
+   * envió algo desde el QR hasta que el cajero toca cualquier otra cosa.
+   *
+   * Recarga **solo los pedidos**, no la cuenta: `SessionBillPanelComponent`
+   * resetea el método de pago y el efectivo recibido cada vez que cambia el
+   * objeto `bill`, así que refrescarla cada 10 s le borraría al cajero lo que
+   * está tecleando. El tablero de mesas se actualiza igual porque su estado se
+   * deriva de los pedidos.
+   */
+  private startPolling(): void {
+    this.stopPolling();
+    this.pollHandle = setInterval(() => {
+      // Un fallo de red pasajero no debe pintar un error sobre la terminal.
+      void this.reloadOrders().catch(() => undefined);
+      // También las mesas: su `status` es lo que delata a un comensal que
+      // escaneó el QR y todavía no ha pedido nada.
+      void this.tableService.loadTables().catch(() => undefined);
+    }, ORDERS_POLL_MS);
+  }
+
+  private stopPolling(): void {
+    if (this.pollHandle !== null) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
   }
 
   private async reloadOrders(): Promise<void> {
-    this.orders.set(await this.api.listOrders());
+    const orders = await this.api.listOrders();
+    this.orders.set(orders);
+    this.announcePending(orders);
+  }
+
+  /**
+   * Suena la campana si hay pedidos por confirmar que no se habían visto.
+   *
+   * La primera carga solo siembra el conjunto: al abrir la pantalla con pedidos
+   * viejos esperando, avisar sería ruido, no información.
+   */
+  private announcePending(orders: DiningOrder[]): void {
+    const nuevos = newPendingIds(this.seenPending, orders);
+    this.seenPending = new Set(
+      orders.filter((o) => o.status === 'recibida').map((o) => o.id),
+    );
+    if (nuevos.length > 0 && this.pendingSeeded) this.sound.bell();
+    this.pendingSeeded = true;
   }
 
   /**
@@ -622,17 +756,6 @@ export class PosTerminalStore {
     return (o.items ?? [])
       .filter((i) => i.estado_cocina !== 'anulado')
       .reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
-  }
-
-  private deriveStatus(orders: DiningOrder[]): TableDisplayStatus {
-    if (orders.length === 0) return 'libre';
-    if (orders.some((o) => o.status === 'bloqueada')) return 'pago_pendiente';
-    const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
-    if (items.some((i) => NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
-    if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo' || i.estado_cocina === 'entregado')) {
-      return 'listo';
-    }
-    return 'ocupada';
   }
 
   private elapsedLabel(ts: number | null): string {

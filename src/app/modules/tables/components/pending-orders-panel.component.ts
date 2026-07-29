@@ -27,29 +27,27 @@ import { MenuCategory } from '../../products/interfaces/product.interface';
   imports: [DecimalPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-sm font-bold text-gray-900">
-          Por confirmar
-          @if (orders.length > 0) {
-            <span
-              class="ml-1.5 px-2 py-0.5 rounded-full bg-violet-600 text-white text-xs font-bold"
-              >{{ orders.length }}</span
-            >
-          }
-        </h2>
+    <div>
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <p class="text-xs text-gray-500">
+          Confirmar descuenta el inventario y manda el pedido a cocina.
+        </p>
         <button
           (click)="refresh.emit()"
-          class="text-xs font-medium text-gray-400 hover:text-indigo-600 transition-colors"
+          class="text-xs font-medium text-gray-400 hover:text-indigo-600 transition-colors shrink-0"
         >
           Actualizar
         </button>
       </div>
 
       @if (orders.length === 0) {
-        <p class="text-xs text-gray-400 py-4 text-center">
-          No hay pedidos esperando confirmación.
-        </p>
+        <div class="flex flex-col items-center justify-center text-center text-gray-400 py-16 gap-3">
+          <div class="text-5xl">🔔</div>
+          <p class="text-sm max-w-xs">
+            No hay pedidos esperando confirmación. Los que envíen los comensales desde el QR
+            aparecerán aquí.
+          </p>
+        </div>
       } @else {
         <div class="space-y-3">
           @for (order of orders; track order.id) {

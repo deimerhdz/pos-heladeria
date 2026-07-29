@@ -5,7 +5,6 @@ import {
   OnDestroy,
   OnInit,
   inject,
-  signal,
   viewChild,
 } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
@@ -17,9 +16,13 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
 
 /**
  * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
- * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F4/F8/ESC/Ctrl+P).
- * Reemplaza el antiguo tablero de sesiones. Cobra por el ciclo de comedor
- * (block → pay) del backend.
+ * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F4/ESC/Ctrl+P).
+ *
+ * La columna central tiene dos pestañas: el pedido de la mesa y los pedidos que
+ * los comensales enviaron por QR y esperan confirmación. Antes eso era un botón
+ * que solo aparecía cuando ya había pedidos, así que nadie se enteraba de que la
+ * función existía; ahora el contador está siempre a la vista y suena una campana
+ * cuando entra uno nuevo.
  */
 @Component({
   selector: 'app-table-sessions',
@@ -42,17 +45,6 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
           <span class="font-bold text-gray-900 truncate">Terminal de mesas</span>
         </div>
         <div class="flex items-center gap-3">
-          @if (store.pendingOrders().length > 0) {
-            <button
-              (click)="pendingOpen.set(!pendingOpen())"
-              class="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 transition-colors"
-            >
-              🔔 Por confirmar
-              <span class="ml-1 px-1.5 py-0.5 rounded-full bg-white text-violet-700 text-xs font-bold">
-                {{ store.pendingOrders().length }}
-              </span>
-            </button>
-          }
           <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
             <span>F2 Buscar</span><span>F4 Descuento</span><span>ESC Cancelar</span>
           </div>
@@ -68,7 +60,72 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
         <div class="flex-1 flex min-h-0">
           <app-pos-tables-panel />
           <div class="flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white">
-            <app-pos-order-panel />
+            <!--
+              Pestañas de la columna central. Viven aquí y no dentro del panel del
+              pedido porque la cabecera de ese panel solo existe cuando hay una
+              mesa seleccionada, y el aviso de pedidos por confirmar tiene que
+              verse siempre.
+            -->
+            <div class="flex items-center justify-between gap-2 px-4 border-b border-gray-200 shrink-0">
+              <nav class="flex gap-1">
+                <button
+                  (click)="store.centerTab.set('pedido')"
+                  class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
+                  [class]="
+                    store.centerTab() === 'pedido'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  "
+                >
+                  Pedido de la mesa
+                </button>
+                <button
+                  (click)="store.centerTab.set('pendientes')"
+                  class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5"
+                  [class]="
+                    store.centerTab() === 'pendientes'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  "
+                >
+                  🔔 Por confirmar
+                  <span
+                    class="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                    [class]="
+                      store.pendingOrders().length > 0
+                        ? 'bg-violet-600 text-white animate-pulse'
+                        : 'bg-gray-100 text-gray-500'
+                    "
+                  >
+                    {{ store.pendingOrders().length }}
+                  </span>
+                </button>
+              </nav>
+
+              <button
+                (click)="store.sound.toggleMute()"
+                [title]="
+                  store.sound.muted()
+                    ? 'Activar el sonido de pedido nuevo'
+                    : 'Silenciar el sonido de pedido nuevo'
+                "
+                class="px-2 py-1 rounded-lg text-base hover:bg-gray-50 transition-colors"
+              >
+                {{ store.sound.muted() ? '🔕' : '🔔' }}
+              </button>
+            </div>
+
+            @if (store.centerTab() === 'pedido') {
+              <app-pos-order-panel />
+            } @else {
+              <div class="flex-1 overflow-y-auto p-4">
+                <app-pending-orders-panel
+                  [orders]="store.pendingOrders()"
+                  [categories]="store.categories()"
+                  (refresh)="store.reload()"
+                />
+              </div>
+            }
           </div>
           <app-pos-checkout-panel />
         </div>
@@ -77,25 +134,6 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
 
     @if (store.catalogOpen()) {
       <app-pos-catalog-drawer />
-    }
-
-    <!-- Pedidos enviados por comensales, a la espera de que el personal los acepte -->
-    @if (pendingOpen()) {
-      <div class="fixed inset-0 bg-black/40 z-40" (click)="pendingOpen.set(false)"></div>
-      <div class="fixed inset-y-0 right-0 w-full max-w-md bg-gray-50 shadow-xl z-50 overflow-y-auto p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-base font-bold text-gray-900">Pedidos de los comensales</h2>
-          <button (click)="pendingOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
-        </div>
-        <p class="text-xs text-gray-500 mb-3">
-          Confirmar descuenta el inventario y manda el pedido a cocina.
-        </p>
-        <app-pending-orders-panel
-          [orders]="store.pendingOrders()"
-          [categories]="store.categories()"
-          (refresh)="store.reload()"
-        />
-      </div>
     }
 
     <!-- Diálogo de éxito -->
@@ -125,9 +163,6 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
 export class TableSessionsComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
   private readonly tablesPanel = viewChild(PosTablesPanelComponent);
-
-  /** Drawer de pedidos enviados por comensales pendientes de confirmar. */
-  readonly pendingOpen = signal(false);
 
   ngOnInit(): void {
     void this.store.init();
