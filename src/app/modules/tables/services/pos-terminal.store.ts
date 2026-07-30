@@ -12,6 +12,7 @@ import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { SoundService } from '../../../shared/feedback/sound.service';
+import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
   CloseSessionResponse,
@@ -136,6 +137,7 @@ export class PosTerminalStore {
   private readonly tenantInfo = inject(TenantInfoService);
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
+  private readonly printer = inject(PrinterSettingsStore);
   readonly sound = inject(SoundService);
 
   // ─── Estado ────────────────────────────────────────────────────────────────
@@ -731,11 +733,13 @@ export class PosTerminalStore {
     this.successOpen.set(false);
   }
 
-  /** Imprime la factura de 58 mm: una por venta (en cuenta dividida, una por comensal). */
+  /** Imprime la factura: una por venta (en cuenta dividida, una por comensal). */
   printReceipt(): void {
     const receipts = this.lastReceipts();
     if (receipts.length === 0) return;
-    printReceiptHtml(buildReceiptHtml(receipts));
+    printReceiptHtml(
+      buildReceiptHtml(receipts, { paperWidthMm: this.printer.paperWidthMm() }),
+    );
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

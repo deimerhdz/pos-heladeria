@@ -60,15 +60,14 @@ function escapeHtml(text: string): string {
 function formatDateTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  // Sin am/pm: en 58 mm cada carácter de más acerca la fila al borde del papel.
-  return date.toLocaleString('es-CO', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  // Se compone a mano en vez de con `toLocaleString` para no arrastrar la coma
+  // que mete entre fecha y hora: es la fila más larga del ticket y a 48 mm de
+  // papel dos caracteres deciden si cabe.
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return (
+    `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ` +
+    `${p(date.getHours())}:${p(date.getMinutes())}`
+  );
 }
 
 /** Fila etiqueta/importe. Es el ladrillo de todos los bloques de totales. */
@@ -133,47 +132,86 @@ function receiptBody(data: ReceiptData): string {
     </article>`;
 }
 
-const STYLES = `
-  @page { size: 58mm auto; margin: 0; }
+/**
+ * Hoja de estilos del ticket, ajustada al ancho real del rollo.
+ *
+ * Reglas que vienen de cómo imprime un cabezal térmico de 203 dpi, no del gusto:
+ *
+ * - La página **tiene que medir lo que mide el papel**. Si se compone más ancha,
+ *   el navegador la encaja reduciéndola y el texto acaba impreso a un tamaño que
+ *   el cabezal ya no resuelve: sale gris y deshilachado.
+ * - Sans-serif y `font-weight: 700` en todo el cuerpo: a este tamaño una
+ *   tipografía de trazo fino (Courier y compañía) pierde puntos y se rompe.
+ * - Separadores `solid` y negro puro. Un `dashed` se convierte en puntos sueltos
+ *   y se lee como una línea desvaída.
+ */
+function styles(widthMm: number): string {
+  return `
+  @page { size: ${widthMm}mm auto; margin: 0; }
   * { box-sizing: border-box; }
   body {
-    width: 58mm;
+    width: ${widthMm}mm;
     margin: 0;
-    padding: 4mm 3mm 6mm;
-    font-family: "Courier New", ui-monospace, monospace;
-    font-size: 10.5px;
-    line-height: 1.5;
+    /* Poco margen lateral: a 48 mm cada milímetro es un carácter. El de abajo es
+       holgado para que el corte no se coma el mensaje de cierre. */
+    padding: 3mm 2mm 8mm;
+    font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
     color: #000;
     -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  /* Cada bloque respira y se separa del siguiente con una línea de puntos. */
-  .block { padding-bottom: 3mm; margin-bottom: 3mm; border-bottom: 1px dashed #000; }
+  .block { padding-bottom: 2.5mm; margin-bottom: 2.5mm; border-bottom: 1px solid #000; }
   /* Solo la última sección; la cabecera es <header> y conserva su separador. */
   section.block:last-of-type { border-bottom: 0; padding-bottom: 0; }
   .center { text-align: center; }
-  .logo { max-width: 26mm; max-height: 16mm; margin: 0 auto 2mm; display: block; }
-  h1 { font-size: 14px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: .5px; }
+  /* Un logo grande sale como una mancha gris; pequeño y contrastado se distingue. */
+  .logo {
+    max-width: 20mm; max-height: 12mm; margin: 0 auto 2mm; display: block;
+    filter: grayscale(1) contrast(1.6);
+  }
+  h1 { font-size: 15px; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: .5px; }
   .table { margin: 1.5mm 0 0; }
-  .row { display: flex; justify-content: space-between; gap: 3mm; }
+  .row { display: flex; justify-content: space-between; gap: 2mm; }
+  /* Sin salto solo para importes, que son cortos. En los datos de cabecera un
+     nombre largo tiene que bajar de línea: recortado se lee como un dato
+     incompleto, que es peor que una línea de más. */
   .row span:last-child { text-align: right; white-space: nowrap; }
-  .meta span:first-child { color: #000; }
-  /* La descripción parte de línea en vez de desbordar el papel. */
-  .line { display: flex; justify-content: space-between; gap: 3mm; margin-bottom: 1.5mm; }
+  .meta span:last-child { white-space: normal; overflow-wrap: anywhere; }
+  .meta span:first-child { flex-shrink: 0; }
+  /* El importe va **debajo** de la descripción, no al lado: compitiendo por el
+     ancho, a 48 mm el nombre del producto se partía por la mitad. */
+  .line { margin-bottom: 2mm; }
   .line:last-child { margin-bottom: 0; }
   .desc { overflow-wrap: anywhere; }
   .amount { text-align: right; white-space: nowrap; }
   .totals .row { margin-bottom: 1mm; }
-  .total { font-size: 13px; font-weight: bold; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #000; }
-  .message { margin-top: 5mm; font-weight: bold; overflow-wrap: anywhere; }
+  .total { font-size: 15px; font-weight: 800; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #000; }
+  .message { margin-top: 5mm; overflow-wrap: anywhere; }
   /* Un ticket por venta: en cuenta dividida cada comensal se lleva el suyo. */
   .ticket + .ticket { page-break-before: always; padding-top: 4mm; }
 `;
+}
+
+/** Ancho por defecto del rollo, en milímetros. */
+const DEFAULT_PAPER_WIDTH_MM = 48;
+
+export interface ReceiptOptions {
+  /** Ancho del rollo. Debe coincidir con el papel configurado en el driver. */
+  paperWidthMm?: number;
+}
 
 /** Documento completo con un ticket por venta. */
-export function buildReceiptHtml(receipts: ReceiptData[]): string {
+export function buildReceiptHtml(
+  receipts: ReceiptData[],
+  options: ReceiptOptions = {},
+): string {
+  const width = options.paperWidthMm ?? DEFAULT_PAPER_WIDTH_MM;
   return `<!doctype html>
 <html lang="es">
-<head><meta charset="utf-8" /><title>Factura</title><style>${STYLES}</style></head>
+<head><meta charset="utf-8" /><title>Factura</title><style>${styles(width)}</style></head>
 <body>${receipts.map(receiptBody).join('')}</body>
 </html>`;
 }
@@ -181,7 +219,7 @@ export function buildReceiptHtml(receipts: ReceiptData[]): string {
 /**
  * Imprime el documento en un iframe oculto y lo descarta al terminar.
  *
- * El iframe aísla el `@page` de 58 mm: imprimir la factura no puede alterar cómo
+ * El iframe aísla el `@page` del rollo: imprimir la factura no puede alterar cómo
  * se imprimen las demás pantallas de la app.
  */
 export function printReceiptHtml(html: string): void {

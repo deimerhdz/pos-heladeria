@@ -34,7 +34,6 @@ describe('buildReceiptHtml', () => {
     expect(html).toContain('¡Gracias por su compra!');
     // Los 6 últimos caracteres del uuid identifican el ticket en el mostrador.
     expect(html).toContain('#BBCCDD');
-    expect(html).toContain('@page { size: 58mm auto; margin: 0; }');
   });
 
   it('omite los totales que no aplican', () => {
@@ -68,6 +67,37 @@ describe('buildReceiptHtml', () => {
     expect(html).toContain('Luis');
     // El salto de página entre tickets lo pone el CSS, no el marcado.
     expect(html).toContain('.ticket + .ticket { page-break-before: always;');
+  });
+
+  // ── Formato para térmica ──────────────────────────────────────────────────
+
+  it('compone la página al ancho del rollo', () => {
+    // Si la página no mide lo que el papel, el navegador la reduce para
+    // encajarla y el texto sale gris y deshilachado en el cabezal.
+    const porDefecto = buildReceiptHtml([makeReceipt()]);
+    expect(porDefecto).toContain('@page { size: 48mm auto; margin: 0; }');
+    expect(porDefecto).toContain('width: 48mm;');
+
+    const ancho = buildReceiptHtml([makeReceipt()], { paperWidthMm: 58 });
+    expect(ancho).toContain('@page { size: 58mm auto; margin: 0; }');
+    expect(ancho).toContain('width: 58mm;');
+    expect(ancho).not.toContain('48mm');
+  });
+
+  it('no usa separadores punteados ni tipografía fina', () => {
+    const html = buildReceiptHtml([makeReceipt()]);
+
+    // Un `dashed` sale como puntos sueltos; Courier pierde trazos a este tamaño.
+    expect(html).not.toContain('dashed');
+    expect(html).not.toContain('Courier');
+    expect(html).toContain('font-weight: 700');
+  });
+
+  it('escribe la fecha sin la coma de toLocaleString', () => {
+    // Es la fila más larga del ticket: a 48 mm dos caracteres deciden si cabe.
+    const html = buildReceiptHtml([makeReceipt()]);
+
+    expect(html).toContain('28/07/2026 18:42');
   });
 
   it('escapa el HTML de los textos del negocio', () => {

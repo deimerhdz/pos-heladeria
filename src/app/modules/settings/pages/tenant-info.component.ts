@@ -7,6 +7,15 @@ import {
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import {
+  PAPER_WIDTHS,
+  PaperWidthMm,
+  PrinterSettingsStore,
+} from '../../../core/printing/printer-settings.store';
+import {
+  buildReceiptHtml,
+  printReceiptHtml,
+} from '../../tables/services/receipt.util';
 
 /** Tope del campo en el backend (`TenantUpdate.receipt_message`). */
 const MAX_MESSAGE = 255;
@@ -104,6 +113,56 @@ const ROLE_LABEL: Record<UserRole, string> = {
         </div>
       </div>
 
+      <!-- Impresión (de este dispositivo) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div class="flex items-center gap-3 mb-4">
+          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🖨️</span>
+          <div>
+            <h2 class="text-base font-semibold text-gray-900">Impresión</h2>
+            <p class="text-xs text-gray-400">
+              Ajustes de <span class="font-medium">este dispositivo</span>: la impresora cuelga
+              del equipo donde está la caja
+            </p>
+          </div>
+        </div>
+
+        <label class="block text-xs font-medium text-gray-600 mb-2">Ancho del rollo</label>
+        <div class="grid grid-cols-3 gap-1.5 max-w-xs">
+          @for (w of paperWidths; track w) {
+            <button
+              (click)="printer.setPaperWidth(w)"
+              class="px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+              [class]="
+                printer.paperWidthMm() === w
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              "
+            >
+              {{ w }} mm
+            </button>
+          }
+        </div>
+
+        <p class="text-xs text-gray-400 mt-2">
+          Tiene que coincidir con el papel configurado en el driver. Si no coincide, el
+          navegador reduce la factura para encajarla y el texto sale gris.
+        </p>
+
+        <div class="flex items-center gap-3 mt-4 pt-4 border-t border-gray-100">
+          <button
+            (click)="printTest()"
+            class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            🧾 Imprimir prueba
+          </button>
+          <p class="text-xs text-gray-400">
+            En el diálogo del navegador: escala <span class="font-medium">100 %</span> (no
+            «ajustar al área»), márgenes <span class="font-medium">ninguno</span> y sin
+            encabezados ni pies. Si sale claro, sube la densidad en el driver.
+          </p>
+        </div>
+      </div>
+
       <div class="grid gap-6 md:grid-cols-2">
         <!-- Negocio -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -162,8 +221,11 @@ const ROLE_LABEL: Record<UserRole, string> = {
 })
 export class TenantInfoComponent implements OnInit {
   readonly tenantInfo = inject(TenantInfoService);
+  readonly printer = inject(PrinterSettingsStore);
   private readonly auth = inject(AuthService);
   private readonly toast = inject(ToastService);
+
+  readonly paperWidths: readonly PaperWidthMm[] = PAPER_WIDTHS;
 
   readonly saved = signal(false);
 
@@ -184,6 +246,44 @@ export class TenantInfoComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     await this.tenantInfo.load();
     this.message.set(this.tenantInfo.info()?.receipt_message ?? '');
+  }
+
+  /**
+   * Ticket de ejemplo para calibrar la impresora.
+   *
+   * Calibrar una térmica es prueba y error (ancho, densidad, escala del
+   * navegador); sin esto habría que hacer una venta real por cada intento.
+   */
+  printTest(): void {
+    const now = new Date().toISOString();
+    printReceiptHtml(
+      buildReceiptHtml(
+        [
+          {
+            businessName: this.tenantInfo.businessName(),
+            logoUrl: this.tenantInfo.logoUrl(),
+            tableLabel: 'Mesa 1 · Prueba',
+            soldAt: now,
+            cashier: this.auth.currentUser()?.email ?? null,
+            customerName: 'Prueba de impresión',
+            saleId: 'prueba-000000',
+            lines: [
+              { quantity: 2, description: 'Helado de vainilla con topping', lineTotal: 16000 },
+              { quantity: 1, description: 'Malteada de fresa', lineTotal: 9000 },
+            ],
+            subtotal: 25000,
+            discount: 0,
+            tax: 0,
+            tip: 0,
+            total: 25000,
+            payments: [{ name: 'Efectivo', amount: 30000 }],
+            change: 5000,
+            message: this.tenantInfo.receiptMessage(),
+          },
+        ],
+        { paperWidthMm: this.printer.paperWidthMm() },
+      ),
+    );
   }
 
   /** Guarda el mensaje; vacío lo borra y vuelve al texto por defecto. */
