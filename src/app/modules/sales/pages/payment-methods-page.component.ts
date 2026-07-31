@@ -1,5 +1,14 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { PaymentMethodService } from '../services/payment-method.service';
+import { PaymentMethodType } from '../interfaces/sales.interface';
+
+/** Clasificaciones que entiende el arqueo de caja. */
+const TYPES: { value: PaymentMethodType; label: string; icon: string }[] = [
+  { value: 'cash', label: 'Efectivo', icon: '💵' },
+  { value: 'card', label: 'Tarjeta', icon: '💳' },
+  { value: 'transfer', label: 'Transferencia', icon: '📲' },
+  { value: 'other', label: 'Otro', icon: '🧾' },
+];
 
 @Component({
   selector: 'app-payment-methods-page',
@@ -40,10 +49,10 @@ import { PaymentMethodService } from '../services/payment-method.service';
               @for (m of svc.methods(); track m.id) {
                 <li class="flex items-center justify-between px-5 py-3">
                   <div class="flex items-center gap-3">
-                    <span class="text-xl">{{ m.is_cash ? '💵' : '💳' }}</span>
+                    <span class="text-xl">{{ icon(m.type) }}</span>
                     <div>
                       <p class="text-sm font-medium text-gray-900">{{ m.name }}</p>
-                      <p class="text-xs text-gray-400">{{ m.is_cash ? 'Efectivo' : 'Electrónico' }}</p>
+                      <p class="text-xs text-gray-400">{{ label(m.type) }}</p>
                     </div>
                   </div>
                   @if (m.active) {
@@ -78,10 +87,29 @@ import { PaymentMethodService } from '../services/payment-method.service';
                 class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
-            <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" [checked]="isCash()" (change)="isCash.set($any($event.target).checked)" class="rounded" />
-              Es efectivo (afecta el arqueo de caja)
-            </label>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+              <div class="grid grid-cols-2 gap-1.5">
+                @for (t of types; track t.value) {
+                  <button
+                    type="button"
+                    (click)="type.set(t.value)"
+                    class="px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                    [class]="
+                      type() === t.value
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    "
+                  >
+                    {{ t.icon }} {{ t.label }}
+                  </button>
+                }
+              </div>
+              <p class="text-xs text-gray-400 mt-1.5">
+                Con esto se agrupa el arqueo. Solo <span class="font-medium">Efectivo</span> suma
+                al dinero esperado en el cajón.
+              </p>
+            </div>
             @if (svc.error()) {
               <p class="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{{ svc.error() }}</p>
             }
@@ -106,24 +134,34 @@ import { PaymentMethodService } from '../services/payment-method.service';
 export class PaymentMethodsPageComponent implements OnInit {
   readonly svc = inject(PaymentMethodService);
 
+  readonly types = TYPES;
+
   readonly showForm = signal(false);
   readonly name = signal('');
-  readonly isCash = signal(true);
+  readonly type = signal<PaymentMethodType>('cash');
 
   ngOnInit(): void {
     this.svc.load();
   }
 
+  label(type: PaymentMethodType): string {
+    return TYPES.find((t) => t.value === type)?.label ?? 'Otro';
+  }
+
+  icon(type: PaymentMethodType): string {
+    return TYPES.find((t) => t.value === type)?.icon ?? '💳';
+  }
+
   closeForm(): void {
     this.showForm.set(false);
     this.name.set('');
-    this.isCash.set(true);
+    this.type.set('cash');
     this.svc.error.set(null);
   }
 
   async submit(): Promise<void> {
     if (!this.name().trim()) return;
-    const ok = await this.svc.create(this.name().trim(), this.isCash());
+    const ok = await this.svc.create(this.name().trim(), this.type());
     if (ok) this.closeForm();
   }
 }

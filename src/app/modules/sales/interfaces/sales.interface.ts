@@ -1,9 +1,17 @@
 // Types for the sales module (`/api/v1/sales/*`).
 
+/**
+ * Clasificación del método de pago (`PaymentMethodType`). Es lo que agrupa el
+ * desglose del arqueo, y solo `cash` entra en el efectivo esperado del cajón.
+ */
+export type PaymentMethodType = 'cash' | 'card' | 'transfer' | 'other';
+
 /** `PaymentMethodResponse`. */
 export interface PaymentMethod {
   id: string;
   name: string;
+  type: PaymentMethodType;
+  /** Invariante del backend: `is_cash ⇔ type === 'cash'`. */
   is_cash: boolean;
   active: boolean;
 }
@@ -11,6 +19,7 @@ export interface PaymentMethod {
 /** Body for `POST /sales/payment-methods` (`PaymentMethodCreate`). */
 export interface PaymentMethodCreatePayload {
   name: string;
+  type: PaymentMethodType;
   is_cash: boolean;
 }
 

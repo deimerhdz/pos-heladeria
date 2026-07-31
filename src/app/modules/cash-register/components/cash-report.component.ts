@@ -28,9 +28,12 @@ import { CashSessionStore } from '../services/cash-session.store';
       <table class="w-full text-sm border-collapse mb-4">
         <tbody>
           <tr><td class="py-2 border-b border-gray-100">Fondo inicial</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(fondoInicial()) }}</td></tr>
-          <tr><td class="py-2 border-b border-gray-100">Ventas en efectivo</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.ventasEfectivo) }}</td></tr>
-          <tr><td class="py-2 border-b border-gray-100">Ventas con tarjeta</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.ventasTarjeta) }}</td></tr>
-          <tr><td class="py-2 border-b border-gray-100">Ventas por transferencia</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.ventasTransferencia) }}</td></tr>
+          @for (v of ind.ventas; track v.id) {
+            <tr><td class="py-2 border-b border-gray-100">Ventas {{ v.name }}</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(v.total) }}</td></tr>
+          }
+          @if (ind.cambioEntregado > 0) {
+            <tr><td class="py-2 border-b border-gray-100">Cambio entregado</td><td class="py-2 border-b border-gray-100 text-right font-semibold">− {{ store.fmt(ind.cambioEntregado) }}</td></tr>
+          }
           <tr><td class="py-2 border-b border-gray-100">Ingresos</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.ingresos) }}</td></tr>
           <tr><td class="py-2 border-b border-gray-100">Egresos</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.egresos) }}</td></tr>
           <tr><td class="py-2 border-b border-gray-100">Retiros</td><td class="py-2 border-b border-gray-100 text-right font-semibold">{{ store.fmt(ind.retiros) }}</td></tr>

@@ -21,10 +21,28 @@ import {
   MovementView,
   RegisterStatus,
   TagVariant,
+  VentaPorMetodo,
 } from '../interfaces/cash-session.interface';
 import { CashService } from './cash.service';
 
 const REGISTER_STORAGE_KEY = 'cash.register';
+
+/**
+ * Ventas del turno por método de pago, tal cual las manda el arqueo.
+ *
+ * El backend ya devuelve una fila por cada método activo del negocio —incluidos
+ * los que no vendieron nada— y las ordena con el efectivo primero, así que aquí
+ * solo se convierten los importes, que viajan como string.
+ */
+export function mapVentasPorMetodo(recon: Reconciliation | null): VentaPorMetodo[] {
+  return (recon?.sales_by_method ?? []).map((m) => ({
+    id: m.method_id,
+    name: m.method_name,
+    type: m.method_type,
+    total: Number(m.total) || 0,
+    count: Number(m.count) || 0,
+  }));
+}
 
 /**
  * Store del Módulo de Caja (rediseño SkeiloPOS) respaldado por el backend real
@@ -128,21 +146,13 @@ export class CashSessionStore {
   readonly indicadores = computed<Indicadores>(() => {
     const r = this.reconciliation();
     const movs = this.movements();
-    const byType = (t: string) =>
-      (r?.sales_by_method ?? [])
-        .filter((m) => m.method_type === t)
-        .reduce((acc, m) => acc + (Number(m.count) || 0), 0);
     return {
-      ventasEfectivo: this.num(r?.ventas_efectivo),
-      ventasTarjeta: this.num(r?.ventas_tarjeta),
-      ventasTransferencia: this.num(r?.ventas_transferencia),
+      ventas: mapVentasPorMetodo(r),
+      cambioEntregado: this.num(r?.cambio_entregado),
       ingresos: this.num(r?.ingresos),
       egresos: this.num(r?.egresos),
       retiros: this.num(r?.retiros),
       efectivoEsperado: this.num(r?.expected),
-      countVentasEfectivo: byType('cash'),
-      countVentasTarjeta: byType('card'),
-      countVentasTransferencia: byType('transfer'),
       countIngresos: movs.filter((m) => m.kind === 'ingreso').length,
       countEgresos: movs.filter((m) => m.kind === 'egreso').length,
       countRetiros: movs.filter((m) => m.kind === 'retiro').length,

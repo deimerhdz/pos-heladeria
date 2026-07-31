@@ -8,8 +8,9 @@ import { ToastService } from '../../../shared/feedback/toast.service';
  * Dashboard del turno en curso: acciones, banner de efectivo esperado, KPIs y la
  * línea de tiempo de movimientos (tabla / timeline).
  *
- * El simulador de ventas POS del diseño original se omite intencionalmente; las
- * tarjetas de ventas quedan en $0 hasta que exista integración con el POS.
+ * Las tarjetas de ventas salen **una por método de pago del negocio**, tal cual
+ * los devuelve el arqueo. Antes eran tres cubos fijos (efectivo/tarjeta/
+ * transferencia) y cualquier método que no encajara en ellos no se veía.
  */
 @Component({
   selector: 'app-cash-dashboard',
@@ -42,8 +43,8 @@ import { ToastService } from '../../../shared/feedback/toast.service';
           <div class="text-[11px] uppercase tracking-wider opacity-85">Efectivo esperado en caja</div>
           <div class="text-4xl font-extrabold leading-tight mt-1">{{ store.fmt(store.efectivoEsperado()) }}</div>
         </div>
-        <div class="text-right text-xs opacity-90 max-w-[260px]">
-          Fondo inicial + ventas en efectivo + ingresos − egresos − retiros
+        <div class="text-right text-xs opacity-90 max-w-[280px]">
+          Fondo inicial + ventas en efectivo − cambio entregado + ingresos − egresos − retiros
         </div>
       </div>
 
@@ -54,21 +55,23 @@ import { ToastService } from '../../../shared/feedback/toast.service';
           <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Fondo inicial</div>
           <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(store.num(store.shift()?.opening_amount)) }}</div>
         </div>
-        <div class="bg-white rounded-xl border border-gray-100 p-4">
-          <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Ventas efectivo</div>
-          <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(ind.ventasEfectivo) }}</div>
-          <div class="text-[11px] text-gray-400 mt-1">{{ ind.countVentasEfectivo }} venta(s)</div>
-        </div>
-        <div class="bg-white rounded-xl border border-gray-100 p-4">
-          <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Ventas tarjeta</div>
-          <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(ind.ventasTarjeta) }}</div>
-          <div class="text-[11px] text-gray-400 mt-1">{{ ind.countVentasTarjeta }} venta(s)</div>
-        </div>
-        <div class="bg-white rounded-xl border border-gray-100 p-4">
-          <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Ventas transferencia</div>
-          <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(ind.ventasTransferencia) }}</div>
-          <div class="text-[11px] text-gray-400 mt-1">{{ ind.countVentasTransferencia }} venta(s)</div>
-        </div>
+        @for (v of ind.ventas; track v.id) {
+          <div class="bg-white rounded-xl border border-gray-100 p-4">
+            <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold truncate" [title]="v.name">
+              Ventas {{ v.name }}
+            </div>
+            <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(v.total) }}</div>
+            <div class="text-[11px] text-gray-400 mt-1">{{ v.count }} venta(s)</div>
+          </div>
+        }
+        @if (ind.cambioEntregado > 0) {
+          <!-- Salió del cajón: sin esta tarjeta el efectivo esperado no cuadra a la vista. -->
+          <div class="bg-white rounded-xl border border-gray-100 p-4">
+            <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Cambio entregado</div>
+            <div class="text-lg font-bold text-gray-900 mt-1">− {{ store.fmt(ind.cambioEntregado) }}</div>
+            <div class="text-[11px] text-gray-400 mt-1">vuelto a clientes</div>
+          </div>
+        }
         <div class="bg-white rounded-xl border border-gray-100 p-4">
           <div class="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">Ingresos</div>
           <div class="text-lg font-bold text-gray-900 mt-1">{{ store.fmt(ind.ingresos) }}</div>
