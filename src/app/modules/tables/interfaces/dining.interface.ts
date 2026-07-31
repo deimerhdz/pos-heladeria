@@ -183,6 +183,11 @@ export interface CloseSessionPayload {
   discount?: number;
   tax?: number;
   tip?: number;
+  /**
+   * Solo en `unified`: a nombre de quién va la factura. Si se omite, el backend
+   * usa los comensales de la sesión y, si no hay, la mesa.
+   */
+  customer_name?: string;
   /** Solo en `split`: uno por **cada** comensal con consumo. */
   splits?: SplitPayment[];
 }

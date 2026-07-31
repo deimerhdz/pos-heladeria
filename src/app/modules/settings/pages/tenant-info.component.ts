@@ -267,6 +267,8 @@ export class TenantInfoComponent implements OnInit {
             cashier: this.auth.currentUser()?.email ?? null,
             customerName: 'Prueba de impresión',
             saleId: 'prueba-000000',
+            // Con número, para que la prueba se vea igual que un ticket real.
+            invoice: { prefix: '', number: 1 },
             lines: [
               { quantity: 2, description: 'Helado de vainilla con topping', lineTotal: 16000 },
               { quantity: 1, description: 'Malteada de fresa', lineTotal: 9000 },

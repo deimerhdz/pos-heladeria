@@ -139,19 +139,52 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
     <!-- Diálogo de éxito -->
     @if (store.successOpen()) {
       <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4 text-center">
-          <div class="text-4xl">✅</div>
-          <h2 class="text-lg font-bold text-gray-900">Pago registrado</h2>
-          @if (store.lastSale(); as s) {
-            <p class="text-sm text-gray-500">Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario se actualizó.</p>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <div class="text-center space-y-1">
+            <div class="text-4xl">✅</div>
+            <h2 class="text-lg font-bold text-gray-900">Pago registrado</h2>
+            @if (store.lastSale(); as s) {
+              <p class="text-sm text-gray-500">
+                @if (store.lastReceipts().length > 1) {
+                  Cuenta dividida en {{ store.lastReceipts().length }} pagos ·
+                  {{ store.fmt(s.total) }}. El inventario se actualizó.
+                } @else {
+                  Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario
+                  se actualizó.
+                }
+              </p>
+            }
+          </div>
+
+          @if (store.lastReceipts().length > 1) {
+            <!-- Cada comensal pide su ticket: se imprime de a uno. -->
+            <div class="border border-gray-100 rounded-xl divide-y divide-gray-100">
+              @for (r of store.lastReceipts(); track r.saleId; let i = $index) {
+                <div class="flex items-center justify-between gap-3 px-3 py-2">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 truncate">
+                      {{ r.customerName || 'Comensal ' + (i + 1) }}
+                    </p>
+                    <p class="text-xs text-gray-400">{{ store.fmt(r.total) }}</p>
+                  </div>
+                  <button
+                    (click)="store.printReceipt(i)"
+                    class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shrink-0"
+                  >
+                    🧾 Imprimir
+                  </button>
+                </div>
+              }
+            </div>
           }
+
           <div class="flex gap-2 justify-center pt-1">
             <button
               (click)="store.printReceipt()"
               [disabled]="store.lastReceipts().length === 0"
               class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              🧾 Imprimir factura
+              {{ store.lastReceipts().length > 1 ? '🧾 Imprimir todos' : '🧾 Imprimir factura' }}
             </button>
             <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
           </div>

@@ -7,6 +7,7 @@
  * con las otras pantallas que ya llaman a `window.print()` (la hoja de QR y el
  * arqueo de caja), que tienen sus propias reglas de impresión.
  */
+import { Sale } from '../../sales/interfaces/sales.interface';
 
 /** Una línea del ticket. */
 export interface ReceiptLine {
@@ -32,6 +33,8 @@ export interface ReceiptData {
   cashier: string | null;
   customerName: string | null;
   saleId: string;
+  /** Consecutivo fiscal. `null` en ventas antiguas, sin factura emitida. */
+  invoice: { prefix: string; number: number } | null;
   lines: ReceiptLine[];
   subtotal: number;
   discount: number;
@@ -42,6 +45,55 @@ export interface ReceiptData {
   change: number | null;
   /** Mensaje de cierre configurado en Ajustes. */
   message: string;
+}
+
+/** Lo que hay que saber del negocio para componer un ticket. */
+export interface ReceiptContext {
+  businessName: string;
+  logoUrl: string | null;
+  message: string;
+  /** Resuelve el nombre del método de pago a partir de su id. */
+  methodName: (paymentMethodId: string) => string;
+}
+
+/**
+ * Convierte una venta del backend en un ticket.
+ *
+ * Vive aquí, y no en la terminal, porque el mismo ticket se imprime al cobrar y
+ * al reimprimir desde el detalle de la venta: dos mapeos se desincronizarían.
+ */
+export function saleToReceipt(sale: Sale, ctx: ReceiptContext): ReceiptData {
+  return {
+    businessName: ctx.businessName,
+    logoUrl: ctx.logoUrl,
+    tableLabel: tableLabel(sale.dining_table),
+    soldAt: sale.sold_at,
+    cashier: sale.user_name ?? null,
+    customerName: sale.customer_name ?? null,
+    saleId: sale.id,
+    invoice: sale.invoice ?? null,
+    lines: (sale.items ?? []).map((it) => ({
+      quantity: it.quantity,
+      description: it.description,
+      lineTotal: Number(it.line_total),
+    })),
+    subtotal: Number(sale.subtotal),
+    discount: Number(sale.discount),
+    tax: Number(sale.tax),
+    tip: Number(sale.tip),
+    total: Number(sale.total),
+    payments: (sale.payments ?? []).map((p) => ({
+      name: ctx.methodName(p.payment_method_id),
+      amount: Number(p.amount),
+    })),
+    change: sale.change_given != null ? Number(sale.change_given) : null,
+    message: ctx.message,
+  };
+}
+
+function tableLabel(table: Sale['dining_table']): string {
+  if (!table) return '';
+  return table.name ? `Mesa ${table.number} · ${table.name}` : `Mesa ${table.number}`;
 }
 
 /** Formato de moneda de la terminal. */
@@ -80,6 +132,22 @@ function shortId(saleId: string): string {
   return saleId.replace(/-/g, '').slice(-6).toUpperCase();
 }
 
+/** Consecutivo fiscal: `A-000004`. Es el número por el que pregunta el cliente. */
+export function formatInvoice(invoice: { prefix: string; number: number }): string {
+  const numero = String(invoice.number).padStart(6, '0');
+  return invoice.prefix ? `${invoice.prefix}-${numero}` : numero;
+}
+
+/**
+ * Identificación del ticket: el consecutivo de la factura si la venta lo tiene,
+ * y si no el id corto —ventas anteriores a la facturación, que no llevan número.
+ */
+function documentRow(data: ReceiptData): string {
+  return data.invoice
+    ? meta('Factura', formatInvoice(data.invoice))
+    : meta('Ticket', '#' + shortId(data.saleId));
+}
+
 function meta(label: string, value: string | null): string {
   return value ? row(label, value, 'meta') : '';
 }
@@ -110,7 +178,7 @@ function receiptBody(data: ReceiptData): string {
         ${meta('Fecha', formatDateTime(data.soldAt))}
         ${meta('Cliente', data.customerName)}
         ${meta('Atendió', data.cashier)}
-        ${meta('Ticket', '#' + shortId(data.saleId))}
+        ${documentRow(data)}
       </section>
 
       <section class="block lines">${lines}</section>
@@ -190,8 +258,12 @@ function styles(widthMm: number): string {
   .totals .row { margin-bottom: 1mm; }
   .total { font-size: 15px; font-weight: 800; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #000; }
   .message { margin-top: 5mm; overflow-wrap: anywhere; }
-  /* Un ticket por venta: en cuenta dividida cada comensal se lleva el suyo. */
-  .ticket + .ticket { page-break-before: always; padding-top: 4mm; }
+  /* Un ticket por venta: en cuenta dividida cada comensal se lleva el suyo.
+     Van seguidos en la misma tirada, separados por una línea de corte, **no**
+     por un salto de página: con la página fija que declara el driver (48×210mm)
+     el segundo ticket se iba a otra hoja —avance largo de papel en blanco, y en
+     muchas térmicas directamente se pierde— y desperdiciaba 15 cm de rollo. */
+  .cut { margin: 6mm 0; text-align: center; border-top: 1px dashed #000; padding-top: 2mm; }
 `;
 }
 
@@ -203,6 +275,9 @@ export interface ReceiptOptions {
   paperWidthMm?: number;
 }
 
+/** Marca dónde cortar el rollo entre un ticket y el siguiente. */
+const CUT = '<div class="cut">✂ - - - - - - - - - - - - -</div>';
+
 /** Documento completo con un ticket por venta. */
 export function buildReceiptHtml(
   receipts: ReceiptData[],
@@ -212,7 +287,7 @@ export function buildReceiptHtml(
   return `<!doctype html>
 <html lang="es">
 <head><meta charset="utf-8" /><title>Factura</title><style>${styles(width)}</style></head>
-<body>${receipts.map(receiptBody).join('')}</body>
+<body>${receipts.map(receiptBody).join(CUT)}</body>
 </html>`;
 }
 

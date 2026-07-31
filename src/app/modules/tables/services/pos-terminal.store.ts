@@ -29,10 +29,12 @@ import { TableSessionService } from './table-session.service';
 import { SalesService } from '../../sales/services/sales.service';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import {
+  ReceiptContext,
   ReceiptData,
   buildReceiptHtml,
   formatMoney,
   printReceiptHtml,
+  saleToReceipt,
 } from './receipt.util';
 
 /** Una línea de pedido nueva sin guardar (draft del staff). */
@@ -455,9 +457,11 @@ export class PosTerminalStore {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
     } else {
-      const table = this.tables().find((t) => t.id === tableId);
       this.selectedOrderId.set(null);
-      this.customerName.set(`Cliente Mesa ${table?.number ?? ''}`.trim());
+      // Vacío a propósito: lo que haya aquí se graba como nombre en la factura,
+      // así que un relleno tipo "Cliente Mesa 3" quedaría en el documento fiscal
+      // en vez de los comensales reales. La pista va en el `placeholder`.
+      this.customerName.set('');
     }
   }
 
@@ -470,9 +474,14 @@ export class PosTerminalStore {
   newOrderOnTable(): void {
     this.selectedOrderId.set(null);
     this.draftLines.set([]);
-    const table = this.selectedTable();
-    this.customerName.set(`Cliente · Mesa ${table?.number ?? ''}`.trim());
+    this.customerName.set('');
   }
+
+  /** Pista del campo Cliente. No se guarda: solo orienta al cajero. */
+  readonly customerPlaceholder = computed(() => {
+    const table = this.selectedTable();
+    return table ? `Cliente · Mesa ${table.number}` : 'Cliente';
+  });
 
   cancelSelection(): void {
     this.selectedTableId.set(null);
@@ -679,11 +688,9 @@ export class PosTerminalStore {
   async onCharged(closed: CloseSessionResponse): Promise<void> {
     const total = Number(this.sessionBill()?.total ?? 0);
     this.lastSale.set({ total, customer: this.customerName() || 'Mesa' });
-    // La etiqueta de la mesa hay que capturarla aquí: `cancelSelection()` la borra.
-    const tableLabel = this.tableLabel(this.selectedTable());
     this.successOpen.set(true);
     this.sessionBill.set(null);
-    await Promise.all([this.loadReceipts(closed, tableLabel), this.reload()]);
+    await Promise.all([this.loadReceipts(closed), this.reload()]);
     this.cancelSelection();
   }
 
@@ -691,51 +698,38 @@ export class PosTerminalStore {
    * Trae las ventas recién emitidas para poder imprimirlas.
    *
    * Un fallo aquí **no invalida el cobro** —ya está registrado—: solo deja el
-   * diálogo sin botón de imprimir.
+   * diálogo sin botón de imprimir. Desde Ventas se puede reimprimir después.
    */
-  private async loadReceipts(closed: CloseSessionResponse, tableLabel: string): Promise<void> {
+  private async loadReceipts(closed: CloseSessionResponse): Promise<void> {
     this.lastReceipts.set([]);
     try {
       const sales = await Promise.all(closed.sale_ids.map((id) => this.sales.get(id)));
-      this.lastReceipts.set(
-        sales.map((sale) => ({
-          businessName: this.tenantInfo.businessName(),
-          logoUrl: this.tenantInfo.logoUrl(),
-          tableLabel,
-          soldAt: sale.sold_at,
-          cashier: sale.user_name ?? null,
-          customerName: sale.customer_name ?? null,
-          saleId: sale.id,
-          lines: (sale.items ?? []).map((it) => ({
-            quantity: it.quantity,
-            description: it.description,
-            lineTotal: Number(it.line_total),
-          })),
-          subtotal: Number(sale.subtotal),
-          discount: Number(sale.discount),
-          tax: Number(sale.tax),
-          tip: Number(sale.tip),
-          total: Number(sale.total),
-          payments: (sale.payments ?? []).map((p) => ({
-            name: this.methodName(p.payment_method_id),
-            amount: Number(p.amount),
-          })),
-          change: sale.change_given != null ? Number(sale.change_given) : null,
-          message: this.tenantInfo.receiptMessage(),
-        })),
-      );
+      this.lastReceipts.set(sales.map((sale) => saleToReceipt(sale, this.receiptContext())));
     } catch {
       this.toast.error('El cobro se registró, pero no se pudo preparar la factura.');
     }
+  }
+
+  private receiptContext(): ReceiptContext {
+    return {
+      businessName: this.tenantInfo.businessName(),
+      logoUrl: this.tenantInfo.logoUrl(),
+      message: this.tenantInfo.receiptMessage(),
+      methodName: (id) => this.methodName(id),
+    };
   }
 
   closeSuccess(): void {
     this.successOpen.set(false);
   }
 
-  /** Imprime la factura: una por venta (en cuenta dividida, una por comensal). */
-  printReceipt(): void {
-    const receipts = this.lastReceipts();
+  /**
+   * Imprime la factura. Sin argumento salen todas; con índice, solo la de ese
+   * comensal — que es como se pide en el mostrador cuando la cuenta va dividida.
+   */
+  printReceipt(index?: number): void {
+    const todas = this.lastReceipts();
+    const receipts = index == null ? todas : todas.slice(index, index + 1);
     if (receipts.length === 0) return;
     printReceiptHtml(
       buildReceiptHtml(receipts, { paperWidthMm: this.printer.paperWidthMm() }),
@@ -749,11 +743,6 @@ export class PosTerminalStore {
 
   private methodName(id: string): string {
     return this.paymentMethods().find((m) => m.id === id)?.name ?? 'Pago';
-  }
-
-  private tableLabel(table: Table | null): string {
-    if (!table) return '';
-    return table.name ? `Mesa ${table.number} · ${table.name}` : `Mesa ${table.number}`;
   }
 
   private orderSubtotal(o: DiningOrder): number {

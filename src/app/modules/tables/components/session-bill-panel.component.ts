@@ -155,6 +155,8 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() bill: SessionBill | null = null;
   @Input() methods: PaymentMethod[] = [];
   @Input() cashShiftId: string | null = null;
+  /** A nombre de quién se factura la cuenta única; vacío lo resuelve el backend. */
+  @Input() customerName = '';
   /** Cierre completo: sus `sale_ids` son la fuente de la factura impresa. */
   @Output() charged = new EventEmitter<CloseSessionResponse>();
 
@@ -258,8 +260,16 @@ export class SessionBillPanelComponent implements OnChanges {
   private buildPayload(cashShiftId: string): CloseSessionPayload {
     if (this.mode() === 'unified') {
       const payments: PaymentLine[] = paymentLines(this.unifiedPayment());
-      return { cash_shift_id: cashShiftId, billing_mode: 'unified', payments };
+      const nombre = this.customerName.trim();
+      return {
+        cash_shift_id: cashShiftId,
+        billing_mode: 'unified',
+        payments,
+        // Vacío no se manda: el backend cae a los comensales o a la mesa.
+        ...(nombre ? { customer_name: nombre } : {}),
+      };
     }
+    // En `split` cada venta va a nombre de su comensal, no del campo Cliente.
     const splits: SplitPayment[] = this.splits().map((s) => ({
       participant_id: s.participantId,
       payments: paymentLines(s.payment),

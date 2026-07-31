@@ -197,6 +197,23 @@ describe('SessionBillPanelComponent', () => {
     expect(opciones).toContain('pm2');
   });
 
+  // ── Nombre de la factura ──────────────────────────────────────────────────
+
+  it('manda el nombre del cliente al cobrar la cuenta única', async () => {
+    fixture.componentRef.setInput('customerName', '  Panadería El Trigo  ');
+    await chooseMethod('pm2');
+
+    // Sin esto la factura de una cuenta unificada quedaba sin nombre.
+    expect((await charge()).customer_name).toBe('Panadería El Trigo');
+  });
+
+  it('no manda nombre vacío: lo resuelve el backend', async () => {
+    fixture.componentRef.setInput('customerName', '   ');
+    await chooseMethod('pm2');
+
+    expect((await charge()).customer_name).toBeUndefined();
+  });
+
   it('exige que cada comensal cubra su parte', () => {
     setBill(splitBill);
     panel.mode.set('split');

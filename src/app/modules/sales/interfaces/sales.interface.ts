@@ -71,6 +71,19 @@ export interface SalePayment {
   reference?: string | null;
 }
 
+/** `SaleInvoiceRef` — consecutivo fiscal de la venta. */
+export interface SaleInvoice {
+  prefix: string;
+  number: number;
+}
+
+/** `SaleTableRef` — mesa cobrada; `null` en ventas de mostrador. */
+export interface SaleTable {
+  id: string;
+  number: number;
+  name: string | null;
+}
+
 /** `SaleResponse` — the emitted, paid sale (receipt). */
 export interface Sale {
   id: string;
@@ -90,4 +103,7 @@ export interface Sale {
   sold_at: string;
   items?: SaleItem[];
   payments?: SalePayment[];
+  /** Consecutivo fiscal; `null` en ventas anteriores a la facturación. */
+  invoice?: SaleInvoice | null;
+  dining_table?: SaleTable | null;
 }
