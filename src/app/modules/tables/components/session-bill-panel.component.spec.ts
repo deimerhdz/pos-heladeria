@@ -8,6 +8,7 @@ import { environment } from '../../../../environments/environment';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
 import { CloseSessionPayload, SessionBill } from '../interfaces/dining.interface';
 import { PaymentMethod } from '../../sales/interfaces/sales.interface';
+import { emptyPaymentDraft } from '../services/payment-draft.util';
 
 const API = environment.apiBaseUrl;
 
@@ -33,8 +34,8 @@ const splitBill: SessionBill = {
 };
 
 const methods = [
-  { id: 'pm1', name: 'Efectivo', is_cash: true },
-  { id: 'pm2', name: 'Tarjeta', is_cash: false },
+  { id: 'pm1', name: 'Efectivo', type: 'cash', is_cash: true, active: true },
+  { id: 'pm2', name: 'Tarjeta', type: 'card', is_cash: false, active: true },
 ] as PaymentMethod[];
 
 describe('SessionBillPanelComponent', () => {
@@ -67,24 +68,38 @@ describe('SessionBillPanelComponent', () => {
     fixture.detectChanges();
   }
 
-  const select = (): HTMLSelectElement =>
-    fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+  const selects = (): HTMLSelectElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('select'));
 
-  const cashInput = (): HTMLInputElement | null =>
-    fixture.nativeElement.querySelector('#cash-received') as HTMLInputElement | null;
+  const amounts = (): HTMLInputElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('input[type="number"]'));
+
+  const combineBox = (): HTMLInputElement | null =>
+    fixture.nativeElement.querySelector('input[type="checkbox"]');
 
   const chargeButton = (): HTMLButtonElement =>
     Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       b.textContent?.includes('Cobrar'),
     )!;
 
-  /** Elige un método por el `<select>` real y espera al binding de ngModel. */
-  async function chooseMethod(methodId: string): Promise<void> {
-    const el = select();
-    el.value = methodId;
-    el.dispatchEvent(new Event('change'));
+  /** Escribe en un control real y espera al binding de ngModel. */
+  async function fill(el: HTMLSelectElement | HTMLInputElement, value: string): Promise<void> {
+    el.value = value;
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input'));
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  const chooseMethod = (methodId: string): Promise<void> => fill(selects()[0], methodId);
+
+  /** Cobra y devuelve el cuerpo del `POST .../close`. */
+  async function charge(): Promise<CloseSessionPayload> {
+    const done = panel.charge();
+    const req = http.expectOne(`${API}/table-sessions/ts1/close`);
+    const body = req.request.body as CloseSessionPayload;
+    req.flush({ table_session: {}, sale_ids: ['s1'] });
+    await done;
+    return body;
   }
 
   it('no deja cobrar mientras no se elige método de pago', () => {
@@ -93,22 +108,19 @@ describe('SessionBillPanelComponent', () => {
   });
 
   it('habilita el cobro al elegir método en la cuenta única', async () => {
-    // Por el `<select>` real: el fallo era que el `computed` leía un campo normal
-    // en vez de una señal, así que elegir método no volvía a evaluarlo nunca.
     await chooseMethod('pm2');
 
-    expect(panel.unifiedMethod()).toBe('pm2');
     expect(panel.ready()).toBe(true);
     expect(chargeButton().disabled).toBe(false);
   });
 
-  it('olvida el método elegido al cambiar de mesa', async () => {
+  it('olvida el pago al cambiar de mesa', async () => {
     await chooseMethod('pm2');
     expect(panel.ready()).toBe(true);
 
     setBill({ ...bill, table_session_id: 'ts9', dining_table_id: 't9' });
 
-    expect(panel.unifiedMethod()).toBe('');
+    expect(panel.unifiedPayment()).toEqual(emptyPaymentDraft());
     expect(panel.ready()).toBe(false);
   });
 
@@ -123,82 +135,81 @@ describe('SessionBillPanelComponent', () => {
 
   // ── Efectivo: monto recibido y vuelto ────────────────────────────────────
 
-  it('pide el monto recibido solo cuando el método es efectivo', async () => {
-    await chooseMethod('pm2');
-    expect(cashInput()).toBeNull();
-
-    await chooseMethod('pm1');
-    expect(cashInput()).not.toBeNull();
-    // Arranca en el importe justo, así el vuelto se ve desde el primer momento.
-    expect(panel.cashReceived()).toBe(12000);
-    expect(panel.changeDue()).toBe(0);
-  });
-
-  it('calcula el vuelto con lo que entrega el cliente', async () => {
+  it('precarga el importe justo al elegir método', async () => {
     await chooseMethod('pm1');
 
-    panel.setCashReceived(50000);
-    fixture.detectChanges();
-
-    expect(panel.changeDue()).toBe(38000);
-    expect(panel.missing()).toBe(0);
-    expect(chargeButton().disabled).toBe(false);
-  });
-
-  it('no deja cobrar si el efectivo no cubre la cuenta', async () => {
-    await chooseMethod('pm1');
-
-    panel.setCashReceived(10000);
-    fixture.detectChanges();
-
-    expect(panel.missing()).toBe(2000);
-    expect(panel.ready()).toBe(false);
-    expect(chargeButton().disabled).toBe(true);
+    expect(amounts()[0].value).toBe('12000');
+    expect(panel.unifiedPayment().amount).toBe(12000);
   });
 
   it('cobra enviando el efectivo recibido, no el total', async () => {
     await chooseMethod('pm1');
-    panel.setCashReceived(50000);
-    fixture.detectChanges();
+    await fill(amounts()[0], '50000');
 
-    const done = panel.charge();
-    const req = http.expectOne(`${API}/table-sessions/ts1/close`);
-    const body = req.request.body as CloseSessionPayload;
-
+    expect(chargeButton().disabled).toBe(false);
     // El backend deriva `paid_amount` y `change_given` de este importe.
-    expect(body.payments?.[0]).toEqual({ payment_method_id: 'pm1', amount: 50000 });
-
-    req.flush({ table_session: {}, sale_ids: ['s1'] });
-    await done;
+    expect((await charge()).payments).toEqual([
+      { payment_method_id: 'pm1', amount: 50000 },
+    ]);
   });
 
-  it('cobra el importe justo cuando el método no es efectivo', async () => {
-    await chooseMethod('pm2');
+  it('no deja cobrar si el pago no cubre la cuenta', async () => {
+    await chooseMethod('pm1');
+    await fill(amounts()[0], '10000');
 
-    const done = panel.charge();
-    const req = http.expectOne(`${API}/table-sessions/ts1/close`);
-    const body = req.request.body as CloseSessionPayload;
-
-    expect(body.payments?.[0]).toEqual({ payment_method_id: 'pm2', amount: 12000 });
-
-    req.flush({ table_session: {}, sale_ids: ['s1'] });
-    await done;
+    expect(panel.ready()).toBe(false);
+    expect(chargeButton().disabled).toBe(true);
   });
 
-  it('exige cubrir el subtotal de cada comensal que paga en efectivo', () => {
+  // ── Pago mixto ────────────────────────────────────────────────────────────
+
+  /** Marca la casilla «Combinar con otro método». */
+  async function combine(): Promise<void> {
+    const box = combineBox()!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('cobra con dos métodos y reparte el resto en el segundo', async () => {
+    await chooseMethod('pm1');
+    await fill(amounts()[0], '5000');
+    await combine();
+    await fill(selects()[1], 'pm2');
+
+    // El segundo método cubre lo que falta sin que el cajero tenga que restar.
+    expect(panel.unifiedPayment().secondAmount).toBe(7000);
+    expect(panel.ready()).toBe(true);
+
+    expect((await charge()).payments).toEqual([
+      { payment_method_id: 'pm1', amount: 5000 },
+      { payment_method_id: 'pm2', amount: 7000 },
+    ]);
+  });
+
+  it('no ofrece dos veces el mismo método', async () => {
+    await chooseMethod('pm1');
+    await combine();
+
+    const opciones = Array.from(selects()[1].options).map((o) => o.value);
+    expect(opciones).not.toContain('pm1');
+    expect(opciones).toContain('pm2');
+  });
+
+  it('exige que cada comensal cubra su parte', () => {
     setBill(splitBill);
     panel.mode.set('split');
-    panel.setSplitMethod('p1', 'pm1');
-    panel.setSplitMethod('p2', 'pm2');
+    // Antes de asignar los pagos: al montarse, cada control emite su estado
+    // vacío y pisaría lo que se pusiera antes.
     fixture.detectChanges();
 
-    // Cada fila arranca con su importe justo.
+    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 12000 });
+    panel.setSplitPayment('p2', { ...emptyPaymentDraft(), methodId: 'pm2', amount: 8000 });
+
     expect(panel.ready()).toBe(true);
 
-    panel.setSplitReceived('p1', 5000);
+    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 5000 });
     expect(panel.ready()).toBe(false);
-
-    panel.setSplitReceived('p1', 20000);
-    expect(panel.ready()).toBe(true);
   });
 });
