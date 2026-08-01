@@ -3,6 +3,14 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { SalesService } from '../services/sales.service';
 import { PaymentMethodService } from '../services/payment-method.service';
 import { Sale } from '../interfaces/sales.interface';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
+import {
+  buildReceiptHtml,
+  formatInvoice,
+  printReceiptHtml,
+  saleToReceipt,
+} from '../../tables/services/receipt.util';
 
 @Component({
   selector: 'app-sales-page',
@@ -41,7 +49,7 @@ import { Sale } from '../interfaces/sales.interface';
           @for (sale of svc.sales(); track sale.id) {
             <button (click)="selected.set(sale)" class="w-full text-left px-5 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
               <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-900">#{{ sale.id.slice(0, 8) }}</p>
+                <p class="text-sm font-medium text-gray-900">{{ docLabel(sale) }}</p>
                 <p class="text-xs text-gray-400">
                   {{ sale.sold_at | date: 'dd/MM HH:mm' }}{{ sale.customer_name ? ' · ' + sale.customer_name : '' }}
                 </p>
@@ -57,9 +65,17 @@ import { Sale } from '../interfaces/sales.interface';
     @if (selected(); as r) {
       <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" (click)="selected.set(null)">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90vh] overflow-y-auto" (click)="$event.stopPropagation()">
-          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 class="text-lg font-semibold text-gray-900">Venta #{{ r.id.slice(0, 8) }}</h2>
-            <button (click)="selected.set(null)" class="text-gray-400 hover:text-gray-600">✕</button>
+          <div class="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+            <h2 class="text-lg font-semibold text-gray-900">{{ docLabel(r) }}</h2>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                (click)="print(r)"
+                class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                🧾 Imprimir
+              </button>
+              <button (click)="selected.set(null)" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
           </div>
           <div class="px-6 py-4 space-y-3 text-sm">
             <p class="text-xs text-gray-400">{{ r.sold_at | date: 'dd/MM/yyyy HH:mm' }}{{ r.customer_name ? ' · ' + r.customer_name : '' }}</p>
@@ -98,14 +114,40 @@ import { Sale } from '../interfaces/sales.interface';
 export class SalesPageComponent implements OnInit {
   readonly svc = inject(SalesService);
   private readonly methods = inject(PaymentMethodService);
+  private readonly tenantInfo = inject(TenantInfoService);
+  private readonly printer = inject(PrinterSettingsStore);
   readonly selected = signal<Sale | null>(null);
 
   ngOnInit(): void {
     this.svc.list();
     this.methods.load();
+    // Para el ticket: nombre del negocio, logo y mensaje de cierre.
+    if (!this.tenantInfo.info()) void this.tenantInfo.load();
   }
 
   methodName(id: string): string {
     return this.methods.methods().find((m) => m.id === id)?.name ?? 'Pago';
+  }
+
+  /** Cómo se identifica la venta: por su factura, o por el id si no tiene. */
+  docLabel(sale: Sale): string {
+    return sale.invoice ? `Factura ${formatInvoice(sale.invoice)}` : `Venta #${sale.id.slice(0, 8)}`;
+  }
+
+  /** Reimprime el mismo ticket que salió al cobrar. */
+  print(sale: Sale): void {
+    printReceiptHtml(
+      buildReceiptHtml(
+        [
+          saleToReceipt(sale, {
+            businessName: this.tenantInfo.businessName(),
+            logoUrl: this.tenantInfo.logoUrl(),
+            message: this.tenantInfo.receiptMessage(),
+            methodName: (id) => this.methodName(id),
+          }),
+        ],
+        { paperWidthMm: this.printer.paperWidthMm() },
+      ),
+    );
   }
 }

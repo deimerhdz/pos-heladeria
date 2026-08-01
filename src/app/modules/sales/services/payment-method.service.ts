@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { PaymentMethod } from '../interfaces/sales.interface';
+import { PaymentMethod, PaymentMethodType } from '../interfaces/sales.interface';
 
 /** Transport for payment methods (`/api/v1/sales/payment-methods`). */
 @Injectable({ providedIn: 'root' })
@@ -27,12 +27,24 @@ export class PaymentMethodService {
     }
   }
 
-  async create(name: string, isCash: boolean): Promise<boolean> {
+  /**
+   * Crea un método de pago **clasificado**.
+   *
+   * El `type` es lo que usa el arqueo para saber qué entra al cajón; omitirlo
+   * dejaba todo lo que no era efectivo como "otro" y fuera del desglose. Se manda
+   * junto a `is_cash` para respetar la invariante del modelo:
+   * `is_cash ⇔ type === 'cash'`.
+   */
+  async create(name: string, type: PaymentMethodType): Promise<boolean> {
     this.isSubmitting.set(true);
     this.error.set(null);
     try {
       await firstValueFrom(
-        this.http.post<PaymentMethod>(this.baseUrl, { name, is_cash: isCash }),
+        this.http.post<PaymentMethod>(this.baseUrl, {
+          name,
+          type,
+          is_cash: type === 'cash',
+        }),
       );
       await this.load();
       return true;

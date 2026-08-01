@@ -53,6 +53,7 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
             <input
               type="text"
               [value]="store.customerName()"
+              [placeholder]="store.customerPlaceholder()"
               (input)="store.customerName.set($any($event.target).value)"
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />

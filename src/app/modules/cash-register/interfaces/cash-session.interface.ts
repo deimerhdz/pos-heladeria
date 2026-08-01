@@ -44,18 +44,31 @@ export interface Denomination {
   subtotalFmt: string;
 }
 
+/** Ventas del turno con un método de pago concreto del negocio. */
+export interface VentaPorMetodo {
+  id: string;
+  name: string;
+  type: 'cash' | 'card' | 'transfer' | 'other';
+  total: number;
+  count: number;
+}
+
 /** Indicadores agregados del turno (derivados de la reconciliación del servidor). */
 export interface Indicadores {
-  ventasEfectivo: number;
-  ventasTarjeta: number;
-  ventasTransferencia: number;
+  /**
+   * Una entrada por método de pago del negocio, aunque no haya vendido nada.
+   *
+   * Sustituye a los tres cubos fijos (efectivo/tarjeta/transferencia): un método
+   * que no encajaba en ninguno —y todos los creados sin clasificar lo eran—
+   * desaparecía del arqueo.
+   */
+  ventas: VentaPorMetodo[];
+  /** Salió del cajón, así que se muestra aparte y en negativo. */
+  cambioEntregado: number;
   ingresos: number;
   egresos: number;
   retiros: number;
   efectivoEsperado: number;
-  countVentasEfectivo: number;
-  countVentasTarjeta: number;
-  countVentasTransferencia: number;
   countIngresos: number;
   countEgresos: number;
   countRetiros: number;

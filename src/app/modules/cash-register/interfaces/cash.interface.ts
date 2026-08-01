@@ -75,6 +75,9 @@ export interface Reconciliation {
   ventas_efectivo: string;
   ventas_tarjeta: string;
   ventas_transferencia: string;
+  /** Cambio entregado del cajón; `ventas_efectivo` ya lo lleva restado. */
+  cambio_entregado?: string;
+  /** Una fila por método de pago activo, aunque no haya vendido nada. */
   sales_by_method: SalesByMethod[];
   ingresos: string;
   egresos: string;

@@ -1,9 +1,17 @@
 // Types for the sales module (`/api/v1/sales/*`).
 
+/**
+ * Clasificación del método de pago (`PaymentMethodType`). Es lo que agrupa el
+ * desglose del arqueo, y solo `cash` entra en el efectivo esperado del cajón.
+ */
+export type PaymentMethodType = 'cash' | 'card' | 'transfer' | 'other';
+
 /** `PaymentMethodResponse`. */
 export interface PaymentMethod {
   id: string;
   name: string;
+  type: PaymentMethodType;
+  /** Invariante del backend: `is_cash ⇔ type === 'cash'`. */
   is_cash: boolean;
   active: boolean;
 }
@@ -11,6 +19,7 @@ export interface PaymentMethod {
 /** Body for `POST /sales/payment-methods` (`PaymentMethodCreate`). */
 export interface PaymentMethodCreatePayload {
   name: string;
+  type: PaymentMethodType;
   is_cash: boolean;
 }
 
@@ -62,6 +71,19 @@ export interface SalePayment {
   reference?: string | null;
 }
 
+/** `SaleInvoiceRef` — consecutivo fiscal de la venta. */
+export interface SaleInvoice {
+  prefix: string;
+  number: number;
+}
+
+/** `SaleTableRef` — mesa cobrada; `null` en ventas de mostrador. */
+export interface SaleTable {
+  id: string;
+  number: number;
+  name: string | null;
+}
+
 /** `SaleResponse` — the emitted, paid sale (receipt). */
 export interface Sale {
   id: string;
@@ -81,4 +103,7 @@ export interface Sale {
   sold_at: string;
   items?: SaleItem[];
   payments?: SalePayment[];
+  /** Consecutivo fiscal; `null` en ventas anteriores a la facturación. */
+  invoice?: SaleInvoice | null;
+  dining_table?: SaleTable | null;
 }
