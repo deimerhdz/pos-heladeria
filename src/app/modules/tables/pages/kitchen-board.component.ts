@@ -3,6 +3,7 @@ import {
   OnDestroy,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -30,7 +31,10 @@ interface Ticket {
   createdAt: string;
 }
 
+/** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const REFRESH_MS = 10_000;
+/** Con el stream sano basta un latido lento: es red de seguridad, no la fuente. */
+const REFRESH_SSE_MS = 60_000;
 /** Agrupa la ráfaga de una misma acción (y el replay al reconectar). */
 const RELOAD_DEBOUNCE_MS = 250;
 
@@ -151,6 +155,17 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     { status: 'listo', title: 'Listo', accent: 'bg-green-100 text-green-700' },
   ];
 
+  constructor() {
+    // El sondeo se relaja con el stream sano y vuelve al ritmo de antes al
+    // caerse. Sigue existiendo porque el `error` de EventSource no lleva código
+    // de estado, un `resync` obliga a recargar por REST, y un proxy mal
+    // configurado rompe SSE en silencio.
+    effect(() => {
+      const abierto = this.realtime.status() === 'open';
+      this.timer?.setPeriod(abierto ? REFRESH_SSE_MS : REFRESH_MS);
+    });
+  }
+
   private readonly lookup = computed(() => buildMenuLookup(this.menuService.categories()));
 
   private readonly tableLabels = computed(() => {
@@ -187,7 +202,10 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     this.tableService.loadTables();
     // Se pausa con la pantalla apagada o la pestaña de fondo, y recarga de
     // golpe al volver: la cocina mira el tablero de forma intermitente.
-    this.timer = startVisibleInterval(() => void this.reload(false), REFRESH_MS);
+    this.timer = startVisibleInterval(
+      () => void this.reload(false),
+      this.realtime.status() === 'open' ? REFRESH_SSE_MS : REFRESH_MS,
+    );
     this.connectRealtime();
   }
 
