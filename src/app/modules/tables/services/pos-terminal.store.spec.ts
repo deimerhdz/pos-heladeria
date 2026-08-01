@@ -88,3 +88,35 @@ describe('deriveTableStatus', () => {
     expect(deriveTableStatus([order('o1', 'abierta', ['anulado'])], 'ocupada')).toBe('ocupada');
   });
 });
+
+/**
+ * La campana tras reconectar.
+ *
+ * `announcePending` es lo único que puede sonar, y decide comparando **ids**
+ * contra los ya vistos. El tiempo real no la alimenta directamente: un evento
+ * dispara una recarga y la recarga pasa por aquí. Estos tests fijan esa
+ * propiedad, que es la que evita que el replay de eventos tras una reconexión
+ * vuelva a sonar por pedidos que el cajero ya atendió.
+ */
+describe('newPendingIds tras una reconexión', () => {
+  it('el replay de un pedido ya visto no vuelve a sonar', () => {
+    const vistos = new Set(['o1', 'o2']);
+    const orders = [order('o1', 'recibida'), order('o2', 'recibida')];
+
+    // Lo que llega en el replay es exactamente lo que ya estaba.
+    expect(newPendingIds(vistos, orders)).toEqual([]);
+  });
+
+  it('pero un pedido nuevo entre los repetidos sí suena, y solo ese', () => {
+    const vistos = new Set(['o1']);
+    const orders = [order('o1', 'recibida'), order('o2', 'recibida')];
+
+    expect(newPendingIds(vistos, orders)).toEqual(['o2']);
+  });
+
+  it('un pedido que entró y se confirmó dentro de la misma ventana ya no cuenta', () => {
+    // Es el motivo de comparar ids y no cantidades: el contador vuelve a su
+    // sitio, pero el aviso debió sonar cuando entró.
+    expect(newPendingIds(new Set(['o1']), [order('o1', 'abierta')])).toEqual([]);
+  });
+});

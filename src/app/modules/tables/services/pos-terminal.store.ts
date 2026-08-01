@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import {
   MenuCategory,
   MenuOption,
@@ -13,6 +13,8 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { SoundService } from '../../../shared/feedback/sound.service';
 import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
+import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
+import { RealtimeService } from '../../../core/realtime/realtime.service';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
   CloseSessionResponse,
@@ -75,8 +77,12 @@ const NEEDS_STAFF: TableDisplayStatus[] = ['por_confirmar', 'listo', 'pago_pendi
 
 const NOT_READY: DiningOrderItem['estado_cocina'][] = ['pendiente', 'en_preparacion'];
 
-/** Cada cuánto se consulta si llegaron pedidos nuevos. No hay websockets. */
+/** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const ORDERS_POLL_MS = 10_000;
+/** Con el stream sano basta un latido lento: es red de seguridad, no la fuente. */
+const ORDERS_POLL_SSE_MS = 60_000;
+/** Agrupa la ráfaga de una misma acción (y el replay al reconectar). */
+const RELOAD_DEBOUNCE_MS = 250;
 
 /** Qué pestaña ocupa la columna central. */
 export type CenterTab = 'pedido' | 'pendientes';
@@ -140,7 +146,16 @@ export class PosTerminalStore {
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
   private readonly printer = inject(PrinterSettingsStore);
+  private readonly realtime = inject(RealtimeService);
   readonly sound = inject(SoundService);
+
+  constructor() {
+    // El sondeo se relaja con el stream sano y vuelve al ritmo de antes al caerse.
+    effect(() => {
+      const abierto = this.realtime.status() === 'open';
+      this.pollHandle?.setPeriod(abierto ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS);
+    });
+  }
 
   // ─── Estado ────────────────────────────────────────────────────────────────
   readonly orders = signal<DiningOrder[]>([]);
@@ -178,8 +193,10 @@ export class PosTerminalStore {
   readonly centerTab = signal<CenterTab>('pedido');
 
   private readonly nowTick = signal(Date.now());
-  private timer?: ReturnType<typeof setInterval>;
-  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private timer?: VisibleInterval;
+  private pollHandle: VisibleInterval | null = null;
+  private rtOff: (() => void)[] = [];
+  private reloadHandle: ReturnType<typeof setTimeout> | null = null;
   /** Pedidos por confirmar ya conocidos: lo que llegue de más suena. */
   private seenPending = new Set<string>();
   /** La primera carga no avisa; solo deja constancia de lo que ya había. */
@@ -358,7 +375,7 @@ export class PosTerminalStore {
 
   // ─── Ciclo de vida ───────────────────────────────────────────────────────────
   async init(): Promise<void> {
-    this.timer ??= setInterval(() => this.nowTick.set(Date.now()), 30000);
+    this.timer ??= startVisibleInterval(() => this.nowTick.set(Date.now()), 30000);
     this.loading.set(true);
     this.error.set(null);
     try {
@@ -377,12 +394,16 @@ export class PosTerminalStore {
       this.loading.set(false);
     }
     this.startPolling();
+    // Después de la carga REST a propósito: `pendingSeeded` ya es `true`, así
+    // que la primera ráfaga de eventos no hace sonar la campana.
+    this.connectRealtime();
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.timer?.stop();
     this.timer = undefined;
     this.stopPolling();
+    this.disconnectRealtime();
   }
 
   /**
@@ -394,23 +415,86 @@ export class PosTerminalStore {
    * objeto `bill`, así que refrescarla cada 10 s le borraría al cajero lo que
    * está tecleando. El tablero de mesas se actualiza igual porque su estado se
    * deriva de los pedidos.
+   *
+   * El intervalo se pausa con la pestaña oculta: un cajero que cambia de
+   * ventana no tiene por qué seguir trayéndose todos los pedidos del local.
    */
   private startPolling(): void {
     this.stopPolling();
-    this.pollHandle = setInterval(() => {
+    this.pollHandle = startVisibleInterval(() => {
       // Un fallo de red pasajero no debe pintar un error sobre la terminal.
       void this.reloadOrders().catch(() => undefined);
       // También las mesas: su `status` es lo que delata a un comensal que
       // escaneó el QR y todavía no ha pedido nada.
       void this.tableService.loadTables().catch(() => undefined);
-    }, ORDERS_POLL_MS);
+    }, this.realtime.status() === 'open' ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS);
   }
 
   private stopPolling(): void {
-    if (this.pollHandle !== null) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = null;
+    this.pollHandle?.stop();
+    this.pollHandle = null;
+  }
+
+  // ── Tiempo real ───────────────────────────────────────────────────────────
+
+  /**
+   * Conecta el stream del staff.
+   *
+   * **Los eventos nunca tocan la campana directamente**: `order.created` dispara
+   * una recarga, y es `reloadOrders()` → `announcePending()` quien decide si
+   * suena, comparando ids contra `seenPending`. Alimentar la campana desde el
+   * evento haría que el replay tras reconectar volviera a sonar por pedidos que
+   * el cajero ya vio.
+   *
+   * Por eso `init()` conecta **después** de la primera carga REST: así
+   * `pendingSeeded` ya es `true` y la primera ráfaga no suena.
+   */
+  private connectRealtime(): void {
+    const recargar = () => this.scheduleReload();
+    this.rtOff.push(
+      this.realtime.on('order.created', recargar),
+      this.realtime.on('order.confirmed', recargar),
+      this.realtime.on('order.cancelled', recargar),
+      this.realtime.on('order.item_kitchen_changed', recargar),
+      this.realtime.on('order.item_voided', recargar),
+      this.realtime.on('table.status_changed', recargar),
+      this.realtime.on('session.closed', recargar),
+      this.realtime.on('payment.completed', recargar),
+      this.realtime.on('resync', recargar),
+      this.realtime.on('reconnected', recargar),
+      // La cuenta se marca obsoleta, JAMÁS se recarga sola (ver `billStale`).
+      this.realtime.on('session.bill_changed', (ev) => {
+        if (ev.table_session_id === this.sessionBill()?.table_session_id) {
+          this.billStale.set(true);
+        }
+      }),
+    );
+    this.realtime.connectStaff();
+  }
+
+  private disconnectRealtime(): void {
+    for (const off of this.rtOff) off();
+    this.rtOff = [];
+    this.realtime.disconnect();
+    if (this.reloadHandle !== null) {
+      clearTimeout(this.reloadHandle);
+      this.reloadHandle = null;
     }
+  }
+
+  /** Agrupa la ráfaga de una misma acción (y el replay al reconectar). */
+  private scheduleReload(): void {
+    if (this.reloadHandle !== null) return;
+    this.reloadHandle = setTimeout(() => {
+      this.reloadHandle = null;
+      void this.reloadOrders().catch(() => undefined);
+      void this.tableService.loadTables().catch(() => undefined);
+    }, RELOAD_DEBOUNCE_MS);
+  }
+
+  /** Recarga la cuenta a petición del cajero, tras un `session.bill_changed`. */
+  async refreshBill(): Promise<void> {
+    await this.loadSessionBill(this.selectedTableId());
   }
 
   private async reloadOrders(): Promise<void> {
@@ -665,6 +749,16 @@ export class PosTerminalStore {
    * —que es falso— y el cajero se quedaba sin saber por qué no puede cobrar.
    */
   readonly billOrphan = signal(false);
+  /**
+   * La cuenta cambió en el servidor y lo que se ve está desactualizado.
+   *
+   * **Solo marca, nunca recarga.** `SessionBillPanelComponent` resetea el método
+   * de pago y el efectivo recibido cada vez que cambia la identidad del objeto
+   * `bill`, así que recargar al recibir el evento le borraría al cajero lo que
+   * está tecleando —justo cuando entra un pedido nuevo, que es cuando más ocupado
+   * está—. La recarga la decide él con el botón "Actualizar".
+   */
+  readonly billStale = signal(false);
 
   /**
    * Carga la cuenta de la mesa seleccionada.
@@ -674,6 +768,7 @@ export class PosTerminalStore {
    * sola operación, en vez del antiguo `block` → `pay` → `release` por orden.
    */
   async loadSessionBill(tableId: string | null): Promise<void> {
+    this.billStale.set(false);
     if (!tableId) {
       this.sessionBill.set(null);
       this.billOrphan.set(false);

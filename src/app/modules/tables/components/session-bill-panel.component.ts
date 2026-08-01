@@ -4,6 +4,7 @@ import {
   EventEmitter,
   Input,
   OnChanges,
+  SimpleChanges,
   Output,
   computed,
   inject,
@@ -215,10 +216,25 @@ export class SessionBillPanelComponent implements OnChanges {
     );
   });
 
-  ngOnChanges(): void {
+  /**
+   * Resetea el pago **solo cuando cambia la cuenta**, no ante cualquier `@Input`.
+   *
+   * Sin mirar `changes`, un cambio en `methods`, `cashShiftId` o `customerName`
+   * —o cualquier `@Input` que se añada mañana— borraba el efectivo que el cajero
+   * estaba tecleando. Ese era el motivo real de que el sondeo no pudiera recargar
+   * la cuenta, y por el que un `session.bill_changed` la marca obsoleta en vez de
+   * recargarla: la recarga es una decisión del cajero, con el botón "Actualizar".
+   *
+   * Cuando la cuenta **sí** cambia, el pago se reinicia a propósito: los importes
+   * anteriores son de un total que ya no existe, y cobrarlos descuadraría el
+   * turno. (`PaymentInputComponent` lo reinicia por su cuenta de todos modos al
+   * recibir otro `total`.)
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['bill']) return;
+
     this.error.set(null);
     this.currentBill.set(this.bill);
-    // El pago es de esta cuenta: no debe arrastrarse a la siguiente mesa.
     this.unifiedPayment.set(emptyPaymentDraft());
     this.splits.set(
       (this.bill?.split ?? []).map((l) => ({

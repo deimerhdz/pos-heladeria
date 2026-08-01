@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
@@ -7,6 +7,8 @@ import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
+import { RealtimeService } from '../../../core/realtime/realtime.service';
 import {
   esperaConfirmacion,
   kitchenStatusClass,
@@ -23,8 +25,12 @@ import {
 
 type MenuView = 'loading' | 'error' | 'name' | 'menu';
 
-/** Cada cuánto se refresca el avance de cocina (no hay websockets). */
+/** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const ORDERS_POLL_MS = 10_000;
+/** Con el stream sano basta un latido lento: es red de seguridad, no la fuente. */
+const ORDERS_POLL_SSE_MS = 60_000;
+/** Agrupa la ráfaga de eventos de una misma acción en una sola recarga. */
+const REFRESH_DEBOUNCE_MS = 250;
 
 @Component({
   selector: 'app-public-menu',
@@ -311,6 +317,17 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly api = inject(DinerService);
   private readonly tokenStore = inject(DinerTokenStore);
+  private readonly realtime = inject(RealtimeService);
+
+  constructor() {
+    // El sondeo se relaja cuando el stream está sano y vuelve al ritmo de antes
+    // en cuanto se cae. Al recuperarse, además, una recarga inmediata: lo que
+    // pasara mientras estuvo caído no llegó por eventos.
+    effect(() => {
+      const abierto = this.realtime.status() === 'open';
+      this.pollHandle?.setPeriod(abierto ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS);
+    });
+  }
   readonly cart = inject(DiningCartService);
 
   readonly view = signal<MenuView>('loading');
@@ -359,7 +376,10 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   /** Token **firmado** del QR (JWT): lleva tenant + mesa. */
   private token = '';
-  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private pollHandle: VisibleInterval | null = null;
+  /** Bajas de los handlers de tiempo real. */
+  private rtOff: (() => void)[] = [];
+  private refreshHandle: ReturnType<typeof setTimeout> | null = null;
 
   async ngOnInit(): Promise<void> {
     this.token = this.route.snapshot.paramMap.get('token') ?? '';
@@ -388,6 +408,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       await Promise.all([this.cart.load(), this.refreshOrders()]);
       this.view.set('menu');
       this.startPolling();
+      this.connectRealtime();
     } catch {
       // Token inválido, sesión cerrada o mesa ya cobrada.
       this.expireSession('Tu sesión terminó. Ingresa tu nombre de nuevo.');
@@ -396,6 +417,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopPolling();
+    this.disconnectRealtime();
   }
 
   priceLabel(product: MenuProduct): string {
@@ -429,6 +451,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       await this.refreshOrders();
       this.view.set('menu');
       this.startPolling();
+      this.connectRealtime();
     } catch (err) {
       this.errorMessage.set(this.api.extractError(err, 'No se pudo unirte a la mesa.'));
     } finally {
@@ -552,6 +575,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   async exit(): Promise<void> {
     const tenia = this.myOrders().length > 0;
     this.stopPolling();
+    this.disconnectRealtime();
     try {
       await this.api.leave();
     } catch {
@@ -589,21 +613,86 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   private startPolling(): void {
     this.stopPolling();
-    // No hay websockets: el avance de cocina se consulta periódicamente.
-    this.pollHandle = setInterval(() => {
+    // El sondeo **no desaparece** con SSE, se relaja: el evento `error` de
+    // EventSource no lleva código de estado, así que el 401 de `GET /cart/orders`
+    // sigue siendo la única señal fiable de "tu mesa se cerró". Sin él, un
+    // comensal cuya sesión murió se quedaría mirando una pantalla congelada.
+    //
+    // Con la pestaña oculta se detiene igual, así que en segundo plano el coste
+    // es cero.
+    this.pollHandle = startVisibleInterval(() => {
       this.refreshOrders().catch((err) => {
         if (err instanceof DinerSessionExpiredError) {
           this.expireSession('Tu sesión terminó. Ingresa tu nombre de nuevo.');
         }
       });
-    }, ORDERS_POLL_MS);
+    }, this.pollPeriod());
   }
 
   private stopPolling(): void {
-    if (this.pollHandle !== null) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = null;
+    this.pollHandle?.stop();
+    this.pollHandle = null;
+  }
+
+  /** Con el stream sano basta un sondeo de respaldo; sin él, el ritmo de antes. */
+  private pollPeriod(): number {
+    return this.realtime.status() === 'open' ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS;
+  }
+
+  // ── Tiempo real ───────────────────────────────────────────────────────────
+
+  /**
+   * Conecta el stream y refresca ante cualquier evento de sus pedidos.
+   *
+   * **No se parchea `myOrders` localmente.** Es una lista completa que ya viene
+   * resuelta del backend; un merge por ítem sería lógica nueva con sus propios
+   * bugs a cambio de poco: refrescar por evento son ~15-20 peticiones en toda la
+   * comida, frente a las 360 del sondeo a 10 s.
+   */
+  private connectRealtime(): void {
+    const token = this.tokenStore.token();
+    if (!token) return;
+
+    const refrescar = () => this.scheduleRefresh();
+    this.rtOff.push(
+      this.realtime.on('order.created', refrescar),
+      this.realtime.on('order.confirmed', refrescar),
+      this.realtime.on('order.item_kitchen_changed', refrescar),
+      this.realtime.on('order.item_voided', refrescar),
+      this.realtime.on('order.cancelled', refrescar),
+      this.realtime.on('resync', refrescar),
+      this.realtime.on('reconnected', refrescar),
+      // La mesa se cobró o la barrió el scheduler: se acabó la sesión.
+      this.realtime.on('session.closed', () =>
+        this.expireSession('La mesa se cerró. ¡Gracias por tu visita!'),
+      ),
+    );
+    this.realtime.connectDiner(token);
+  }
+
+  private disconnectRealtime(): void {
+    for (const off of this.rtOff) off();
+    this.rtOff = [];
+    this.realtime.disconnect();
+    if (this.refreshHandle !== null) {
+      clearTimeout(this.refreshHandle);
+      this.refreshHandle = null;
     }
+  }
+
+  /**
+   * Agrupa la ráfaga de eventos de una misma acción en una sola recarga.
+   *
+   * Confirmar un pedido dispara `order.confirmed` + `session.bill_changed` casi a
+   * la vez, y el replay tras reconectar puede traer una decena de golpe: sin
+   * esto serían N peticiones idénticas.
+   */
+  private scheduleRefresh(): void {
+    if (this.refreshHandle !== null) return;
+    this.refreshHandle = setTimeout(() => {
+      this.refreshHandle = null;
+      this.refreshOrders().catch(() => undefined);
+    }, REFRESH_DEBOUNCE_MS);
   }
 
   // ── Errores ──────────────────────────────────────────────────────────────
@@ -636,6 +725,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   /** La sesión dejó de valer: se descarta el token y se vuelve a pedir nombre. */
   private expireSession(message: string): void {
     this.stopPolling();
+    this.disconnectRealtime();
     this.tokenStore.clear();
     this.cart.clear();
     this.cart.clearDiner();

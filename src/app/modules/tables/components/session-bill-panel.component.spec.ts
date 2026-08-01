@@ -136,6 +136,36 @@ describe('SessionBillPanelComponent', () => {
     expect(panel.ready()).toBe(false);
   });
 
+  it('NO borra el pago tecleado si cambia otro @Input', async () => {
+    await chooseMethod('pm2');
+    expect(panel.ready()).toBe(true);
+
+    // Regresión: `ngOnChanges` reseteaba el pago ante cualquier @Input, así que
+    // un cambio en los métodos, el turno de caja o el nombre del cliente le
+    // borraba al cajero lo que estaba tecleando.
+    fixture.componentRef.setInput('customerName', 'Ana Pérez');
+    fixture.componentRef.setInput('cashShiftId', 'shift-2');
+    fixture.detectChanges();
+
+    expect(panel.ready()).toBe(true);
+    expect(panel.unifiedPayment()).not.toEqual(emptyPaymentDraft());
+  });
+
+  it('sí reinicia el pago cuando la cuenta cambia de importe', async () => {
+    await chooseMethod('pm2');
+    expect(panel.ready()).toBe(true);
+
+    // Es lo que llega al pulsar "Actualizar" tras entrar otro pedido. Reiniciar
+    // aquí es lo correcto: cobrar 12000 de una cuenta de 18000 descuadraría el
+    // turno. Por eso el evento marca la cuenta obsoleta en vez de recargarla, y
+    // la recarga la decide el cajero.
+    setBill({ ...bill, total: '18000' });
+
+    expect(panel.total()).toBe(18000);
+    expect(panel.unifiedPayment()).toEqual(emptyPaymentDraft());
+    expect(panel.ready()).toBe(false);
+  });
+
   it('reevalúa si la cuenta se puede dividir al cambiar de mesa', () => {
     expect(panel.canSplit()).toBe(false);
 
