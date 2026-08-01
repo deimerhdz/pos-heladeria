@@ -658,6 +658,13 @@ export class PosTerminalStore {
   /** Cuenta de la sesión de la mesa seleccionada (total + desglose por comensal). */
   readonly sessionBill = signal<SessionBill | null>(null);
   readonly billLoading = signal(false);
+  /**
+   * La mesa tiene consumo pero no hay sesión activa de la que colgar la cuenta.
+   *
+   * Es un descuadre: sin esto el panel decía "Selecciona una mesa con consumo"
+   * —que es falso— y el cajero se quedaba sin saber por qué no puede cobrar.
+   */
+  readonly billOrphan = signal(false);
 
   /**
    * Carga la cuenta de la mesa seleccionada.
@@ -669,6 +676,7 @@ export class PosTerminalStore {
   async loadSessionBill(tableId: string | null): Promise<void> {
     if (!tableId) {
       this.sessionBill.set(null);
+      this.billOrphan.set(false);
       return;
     }
     this.billLoading.set(true);
@@ -676,8 +684,12 @@ export class PosTerminalStore {
       const sessions = await this.tableSessions.list();
       const session = sessions.find((s) => s.dining_table_id === tableId);
       this.sessionBill.set(session ? await this.tableSessions.bill(session.id) : null);
+      // Sin sesión pero con pedidos vivos: la mesa no se puede cobrar y hay que
+      // decirlo, no dejar el panel como si estuviera vacía.
+      this.billOrphan.set(!session && this.tableOrders(tableId).length > 0);
     } catch (err) {
       this.sessionBill.set(null);
+      this.billOrphan.set(false);
       this.error.set(this.tableSessions.extractError(err, 'No se pudo cargar la cuenta.'));
     } finally {
       this.billLoading.set(false);

@@ -55,7 +55,16 @@ interface SplitDraft {
       <h2 class="text-sm font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
 
       @if (!bill) {
-        <p class="text-xs text-gray-400 py-6 text-center">Selecciona una mesa con consumo.</p>
+        @if (orphan) {
+          <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-1">
+            <p class="text-xs font-semibold text-amber-900">No se puede cobrar esta mesa</p>
+            <p class="text-xs text-amber-800">
+              Tiene pedidos sin cobrar, pero su sesión está cerrada. Avisa al administrador.
+            </p>
+          </div>
+        } @else {
+          <p class="text-xs text-gray-400 py-6 text-center">Selecciona una mesa con consumo.</p>
+        }
       } @else {
         <!-- Desglose -->
         <div class="space-y-1.5 mb-4">
@@ -157,6 +166,8 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() cashShiftId: string | null = null;
   /** A nombre de quién se factura la cuenta única; vacío lo resuelve el backend. */
   @Input() customerName = '';
+  /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
+  @Input() orphan = false;
   /** Cierre completo: sus `sale_ids` son la fuente de la factura impresa. */
   @Output() charged = new EventEmitter<CloseSessionResponse>();
 

@@ -102,6 +102,18 @@ describe('SessionBillPanelComponent', () => {
     return body;
   }
 
+  it('avisa cuando la mesa tiene consumo pero no hay sesión que cobrar', () => {
+    fixture.componentRef.setInput('bill', null);
+    fixture.componentRef.setInput('orphan', true);
+    fixture.detectChanges();
+
+    const texto = fixture.nativeElement.textContent as string;
+    // Antes decía "Selecciona una mesa con consumo", que era falso y dejaba al
+    // cajero sin saber por qué no puede cobrar.
+    expect(texto).toContain('No se puede cobrar esta mesa');
+    expect(texto).not.toContain('Selecciona una mesa con consumo');
+  });
+
   it('no deja cobrar mientras no se elige método de pago', () => {
     expect(panel.ready()).toBe(false);
     expect(chargeButton().disabled).toBe(true);
