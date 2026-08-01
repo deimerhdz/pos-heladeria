@@ -7,6 +7,7 @@ import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 import {
   esperaConfirmacion,
   kitchenStatusClass,
@@ -359,7 +360,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   /** Token **firmado** del QR (JWT): lleva tenant + mesa. */
   private token = '';
-  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private pollHandle: VisibleInterval | null = null;
 
   async ngOnInit(): Promise<void> {
     this.token = this.route.snapshot.paramMap.get('token') ?? '';
@@ -589,8 +590,10 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   private startPolling(): void {
     this.stopPolling();
-    // No hay websockets: el avance de cocina se consulta periódicamente.
-    this.pollHandle = setInterval(() => {
+    // El avance de cocina se consulta periódicamente. Con el móvil en el
+    // bolsillo la pestaña se oculta y el sondeo se detiene solo; al desbloquear
+    // se refresca de inmediato, sin esperar un ciclo entero.
+    this.pollHandle = startVisibleInterval(() => {
       this.refreshOrders().catch((err) => {
         if (err instanceof DinerSessionExpiredError) {
           this.expireSession('Tu sesión terminó. Ingresa tu nombre de nuevo.');
@@ -600,10 +603,8 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   }
 
   private stopPolling(): void {
-    if (this.pollHandle !== null) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = null;
-    }
+    this.pollHandle?.stop();
+    this.pollHandle = null;
   }
 
   // ── Errores ──────────────────────────────────────────────────────────────

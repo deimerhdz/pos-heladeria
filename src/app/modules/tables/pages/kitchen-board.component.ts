@@ -11,6 +11,7 @@ import { TableService } from '../services/table.service';
 import { MenuService } from '../../menu/services/menu.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { DiningOrder, DiningOrderItem, KitchenStatus } from '../interfaces/dining.interface';
+import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 
 interface Column {
   status: KitchenStatus;
@@ -131,7 +132,7 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
   readonly busy = signal<Set<string>>(new Set());
   readonly error = signal<string | null>(null);
 
-  private timer?: ReturnType<typeof setInterval>;
+  private timer?: VisibleInterval;
 
   readonly columns: Column[] = [
     { status: 'pendiente', title: 'Pendiente', accent: 'bg-amber-100 text-amber-700' },
@@ -173,11 +174,13 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     await this.reload(true);
     this.menuService.loadMenu();
     this.tableService.loadTables();
-    this.timer = setInterval(() => this.reload(false), REFRESH_MS);
+    // Se pausa con la pantalla apagada o la pestaña de fondo, y recarga de
+    // golpe al volver: la cocina mira el tablero de forma intermitente.
+    this.timer = startVisibleInterval(() => void this.reload(false), REFRESH_MS);
   }
 
   ngOnDestroy(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.timer?.stop();
   }
 
   async reload(showSpinner: boolean): Promise<void> {

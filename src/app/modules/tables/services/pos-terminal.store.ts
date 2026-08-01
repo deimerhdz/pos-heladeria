@@ -13,6 +13,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { SoundService } from '../../../shared/feedback/sound.service';
 import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
+import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
   CloseSessionResponse,
@@ -178,8 +179,8 @@ export class PosTerminalStore {
   readonly centerTab = signal<CenterTab>('pedido');
 
   private readonly nowTick = signal(Date.now());
-  private timer?: ReturnType<typeof setInterval>;
-  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private timer?: VisibleInterval;
+  private pollHandle: VisibleInterval | null = null;
   /** Pedidos por confirmar ya conocidos: lo que llegue de más suena. */
   private seenPending = new Set<string>();
   /** La primera carga no avisa; solo deja constancia de lo que ya había. */
@@ -358,7 +359,7 @@ export class PosTerminalStore {
 
   // ─── Ciclo de vida ───────────────────────────────────────────────────────────
   async init(): Promise<void> {
-    this.timer ??= setInterval(() => this.nowTick.set(Date.now()), 30000);
+    this.timer ??= startVisibleInterval(() => this.nowTick.set(Date.now()), 30000);
     this.loading.set(true);
     this.error.set(null);
     try {
@@ -380,7 +381,7 @@ export class PosTerminalStore {
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.timer?.stop();
     this.timer = undefined;
     this.stopPolling();
   }
@@ -394,10 +395,13 @@ export class PosTerminalStore {
    * objeto `bill`, así que refrescarla cada 10 s le borraría al cajero lo que
    * está tecleando. El tablero de mesas se actualiza igual porque su estado se
    * deriva de los pedidos.
+   *
+   * El intervalo se pausa con la pestaña oculta: un cajero que cambia de
+   * ventana no tiene por qué seguir trayéndose todos los pedidos del local.
    */
   private startPolling(): void {
     this.stopPolling();
-    this.pollHandle = setInterval(() => {
+    this.pollHandle = startVisibleInterval(() => {
       // Un fallo de red pasajero no debe pintar un error sobre la terminal.
       void this.reloadOrders().catch(() => undefined);
       // También las mesas: su `status` es lo que delata a un comensal que
@@ -407,10 +411,8 @@ export class PosTerminalStore {
   }
 
   private stopPolling(): void {
-    if (this.pollHandle !== null) {
-      clearInterval(this.pollHandle);
-      this.pollHandle = null;
-    }
+    this.pollHandle?.stop();
+    this.pollHandle = null;
   }
 
   private async reloadOrders(): Promise<void> {
