@@ -12,6 +12,8 @@ import { MenuService } from '../../menu/services/menu.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { DiningOrder, DiningOrderItem, KitchenStatus } from '../interfaces/dining.interface';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
+import { RealtimeService } from '../../../core/realtime/realtime.service';
+import { applyKitchenEvent } from '../services/kitchen-merge';
 
 interface Column {
   status: KitchenStatus;
@@ -29,6 +31,8 @@ interface Ticket {
 }
 
 const REFRESH_MS = 10_000;
+/** Agrupa la ráfaga de una misma acción (y el replay al reconectar). */
+const RELOAD_DEBOUNCE_MS = 250;
 
 @Component({
   selector: 'app-kitchen-board',
@@ -126,6 +130,7 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
   private readonly api = inject(DiningSessionService);
   private readonly tableService = inject(TableService);
   private readonly menuService = inject(MenuService);
+  private readonly realtime = inject(RealtimeService);
 
   readonly orders = signal<DiningOrder[]>([]);
   readonly loading = signal(false);
@@ -133,6 +138,12 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
 
   private timer?: VisibleInterval;
+  /** Última versión de evento aplicada por ítem (trampa de la escritura optimista). */
+  private readonly appliedV = new Map<string, number>();
+  /** Ítems cuyo evento llegó con un PATCH en vuelo: se recargan al soltarlo. */
+  private readonly deferred = new Set<string>();
+  private rtOff: (() => void)[] = [];
+  private reloadHandle: ReturnType<typeof setTimeout> | null = null;
 
   readonly columns: Column[] = [
     { status: 'pendiente', title: 'Pendiente', accent: 'bg-amber-100 text-amber-700' },
@@ -177,10 +188,12 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     // Se pausa con la pantalla apagada o la pestaña de fondo, y recarga de
     // golpe al volver: la cocina mira el tablero de forma intermitente.
     this.timer = startVisibleInterval(() => void this.reload(false), REFRESH_MS);
+    this.connectRealtime();
   }
 
   ngOnDestroy(): void {
     this.timer?.stop();
+    this.disconnectRealtime();
   }
 
   async reload(showSpinner: boolean): Promise<void> {
@@ -218,8 +231,13 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
     this.busy.update((s) => new Set(s).add(itemId));
     this.error.set(null);
     try {
-      await this.api.updateItemKitchen(itemId, next);
-      // Optimistically update the nested item's kitchen status.
+      const item = await this.api.updateItemKitchen(itemId, next);
+      // Sembrar la versión del evento que acaba de emitir esta escritura, ANTES
+      // del parche optimista: es lo que hace que un evento en vuelo con versión
+      // anterior —de otra pantalla, o el eco de este mismo PATCH— no revierta
+      // visualmente lo que el cocinero ya vio.
+      if (item?.rt_v != null) this.appliedV.set(itemId, item.rt_v);
+
       this.orders.update((orders) =>
         orders.map((o) => ({
           ...o,
@@ -234,7 +252,54 @@ export class KitchenBoardComponent implements OnInit, OnDestroy {
         n.delete(itemId);
         return n;
       });
+      // Si llegaron eventos de este ítem mientras estaba en vuelo se aplazaron;
+      // ahora que se soltó el guard, el servidor manda.
+      if (this.deferred.delete(itemId)) void this.reload(false);
     }
+  }
+
+  // ── Tiempo real ───────────────────────────────────────────────────────────
+
+  private connectRealtime(): void {
+    this.rtOff.push(
+      this.realtime.on('order.item_kitchen_changed', (ev) => {
+        const r = applyKitchenEvent(this.orders(), ev, {
+          appliedV: this.appliedV,
+          busy: this.busy(),
+        });
+        if (r.action === 'apply') this.orders.set(r.orders);
+        else if (r.action === 'defer') this.deferred.add(ev.item_id);
+      }),
+      // Eventos delgados: traen ids, no el ticket. El tablero necesita el ítem
+      // completo (mesa, comensal, opciones), así que recarga.
+      this.realtime.on('order.created', () => this.scheduleReload()),
+      this.realtime.on('order.confirmed', () => this.scheduleReload()),
+      this.realtime.on('order.item_voided', () => this.scheduleReload()),
+      this.realtime.on('order.cancelled', () => this.scheduleReload()),
+      this.realtime.on('session.closed', () => this.scheduleReload()),
+      this.realtime.on('resync', () => this.scheduleReload()),
+      this.realtime.on('reconnected', () => this.scheduleReload()),
+    );
+    this.realtime.connectStaff();
+  }
+
+  private disconnectRealtime(): void {
+    for (const off of this.rtOff) off();
+    this.rtOff = [];
+    this.realtime.disconnect();
+    if (this.reloadHandle !== null) {
+      clearTimeout(this.reloadHandle);
+      this.reloadHandle = null;
+    }
+  }
+
+  /** Agrupa la ráfaga de una misma acción (y el replay al reconectar). */
+  private scheduleReload(): void {
+    if (this.reloadHandle !== null) return;
+    this.reloadHandle = setTimeout(() => {
+      this.reloadHandle = null;
+      void this.reload(false);
+    }, RELOAD_DEBOUNCE_MS);
   }
 
   variantLabel(variantId: string): string {

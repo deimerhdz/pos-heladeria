@@ -65,6 +65,12 @@ export interface DiningOrderItem {
   unit_price: string;
   /** Kitchen status of this item. */
   estado_cocina: KitchenStatus;
+  /**
+   * Versión del evento de tiempo real que emitió esta escritura. Solo lo
+   * rellena `PATCH /orders/items/{id}/kitchen`; el KDS lo usa para que un evento
+   * en vuelo no revierta su parche optimista. Ver `kitchen-merge.ts`.
+   */
+  rt_v?: number | null;
   void_de?: string | null;
   notes?: string | null;
   options?: DiningOrderItemOption[];
