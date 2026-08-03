@@ -2,11 +2,15 @@ import {
   ChangeDetectionStrategy,
   Component,
   OnInit,
+  computed,
   inject,
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Option, OptionGroup } from '../../products/interfaces/product.interface';
+import { InventoryService } from '../../inventory/services/inventory.service';
+import { buildUnitLookup } from '../../inventory/services/unit-lookup';
+import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { OptionGroupService } from '../services/option-group.service';
@@ -60,6 +64,12 @@ import { OptionFormComponent } from '../components/option-form.component';
                     }
                   </p>
                   <p class="text-xs text-gray-500">Elige {{ g.min_select }}–{{ g.max_select }}</p>
+                  <!-- Se dice una vez por grupo, no en cada una de las 24 opciones. -->
+                  @if (hasOwnQuantities(g)) {
+                    <p class="text-xs text-amber-600 mt-0.5">
+                      Estas cantidades solo aplican si el tamaño del producto no define la suya.
+                    </p>
+                  }
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                   <button (click)="openOptionForm(g)"
@@ -87,8 +97,12 @@ import { OptionFormComponent } from '../components/option-form.component';
                     <li class="px-4 py-2 flex items-center justify-between gap-2 text-sm" [class.opacity-50]="!o.active">
                       <span class="text-gray-800 min-w-0 truncate">
                         {{ o.name }}
-                        @if (o.inventory_item_id) {
-                          <span class="text-xs text-gray-400">· consume insumo</span>
+                        <!-- El insumo concreto, no un "consume insumo" genérico: esta es la
+                             pantalla donde se corrige, así que hay que ver qué descuenta. -->
+                        @if (consumeLabel(o); as label) {
+                          <span class="text-xs text-gray-400">· {{ label }}</span>
+                        } @else {
+                          <span class="text-xs text-amber-600">· sin insumo</span>
                         }
                       </span>
                       <span class="flex items-center gap-1 shrink-0">
@@ -134,6 +148,12 @@ export class OptionGroupsPageComponent implements OnInit {
   readonly service = inject(OptionGroupService);
   private readonly confirm = inject(ConfirmService);
   private readonly toast = inject(ToastService);
+  private readonly inventoryService = inject(InventoryService);
+  private readonly unitMeasureService = inject(UnitMeasureService);
+
+  private readonly unitLookup = computed(() =>
+    buildUnitLookup(this.inventoryService.allItems(), this.unitMeasureService.unitMeasures()),
+  );
 
   readonly showGroupForm = signal(false);
   readonly showOptionForm = signal(false);
@@ -142,7 +162,34 @@ export class OptionGroupsPageComponent implements OnInit {
   readonly editingOption = signal<Option | null>(null);
 
   async ngOnInit(): Promise<void> {
-    await this.service.loadGroups();
+    // Insumos y unidades para poder nombrar lo que descuenta cada opción; en paralelo
+    // porque ninguna de las tres depende de las otras.
+    await Promise.all([
+      this.service.loadGroups(),
+      this.inventoryService.allItems().length === 0 ? this.inventoryService.loadAllItems() : null,
+      this.unitMeasureService.unitMeasures().length === 0
+        ? this.unitMeasureService.loadUnitMeasures()
+        : null,
+    ]);
+  }
+
+  /** Alguna opción trae cantidad propia, que solo aplica como respaldo del tamaño. */
+  hasOwnQuantities(group: OptionGroup): boolean {
+    return group.options.some((o) => o.active && Number(o.item_quantity) > 0);
+  }
+
+  /**
+   * '80 g de Helado chocolate', o cadena vacía si la opción no liga insumo (el template
+   * lo pinta entonces como aviso). Con `item_quantity` en 0 solo se nombra el insumo:
+   * la cantidad la pone el tamaño del producto que ofrezca el grupo.
+   */
+  consumeLabel(option: Option): string {
+    if (!option.inventory_item_id) return '';
+    const lookup = this.unitLookup();
+    const qty = Number(option.item_quantity) || 0;
+    return qty > 0
+      ? lookup.describe(option.inventory_item_id, qty)
+      : lookup.nameOf(option.inventory_item_id);
   }
 
   openCreateGroup(): void {

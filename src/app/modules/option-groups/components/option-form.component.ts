@@ -5,17 +5,22 @@ import {
   Input,
   OnInit,
   Output,
+  computed,
   inject,
+  signal,
 } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { InventoryService } from '../../inventory/services/inventory.service';
+import { buildUnitLookup } from '../../inventory/services/unit-lookup';
+import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { Option, OptionForm, OptionGroup } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
+import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 
 @Component({
   selector: 'app-option-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, SearchableSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -46,21 +51,23 @@ import { OptionGroupService } from '../services/option-group.service';
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Insumo que consume (opcional)</label>
-            <select formControlName="inventory_item_id"
-              class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option [ngValue]="null">Ninguno</option>
-              @for (i of inventoryService.items(); track i.id) {
-                <option [ngValue]="i.id">{{ i.name }}</option>
-              }
-            </select>
+            <!-- Buscador y no un select plano: el catálogo real pasa de 70 insumos. -->
+            <app-searchable-select formControlName="inventory_item_id"
+              [options]="inventoryOptions()" placeholder="Ninguno" />
           </div>
 
           @if (form.value.inventory_item_id) {
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Cantidad consumida</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Cantidad consumida
+                @if (selectedUnit(); as u) { <span class="text-gray-400 font-normal">(en {{ u }})</span> }
+              </label>
               <input formControlName="item_quantity" type="number" min="0" step="0.001" placeholder="0"
                 class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <p class="text-xs text-gray-400 mt-1">En la unidad del insumo. Se descuenta al vender esta opción.</p>
+              <p class="text-xs text-gray-400 mt-1">
+                <strong>Solo se usa si ningún tamaño define una cantidad</strong> para este
+                grupo. Si un tamaño la define, manda la suya y esta se ignora — nunca se suman.
+              </p>
             </div>
           }
 
@@ -93,7 +100,22 @@ export class OptionFormComponent implements OnInit {
 
   readonly service = inject(OptionGroupService);
   readonly inventoryService = inject(InventoryService);
+  private readonly unitMeasureService = inject(UnitMeasureService);
   private readonly fb = inject(FormBuilder);
+
+  readonly inventoryOptions = computed(() =>
+    this.inventoryService.allItems().map((i) => ({ id: i.id, label: i.name })),
+  );
+
+  /** Insumo elegido en el formulario, para poder rotular la cantidad con su unidad. */
+  private readonly selectedItemId = signal<string | null>(null);
+
+  readonly selectedUnit = computed(() =>
+    buildUnitLookup(
+      this.inventoryService.allItems(),
+      this.unitMeasureService.unitMeasures(),
+    ).abbrOf(this.selectedItemId()),
+  );
 
   form: FormGroup = this.fb.group({
     name: ['', Validators.required],
@@ -103,7 +125,13 @@ export class OptionFormComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    if (this.inventoryService.items().length === 0) this.inventoryService.loadItems();
+    // `allItems()`, no `items()`: este último es la página actual (20), así que un
+    // insumo fuera de la primera página era inseleccionable — y sin poder ligar el
+    // insumo, la opción no descuenta nada.
+    if (this.inventoryService.allItems().length === 0) this.inventoryService.loadAllItems();
+    if (this.unitMeasureService.unitMeasures().length === 0) {
+      this.unitMeasureService.loadUnitMeasures();
+    }
     this.service.error.set(null);
     if (this.option) {
       this.form.setValue({
@@ -113,6 +141,10 @@ export class OptionFormComponent implements OnInit {
         item_quantity: this.option.item_quantity,
       });
     }
+    this.selectedItemId.set(this.form.value.inventory_item_id ?? null);
+    this.form.controls['inventory_item_id'].valueChanges.subscribe((id) =>
+      this.selectedItemId.set((id as string | null) ?? null),
+    );
   }
 
   async onSubmit(): Promise<void> {

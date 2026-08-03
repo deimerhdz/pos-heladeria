@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { DiningOrder } from '../interfaces/dining.interface';
+import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { buildMenuLookup } from '../services/menu-lookup';
@@ -64,6 +64,9 @@ import { MenuCategory } from '../../products/interfaces/product.interface';
                   <li class="text-sm text-gray-700">
                     <span class="font-medium">{{ item.quantity }}×</span>
                     {{ variantLabel(item.product_variant_id) }}
+                    @if (optionLabels(item); as opts) {
+                      <span class="block text-xs text-gray-500 pl-5">{{ opts }}</span>
+                    }
                     @if (item.notes) {
                       <span class="block text-xs text-gray-400 pl-5 italic">“{{ item.notes }}”</span>
                     }
@@ -121,6 +124,20 @@ export class PendingOrdersPanelComponent {
 
   variantLabel(variantId: string): string {
     return buildMenuLookup(this.categories).variantLabel(variantId);
+  }
+
+  /**
+   * Sabores elegidos por el comensal. Confirmar es lo que descuenta el inventario, y
+   * la cantidad depende de qué opción se eligió, así que el mesero tiene que verlo
+   * antes de aceptar. Devuelve `null` (no cadena vacía) para que el `@if` no pinte
+   * una línea en blanco.
+   */
+  optionLabels(item: DiningOrderItem): string | null {
+    const lookup = buildMenuLookup(this.categories);
+    const names = (item.options ?? [])
+      .map((o) => lookup.optionLabel(o.option_id))
+      .filter(Boolean);
+    return names.length ? names.join(', ') : null;
   }
 
   total(order: DiningOrder): number {

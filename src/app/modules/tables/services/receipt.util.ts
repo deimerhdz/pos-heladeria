@@ -14,6 +14,8 @@ export interface ReceiptLine {
   quantity: number;
   description: string;
   lineTotal: number;
+  /** Sabores/extras elegidos, ya resueltos a nombre. Se imprimen bajo la línea. */
+  options?: string[];
 }
 
 /** Un pago del ticket, con el nombre del método ya resuelto. */
@@ -76,6 +78,7 @@ export function saleToReceipt(sale: Sale, ctx: ReceiptContext): ReceiptData {
       quantity: it.quantity,
       description: it.description,
       lineTotal: Number(it.line_total),
+      options: (it.options ?? []).map((o) => o.name).filter(Boolean),
     })),
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
@@ -159,7 +162,12 @@ function receiptBody(data: ReceiptData): string {
         <div class="line">
           <div class="desc">${l.quantity} × ${escapeHtml(l.description)}</div>
           <div class="amount">${escapeHtml(formatMoney(l.lineTotal))}</div>
-        </div>`,
+        </div>${
+          l.options?.length
+            ? `
+        <div class="line-options">${escapeHtml(l.options.join(', '))}</div>`
+            : ''
+        }`,
     )
     .join('');
 
@@ -255,6 +263,8 @@ function styles(widthMm: number): string {
   .line:last-child { margin-bottom: 0; }
   .desc { overflow-wrap: anywhere; }
   .amount { text-align: right; white-space: nowrap; }
+  /* Sabores elegidos: sangrados bajo su línea y sin importe propio (ya va en ella). */
+  .line-options { padding-left: 3mm; margin: -1mm 0 2mm; overflow-wrap: anywhere; }
   .totals .row { margin-bottom: 1mm; }
   .total { font-size: 15px; font-weight: 800; margin-top: 2.5mm; padding-top: 2mm; border-top: 1px solid #000; }
   .message { margin-top: 5mm; overflow-wrap: anywhere; }

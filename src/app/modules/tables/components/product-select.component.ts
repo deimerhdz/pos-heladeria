@@ -54,22 +54,30 @@ export interface ProductSelection {
                 @for (v of product.variants; track v.id) {
                   <button
                     type="button"
-                    (click)="variantId.set(v.id)"
+                    (click)="selectVariant(v)"
+                    [disabled]="v.available === false"
                     class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors"
-                    [class]="variantId() === v.id
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
+                    [class]="v.available === false
+                      ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
+                      : variantId() === v.id
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
                   >
                     <span class="font-medium">{{ v.name }}</span>
-                    <span class="font-semibold">$ {{ v.price | number:'1.2-2' }}</span>
+                    @if (v.available === false) {
+                      <span class="text-xs font-semibold text-gray-400">Agotado</span>
+                    } @else {
+                      <span class="font-semibold">$ {{ v.price | number:'1.2-2' }}</span>
+                    }
                   </button>
                 }
               </div>
             </div>
           }
 
-          <!-- Option groups -->
-          @for (group of product.option_groups; track group.id) {
+          <!-- Option groups: los de la PRESENTACIÓN elegida, no los del producto.
+               Cuántos sabores se eligen cambia con el tamaño. -->
+          @for (group of activeGroups(); track group.id) {
             <div>
               <div class="flex items-center justify-between mb-2">
                 <p class="text-sm font-semibold text-gray-700">{{ group.name }}</p>
@@ -80,16 +88,21 @@ export interface ProductSelection {
                   <button
                     type="button"
                     (click)="toggleOption(group, opt)"
+                    [disabled]="!opt.available"
                     class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors"
-                    [class]="isSelected(opt.id)
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
+                    [class]="!opt.available
+                      ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
+                      : isSelected(opt.id)
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
+                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
                   >
                     <span class="flex items-center gap-2">
-                      <span class="text-xs">{{ isSelected(opt.id) ? '☑️' : '⬜️' }}</span>
-                      <span class="font-medium">{{ opt.name }}</span>
+                      <span class="text-xs">{{ !opt.available ? '🚫' : isSelected(opt.id) ? '☑️' : '⬜️' }}</span>
+                      <span class="font-medium" [class.line-through]="!opt.available">{{ opt.name }}</span>
                     </span>
-                    @if (opt.extra_price > 0) {
+                    @if (!opt.available) {
+                      <span class="text-xs font-semibold text-gray-400">Agotado</span>
+                    } @else if (opt.extra_price > 0) {
                       <span class="text-xs text-gray-500">+ $ {{ opt.extra_price | number:'1.2-2' }}</span>
                     }
                   </button>
@@ -150,20 +163,46 @@ export class ProductSelectComponent implements OnInit {
   readonly notes = signal('');
 
   ngOnInit(): void {
-    // Preselect the first (often only) variant.
-    if (this.product.variants.length > 0) {
-      this.variantId.set(this.product.variants[0].id);
-    }
+    // Preselecciona la primera presentación pedible (a menudo la única).
+    const first =
+      this.product.variants.find((v) => v.available !== false) ?? this.product.variants[0];
+    if (first) this.variantId.set(first.id);
   }
 
-  private readonly selectedVariant = computed<MenuVariant | null>(
+  readonly selectedVariant = computed<MenuVariant | null>(
     () => this.product.variants.find((v) => v.id === this.variantId()) ?? null,
   );
+
+  /** Grupos que ofrece la presentación elegida; son los que gobiernan la selección. */
+  readonly activeGroups = computed<MenuOptionGroup[]>(
+    () => this.selectedVariant()?.option_groups ?? [],
+  );
+
+  /**
+   * Cambiar de tamaño reconcilia lo ya elegido en vez de dejarlo obsoleto: se conserva
+   * lo que el tamaño nuevo sigue ofreciendo y se recorta a su `max_select`. Sin esto,
+   * pasar de "Mediana" (2 sabores) a "Pequeña" (1) dejaría dos elegidos y el backend
+   * respondería 422 al añadir al carrito.
+   */
+  selectVariant(v: MenuVariant): void {
+    if (v.available === false || v.id === this.variantId()) return;
+    this.variantId.set(v.id);
+    this.selected.update((map) => {
+      const next: Record<string, string[]> = {};
+      for (const group of v.option_groups) {
+        const previos = (map[group.id] ?? []).filter((id) =>
+          group.options.some((o) => o.id === id && o.available),
+        );
+        if (previos.length) next[group.id] = previos.slice(0, group.max_select);
+      }
+      return next;
+    });
+  }
 
   private readonly selectedOptions = computed<MenuOption[]>(() => {
     const map = this.selected();
     const opts: MenuOption[] = [];
-    for (const group of this.product.option_groups) {
+    for (const group of this.activeGroups()) {
       const ids = map[group.id] ?? [];
       for (const opt of group.options) {
         if (ids.includes(opt.id)) opts.push(opt);
@@ -183,6 +222,9 @@ export class ProductSelectComponent implements OnInit {
   }
 
   groupHint(group: MenuOptionGroup): string {
+    const disponibles = group.options.filter((o) => o.available).length;
+    if (disponibles === 0) return 'Sin existencias';
+    if (disponibles < group.min_select) return `Solo quedan ${disponibles}`;
     if (group.max_select === 1 && group.min_select === 1) return 'Elige 1';
     if (group.min_select > 0) return `Elige ${group.min_select}–${group.max_select}`;
     if (group.max_select > 0) return `Hasta ${group.max_select}`;
@@ -191,11 +233,18 @@ export class ProductSelectComponent implements OnInit {
 
   groupError(group: MenuOptionGroup): string | null {
     const n = (this.selected()[group.id] ?? []).length;
-    if (n < group.min_select) return `Selecciona al menos ${group.min_select}`;
+    if (n < group.min_select) {
+      const disponibles = group.options.filter((o) => o.available).length;
+      if (disponibles < group.min_select) {
+        return 'No hay suficientes opciones disponibles ahora mismo.';
+      }
+      return `Selecciona al menos ${group.min_select}`;
+    }
     return null;
   }
 
   toggleOption(group: MenuOptionGroup, opt: MenuOption): void {
+    if (!opt.available) return;
     this.selected.update((map) => {
       const current = map[group.id] ?? [];
       const has = current.includes(opt.id);
@@ -214,10 +263,14 @@ export class ProductSelectComponent implements OnInit {
   }
 
   canConfirm(): boolean {
-    if (!this.selectedVariant()) return false;
-    return this.product.option_groups.every(
-      (g) => (this.selected()[g.id] ?? []).length >= g.min_select,
-    );
+    const variant = this.selectedVariant();
+    if (!variant || variant.available === false) return false;
+    return this.activeGroups().every((g) => {
+      const chosen = this.selected()[g.id] ?? [];
+      if (chosen.length < g.min_select || chosen.length > g.max_select) return false;
+      // El menú pudo refrescarse con el modal abierto y dejar agotado algo ya elegido.
+      return chosen.every((id) => g.options.find((o) => o.id === id)?.available !== false);
+    });
   }
 
   inc(): void {

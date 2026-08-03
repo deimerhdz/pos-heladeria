@@ -148,12 +148,36 @@ describe('saleToReceipt', () => {
 
     expect(receipt.total).toBe(12000);
     expect(receipt.lines).toEqual([
-      { quantity: 2, description: 'Helado de vainilla', lineTotal: 12000 },
+      { quantity: 2, description: 'Helado de vainilla', lineTotal: 12000, options: [] },
     ]);
     // El nombre del método lo resuelve quien llama; la venta solo trae el id.
     expect(receipt.payments).toEqual([{ name: 'Efectivo', amount: 15000 }]);
     expect(receipt.change).toBe(3000);
     expect(receipt.invoice).toEqual({ prefix: '', number: 7 });
+  });
+
+  it('lleva al ticket los sabores elegidos, tomándolos del snapshot de la venta', () => {
+    // Se usa el nombre congelado en la venta, no el catálogo vivo: un sabor
+    // desactivado después seguiría siendo legible al reimprimir.
+    const receipt = saleToReceipt(
+      makeSale({
+        items: [
+          {
+            id: 'i1',
+            product_variant_id: 'v1',
+            description: 'Ensalada de frutas',
+            quantity: 1,
+            unit_price: '12000',
+            line_total: '12000',
+            options: [{ option_id: 'o1', name: 'Chocolate', extra_price: '0' }],
+          },
+        ],
+      } as Partial<Sale>),
+      ctx,
+    );
+
+    expect(receipt.lines[0].options).toEqual(['Chocolate']);
+    expect(buildReceiptHtml([receipt])).toContain('Chocolate');
   });
 
   it('arma la etiqueta de la mesa desde la venta', () => {
