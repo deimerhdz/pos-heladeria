@@ -15,6 +15,7 @@ import {
   MenuProduct,
   MenuVariant,
 } from '../../products/interfaces/product.interface';
+import { normalizeText } from '../../../shared/normalize-text';
 
 /** Emitted when the diner confirms their selection for a product. */
 export interface ProductSelection {
@@ -41,7 +42,14 @@ export interface ProductSelection {
           </button>
         </div>
 
-        <div class="px-6 py-4 space-y-5 overflow-y-auto">
+        <div class="overflow-y-auto">
+          <!-- Sin foto no se reserva alto: un emoji gigante solo restaría sitio a los sabores. -->
+          @if (product.image_url) {
+            <img [src]="product.image_url" [alt]="product.name"
+              class="w-full aspect-[16/9] object-cover bg-indigo-50" />
+          }
+
+          <div class="px-6 py-4 space-y-5">
           @if (product.description) {
             <p class="text-sm text-gray-500">{{ product.description }}</p>
           }
@@ -78,38 +86,85 @@ export interface ProductSelection {
           <!-- Option groups: los de la PRESENTACIÓN elegida, no los del producto.
                Cuántos sabores se eligen cambia con el tamaño. -->
           @for (group of activeGroups(); track group.id) {
-            <div>
-              <div class="flex items-center justify-between mb-2">
-                <p class="text-sm font-semibold text-gray-700">{{ group.name }}</p>
-                <span class="text-xs text-gray-400">{{ groupHint(group) }}</span>
-              </div>
-              <div class="space-y-2">
-                @for (opt of group.options; track opt.id) {
-                  <button
-                    type="button"
-                    (click)="toggleOption(group, opt)"
-                    [disabled]="!opt.available"
-                    class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors"
-                    [class]="!opt.available
-                      ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
-                      : isSelected(opt.id)
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
-                  >
-                    <span class="flex items-center gap-2">
-                      <span class="text-xs">{{ !opt.available ? '🚫' : isSelected(opt.id) ? '☑️' : '⬜️' }}</span>
-                      <span class="font-medium" [class.line-through]="!opt.available">{{ opt.name }}</span>
-                    </span>
-                    @if (!opt.available) {
-                      <span class="text-xs font-semibold text-gray-400">Agotado</span>
-                    } @else if (opt.extra_price > 0) {
-                      <span class="text-xs text-gray-500">+ $ {{ opt.extra_price | number:'1.2-2' }}</span>
+            <div class="border border-gray-100 rounded-xl overflow-hidden">
+              <!-- Cabecera plegable: nombre, progreso y lo ya elegido -->
+              <button type="button" (click)="toggleGroup(group.id)"
+                class="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                <span class="min-w-0">
+                  <span class="block text-sm font-semibold text-gray-700">{{ group.name }}</span>
+                  @if (!isExpanded(group.id) && chosenCount(group) > 0) {
+                    <span class="block text-xs text-indigo-600 truncate">{{ chosenNames(group) }}</span>
+                  }
+                </span>
+                <span class="flex items-center gap-2 shrink-0">
+                  <span class="text-xs font-medium"
+                    [class]="isComplete(group) ? 'text-emerald-600' : 'text-gray-400'">
+                    {{ groupHint(group) }}
+                  </span>
+                  <span class="text-gray-400 text-xs">{{ isExpanded(group.id) ? '▲' : '▼' }}</span>
+                </span>
+              </button>
+
+              @if (isExpanded(group.id)) {
+                <div class="px-4 pb-4 space-y-3">
+                  @if (showSearch(group)) {
+                    <input type="search" [value]="filterValue(group.id)"
+                      (input)="setFilter(group.id, $any($event.target).value)"
+                      [placeholder]="'Buscar en ' + group.name + '…'"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                  }
+
+                  <!-- Rejilla de 2 columnas: 24 sabores caben en 12 filas. -->
+                  <div class="grid grid-cols-2 gap-2">
+                    @for (opt of visibleOptions(group); track opt.id) {
+                      <button
+                        type="button"
+                        (click)="toggleOption(group, opt)"
+                        class="min-h-[3rem] px-3 py-2 rounded-xl border text-sm text-left leading-tight transition-colors"
+                        [class]="isSelected(opt.id)
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'"
+                      >
+                        <span class="flex items-start justify-between gap-1">
+                          <span class="font-medium">{{ opt.name }}</span>
+                          @if (isSelected(opt.id) && group.max_select > 1) {
+                            <span class="shrink-0 w-4 h-4 rounded-full bg-white/25 text-[10px] font-bold flex items-center justify-center">
+                              {{ selectionOrder(group, opt.id) }}
+                            </span>
+                          }
+                        </span>
+                        @if (opt.extra_price > 0) {
+                          <span class="block text-xs mt-0.5"
+                            [class]="isSelected(opt.id) ? 'text-indigo-100' : 'text-gray-500'">
+                            + $ {{ opt.extra_price | number:'1.2-2' }}
+                          </span>
+                        }
+                      </button>
                     }
-                  </button>
-                }
-              </div>
-              @if (groupError(group)) {
-                <p class="text-red-500 text-xs mt-1">{{ groupError(group) }}</p>
+                  </div>
+
+                  @if (visibleOptions(group).length === 0) {
+                    <p class="text-sm text-gray-400 text-center py-2">Ningún sabor coincide.</p>
+                  }
+
+                  <!-- Agotados aparte y al final: que existan se informa, pero no estorban. -->
+                  @if (soldOutOptions(group).length > 0) {
+                    <div>
+                      <p class="text-xs font-medium text-gray-400 mb-1.5">Agotados</p>
+                      <div class="grid grid-cols-2 gap-2">
+                        @for (opt of soldOutOptions(group); track opt.id) {
+                          <span class="min-h-[3rem] px-3 py-2 rounded-xl bg-gray-50 text-sm text-gray-400 line-through leading-tight">
+                            {{ opt.name }}
+                          </span>
+                        }
+                      </div>
+                    </div>
+                  }
+
+                  @if (groupError(group)) {
+                    <p class="text-red-500 text-xs">{{ groupError(group) }}</p>
+                  }
+                </div>
               }
             </div>
           }
@@ -126,6 +181,7 @@ export interface ProductSelection {
               class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
+          </div>
         </div>
 
         <!-- Footer -->
@@ -138,13 +194,18 @@ export interface ProductSelection {
               <button type="button" (click)="inc()" class="w-8 h-8 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold">+</button>
             </div>
           </div>
+          <!-- Con el grupo plegado, un botón atenuado sin más no dice qué falta. -->
           <button
             type="button"
             (click)="confirm()"
             [disabled]="!canConfirm()"
             class="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Agregar · $ {{ lineTotal() | number:'1.2-2' }}
+            @if (blockingLabel(); as falta) {
+              {{ falta }}
+            } @else {
+              Agregar · $ {{ lineTotal() | number:'1.2-2' }}
+            }
           </button>
         </div>
       </div>
@@ -157,16 +218,23 @@ export class ProductSelectComponent implements OnInit {
   @Output() cancelled = new EventEmitter<void>();
 
   readonly variantId = signal<string | null>(null);
-  /** group.id → selected option ids. */
+  /** group.id → selected option ids, **en orden de selección** (de ahí sale el 1, 2, 3). */
   readonly selected = signal<Record<string, string[]>>({});
   readonly quantity = signal(1);
   readonly notes = signal('');
+  /** Grupos desplegados. Ver `syncExpanded`: se abre lo que falta, se cierra lo completo. */
+  private readonly expanded = signal<ReadonlySet<string>>(new Set());
+  /** group.id → texto del buscador. */
+  private readonly filters = signal<Record<string, string>>({});
+  /** A partir de cuántas opciones el buscador compensa su propio espacio. */
+  private readonly SEARCH_THRESHOLD = 10;
 
   ngOnInit(): void {
     // Preselecciona la primera presentación pedible (a menudo la única).
     const first =
       this.product.variants.find((v) => v.available !== false) ?? this.product.variants[0];
     if (first) this.variantId.set(first.id);
+    this.syncExpanded();
   }
 
   readonly selectedVariant = computed<MenuVariant | null>(
@@ -197,6 +265,8 @@ export class ProductSelectComponent implements OnInit {
       }
       return next;
     });
+    // Los grupos del tamaño nuevo son otros: hay que recalcular qué queda abierto.
+    this.syncExpanded();
   }
 
   private readonly selectedOptions = computed<MenuOption[]>(() => {
@@ -221,14 +291,121 @@ export class ProductSelectComponent implements OnInit {
     return Object.values(this.selected()).some((ids) => ids.includes(optId));
   }
 
+  /** Posición de la opción dentro del grupo (1, 2, 3…), o 0 si no está elegida. */
+  selectionOrder(group: MenuOptionGroup, optId: string): number {
+    return (this.selected()[group.id] ?? []).indexOf(optId) + 1;
+  }
+
+  chosenCount(group: MenuOptionGroup): number {
+    return (this.selected()[group.id] ?? []).length;
+  }
+
+  isComplete(group: MenuOptionGroup): boolean {
+    const n = this.chosenCount(group);
+    return n >= group.min_select && n >= group.max_select;
+  }
+
+  // --- Acordeón ---
+
+  isExpanded(groupId: string): boolean {
+    return this.expanded().has(groupId);
+  }
+
+  toggleGroup(groupId: string): void {
+    this.expanded.update((open) => {
+      const next = new Set(open);
+      next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+      return next;
+    });
+  }
+
+  /**
+   * Deja abierto lo que falta por elegir y cerrado lo que ya está completo.
+   *
+   * Se llama al abrir el modal, al cambiar de presentación y tras cada elección: así el
+   * grupo se pliega solo al completarse y el siguiente queda a la vista, sin que el
+   * comensal tenga que buscar el botón de agregar al final de 24 sabores.
+   */
+  private syncExpanded(): void {
+    this.expanded.set(
+      new Set(this.activeGroups().filter((g) => !this.isComplete(g)).map((g) => g.id)),
+    );
+  }
+
+  // --- Opciones ---
+
+  /**
+   * Elegibles: disponibles y que casen con el buscador, en el orden del catálogo.
+   *
+   * Lo ya elegido se muestra aunque no case con el filtro: si al buscar "ore"
+   * desaparecieran los dos sabores que llevas marcados, parecería que se perdieron.
+   */
+  visibleOptions(group: MenuOptionGroup): MenuOption[] {
+    const q = normalizeText(this.filters()[group.id] ?? '');
+    return group.options.filter(
+      (o) => o.available && (!q || normalizeText(o.name).includes(q) || this.isSelected(o.id)),
+    );
+  }
+
+  /** Agotados, aparte y al final: que existan se informa, pero no estorban al elegir. */
+  soldOutOptions(group: MenuOptionGroup): MenuOption[] {
+    const q = normalizeText(this.filters()[group.id] ?? '');
+    return group.options.filter(
+      (o) => !o.available && (!q || normalizeText(o.name).includes(q)),
+    );
+  }
+
+  showSearch(group: MenuOptionGroup): boolean {
+    return group.options.length > this.SEARCH_THRESHOLD;
+  }
+
+  filterValue(groupId: string): string {
+    return this.filters()[groupId] ?? '';
+  }
+
+  setFilter(groupId: string, value: string): void {
+    this.filters.update((f) => ({ ...f, [groupId]: value }));
+  }
+
+  /** Nombres elegidos, para el resumen de la cabecera cuando el grupo está plegado. */
+  chosenNames(group: MenuOptionGroup): string {
+    const ids = this.selected()[group.id] ?? [];
+    return ids
+      .map((id) => group.options.find((o) => o.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
+  }
+
   groupHint(group: MenuOptionGroup): string {
     const disponibles = group.options.filter((o) => o.available).length;
     if (disponibles === 0) return 'Sin existencias';
     if (disponibles < group.min_select) return `Solo quedan ${disponibles}`;
-    if (group.max_select === 1 && group.min_select === 1) return 'Elige 1';
-    if (group.min_select > 0) return `Elige ${group.min_select}–${group.max_select}`;
-    if (group.max_select > 0) return `Hasta ${group.max_select}`;
+    const n = this.chosenCount(group);
+    // Con un tope fijo el progreso es lo único que importa; si el rango es abierto hay
+    // que recordar además cuál es.
+    if (group.min_select === group.max_select) return `${n} de ${group.max_select}`;
+    if (group.min_select > 0) return `${n} · elige ${group.min_select}–${group.max_select}`;
+    if (group.max_select > 0) return `${n} · hasta ${group.max_select}`;
     return 'Opcional';
+  }
+
+  /**
+   * Qué falta para poder agregar, en el propio botón. Antes solo se atenuaba, y con el
+   * grupo plegado no había forma de saber por qué.
+   */
+  blockingLabel(): string | null {
+    const variant = this.selectedVariant();
+    if (!variant) return 'Elige una presentación';
+    if (variant.available === false) return 'Presentación agotada';
+    for (const g of this.activeGroups()) {
+      const faltan = g.min_select - this.chosenCount(g);
+      if (faltan > 0) {
+        return faltan === 1
+          ? `Elige 1 más de ${g.name}`
+          : `Elige ${faltan} más de ${g.name}`;
+      }
+    }
+    return null;
   }
 
   groupError(group: MenuOptionGroup): string | null {
@@ -260,6 +437,19 @@ export class ProductSelectComponent implements OnInit {
       }
       return { ...map, [group.id]: next };
     });
+
+    // Se pliega al completar y se reabre si se deshace una elección. El buscador se
+    // limpia al cerrar para que reabrirlo no muestre una lista filtrada a medias.
+    if (this.isComplete(group)) {
+      this.expanded.update((open) => {
+        const nextOpen = new Set(open);
+        nextOpen.delete(group.id);
+        return nextOpen;
+      });
+      this.setFilter(group.id, '');
+    } else {
+      this.expanded.update((open) => new Set(open).add(group.id));
+    }
   }
 
   canConfirm(): boolean {
