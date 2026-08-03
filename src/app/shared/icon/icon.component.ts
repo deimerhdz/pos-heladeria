@@ -138,6 +138,31 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
           <path d="M10 14h4" />
           <path d="M10 18h4" />
         }
+        @case ('home') {
+          <path d="M3 10.5 12 3l9 7.5" />
+          <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+          <path d="M9 21v-6h6v6" />
+        }
+        @case ('receipt') {
+          <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+          <path d="M8 8h8" />
+          <path d="M8 12h8" />
+          <path d="M8 16h5" />
+        }
+        @case ('cart') {
+          <path d="M6 2 3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7l-3-5Z" />
+          <path d="M3 7h18" />
+          <path d="M16 11a4 4 0 0 1-8 0" />
+        }
+        @case ('exit') {
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <path d="m16 17 5-5-5-5" />
+          <path d="M21 12H9" />
+        }
+        @case ('search') {
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        }
         @default {
           <circle cx="12" cy="12" r="9" />
           <circle cx="12" cy="12" r="1" />
