@@ -3,13 +3,15 @@ import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
-import { MenuCategory } from '../../products/interfaces/product.interface';
+import { MenuCategory, MenuOptionGroup } from '../../products/interfaces/product.interface';
 
 /** Raw backend menu (decimals arrive as strings). */
 interface MenuOptionResponse {
   id: string;
   name: string;
   extra_price: string;
+  /** Ausente contra un backend sin desplegar; se asume disponible. */
+  available?: boolean;
 }
 
 interface MenuOptionGroupResponse {
@@ -24,6 +26,8 @@ interface MenuVariantResponse {
   id: string;
   name: string;
   price: string;
+  option_groups?: MenuOptionGroupResponse[];
+  available?: boolean;
 }
 
 interface MenuProductResponse {
@@ -33,12 +37,28 @@ interface MenuProductResponse {
   image_url: string | null;
   variants?: MenuVariantResponse[];
   option_groups?: MenuOptionGroupResponse[];
+  available?: boolean;
 }
 
 interface MenuCategoryResponse {
   id: string;
   name: string;
   products?: MenuProductResponse[];
+}
+
+function toGroup(g: MenuOptionGroupResponse): MenuOptionGroup {
+  return {
+    id: g.id,
+    name: g.name,
+    min_select: g.min_select,
+    max_select: g.max_select,
+    options: (g.options ?? []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      extra_price: Number(o.extra_price),
+      available: o.available ?? true,
+    })),
+  };
 }
 
 /** Read-only public menu (`GET /menu`) — the active catalog customers see. */
@@ -73,22 +93,16 @@ export class MenuService {
         name: p.name,
         description: p.description,
         image_url: p.image_url,
+        // `?? true` para no romper contra un backend aún sin desplegar.
+        available: p.available ?? true,
         variants: (p.variants ?? []).map((v) => ({
           id: v.id,
           name: v.name,
           price: Number(v.price),
+          option_groups: (v.option_groups ?? []).map(toGroup),
+          available: v.available ?? true,
         })),
-        option_groups: (p.option_groups ?? []).map((g) => ({
-          id: g.id,
-          name: g.name,
-          min_select: g.min_select,
-          max_select: g.max_select,
-          options: (g.options ?? []).map((o) => ({
-            id: o.id,
-            name: o.name,
-            extra_price: Number(o.extra_price),
-          })),
-        })),
+        option_groups: (p.option_groups ?? []).map(toGroup),
       })),
     };
   }

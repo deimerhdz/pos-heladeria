@@ -163,16 +163,12 @@ export interface OptionUpdatePayload {
   active?: boolean;
 }
 
-/** `POST /products/{pid}/option-groups` (`ProductOptionGroupCreate`). */
-export interface ProductOptionGroupPayload {
-  option_group_id: string;
-  min_select: number;
-  max_select: number;
-}
-
 // --- Recipes (per variant, consume inventory items) ---
 
-/** One line of a variant recipe. Mirrors `RecipeItemResponse` / `RecipeItemIn`. */
+/**
+ * Un insumo fijo que la variante consume siempre (200 g de fruta). Lo que el cliente
+ * elige va en {@link VariantOptionGroup}, no aquí.
+ */
 export interface RecipeItem {
   inventory_item_id: string;
   quantity: number;
@@ -183,18 +179,55 @@ export interface RecipeSetPayload {
   items: RecipeItem[];
 }
 
+// --- Grupos de opciones por variante ---
+
+/**
+ * Un grupo que ofrece una presentación: cuántas opciones elige el cliente y cuánto
+ * descuenta **cada una** de ellas.
+ *
+ * Vive en la variante y no en el producto porque las tres cosas cambian con el tamaño:
+ * la ensalada pequeña elige 1 sabor y descuenta 60 g, la mediana elige 2 y descuenta
+ * 120 g de cada uno.
+ *
+ * `quantity_per_option` es por opción elegida, no el total del grupo. En 0 el grupo se
+ * ofrece pero no descuenta por sí mismo.
+ */
+export interface VariantOptionGroup {
+  option_group_id: string;
+  min_select: number;
+  max_select: number;
+  quantity_per_option: number;
+}
+
+/** `PUT /variants/{id}/option-groups` (`VariantOptionGroupSet`). */
+export interface VariantOptionGroupSetPayload {
+  groups: VariantOptionGroup[];
+}
+
 // --- Draft (single-page create/edit) ---
 //
 // El backend no admite creación anidada; el draft es el modelo de UI que la
 // página unifica y que `ProductService.saveProduct` orquesta en varias llamadas.
 
-/** Una línea de receta en el draft (insumo fijo). */
+/** Un insumo fijo en el draft. `inventory_item_id` es null mientras no se elige. */
 export interface RecipeLineDraft {
-  inventory_item_id: string;
+  inventory_item_id: string | null;
   quantity: number;
 }
 
-/** Una variante en el draft. `id === null` = aún no existe en el backend. */
+/** Un grupo ofrecido por la variante, en el draft. `name` se resuelve para mostrarlo. */
+export interface VariantOptionGroupDraft {
+  option_group_id: string | null;
+  name: string;
+  min_select: number;
+  max_select: number;
+  quantity_per_option: number;
+}
+
+/**
+ * Una presentación en el draft, con TODO lo suyo: precio, insumos fijos y grupos.
+ * `id === null` = aún no existe en el backend.
+ */
 export interface VariantDraft {
   /** Id de backend, o null si es nueva. */
   id: string | null;
@@ -203,16 +236,7 @@ export interface VariantDraft {
   name: string;
   price: number;
   recipe: RecipeLineDraft[];
-}
-
-/** Asignación de un grupo de opciones al producto. `assigned` = ya persistida. */
-export interface OptionGroupAssignmentDraft {
-  option_group_id: string;
-  name: string;
-  min_select: number;
-  max_select: number;
-  /** true si ya está asignada en el backend (al quitarla se hace DELETE). */
-  assigned: boolean;
+  optionGroups: VariantOptionGroupDraft[];
 }
 
 /** Draft completo del producto para la página unificada de crear/editar. */
@@ -226,9 +250,6 @@ export interface ProductDraft {
   active: boolean;
   hasSizes: boolean;
   variants: VariantDraft[];
-  optionGroups: OptionGroupAssignmentDraft[];
-  /** Grupos asignados al cargar el draft; los que ya no estén se desasignan al guardar. */
-  originalOptionGroupIds: string[];
 }
 
 // --- Public menu (`GET /menu`) ---
@@ -237,6 +258,8 @@ export interface MenuOption {
   id: string;
   name: string;
   extra_price: number;
+  /** Hay stock del insumo que consume. `false` = se muestra como "Agotado". */
+  available: boolean;
 }
 
 export interface MenuOptionGroup {
@@ -251,6 +274,13 @@ export interface MenuVariant {
   id: string;
   name: string;
   price: number;
+  /**
+   * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
+   * grupos cambia con el tamaño.
+   */
+  option_groups: MenuOptionGroup[];
+  /** `false` si un grupo obligatorio de esta presentación se quedó sin stock. */
+  available: boolean;
 }
 
 export interface MenuProduct {
@@ -259,7 +289,15 @@ export interface MenuProduct {
   description: string | null;
   image_url: string | null;
   variants: MenuVariant[];
+  /**
+   * Unión de los grupos de todas las presentaciones. **Solo sirve para resolver el
+   * nombre y el precio de una opción** (tickets, comandas, carrito): su
+   * `min/max_select` es el de la primera presentación que lo ofrece y no significa
+   * nada. Para saber qué puede elegir el cliente, usar `variants[].option_groups`.
+   */
   option_groups: MenuOptionGroup[];
+  /** `false` si ninguna presentación se puede pedir. */
+  available: boolean;
 }
 
 export interface MenuCategory {

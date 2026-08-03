@@ -11,11 +11,38 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
+import { buildUnitLookup, formatQuantity } from '../../inventory/services/unit-lookup';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
-import { PreparationType, ProductDraft, VariantDraft } from '../interfaces/product.interface';
+import {
+  PreparationType,
+  ProductDraft,
+  RecipeLineDraft,
+  VariantDraft,
+  VariantOptionGroupDraft,
+} from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
+
+/** Una fila del desglose: qué pasa si el cliente elige esta opción. */
+interface SlotBreakdownRow {
+  optionId: string;
+  optionName: string;
+  /** Vacío si la opción no tiene insumo ligado (no descontaría nada). */
+  itemName: string;
+  /** Cantidad total con unidad, ya resuelta: '80 g'. */
+  amount: string;
+  /** Desglose de la suma cuando la opción aporta consumo propio; vacío si no. */
+  extra: string;
+}
+
+interface SlotBreakdown {
+  rows: SlotBreakdownRow[];
+  /** 'Helado chocolate, Helado fresa y 20 más'. */
+  summary: string;
+  /** Cuántas opciones activas no tienen insumo. */
+  missing: number;
+}
 
 /**
  * Página unificada de crear/editar producto (rediseño del prototipo, adaptado al
@@ -103,62 +130,26 @@ import { SearchableSelectComponent } from '../../../shared/searchable-select/sea
           </div>
         </section>
 
-        <!-- ===== Variantes de tamaño ===== -->
+        <!-- ===== Tamaños del producto =====
+             Todo lo de una presentación vive junto: precio, insumos fijos y sabores a
+             elegir. Antes estaba repartido en tres secciones y obligaba a ir y venir
+             entre ellas para configurar un solo tamaño. -->
         <section class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <h3 class="text-sm font-semibold text-gray-900">Variantes de tamaño</h3>
-              <p class="text-xs text-gray-500 mt-1">Actívalo si este producto se vende en más de un tamaño, cada uno con su receta.</p>
+              <h3 class="text-sm font-semibold text-gray-900">Tamaños del producto</h3>
+              <p class="text-xs text-gray-500 mt-1">Cada tamaño tiene su precio, sus insumos y cuántos sabores puede elegir el cliente.</p>
             </div>
             <button type="button" (click)="toggleHasSizes()" role="switch" [attr.aria-checked]="draft().hasSizes"
               class="relative w-11 h-6 rounded-full transition-colors shrink-0"
-              [class]="draft().hasSizes ? 'bg-indigo-600' : 'bg-gray-300'">
+              [class]="draft().hasSizes ? 'bg-indigo-600' : 'bg-gray-300'"
+              title="Actívalo si este producto se vende en más de un tamaño">
               <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" [class]="draft().hasSizes ? 'left-[22px]' : 'left-0.5'"></span>
             </button>
           </div>
 
           @if (draft().hasSizes) {
-            <div class="flex flex-wrap gap-2.5 mt-4">
-              @for (v of draft().variants; track v.localId) {
-                <div class="flex items-center gap-1.5 border-2 rounded-xl px-2.5 py-1.5"
-                  [class]="v.localId === activeLocalId() ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'">
-                  <input [value]="v.name" (input)="setVariantField(v.localId, 'name', $any($event.target).value)"
-                    class="w-24 bg-transparent font-semibold text-sm outline-none" />
-                  <span class="text-gray-400 text-sm">$</span>
-                  <input type="number" min="0" [value]="v.price" (input)="setVariantField(v.localId, 'price', +$any($event.target).value)"
-                    class="w-20 bg-transparent text-sm outline-none" />
-                  @if (draft().variants.length > 1) {
-                    <button type="button" (click)="removeVariant(v.localId)" class="text-gray-400 hover:text-red-500 text-base leading-none">×</button>
-                  }
-                </div>
-              }
-              <button type="button" (click)="addVariant()"
-                class="border-2 border-dashed border-gray-300 rounded-xl px-4 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
-                + Agregar tamaño
-              </button>
-            </div>
-          } @else {
-            <div class="mt-4 max-w-xs">
-              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
-              <div class="flex items-center gap-1.5 border border-gray-300 rounded-xl px-3 py-2">
-                <span class="text-gray-400 text-sm">$</span>
-                <input type="number" min="0" [value]="draft().variants[0].price"
-                  (input)="setVariantField(draft().variants[0].localId, 'price', +$any($event.target).value)"
-                  class="w-full text-sm outline-none" />
-              </div>
-            </div>
-          }
-        </section>
-
-        <!-- ===== Receta ===== -->
-        <section class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h3 class="text-sm font-semibold text-gray-900">
-            Receta @if (draft().hasSizes && activeVariant()) { <span class="text-gray-400 font-normal">— {{ activeVariant()!.name }}</span> }
-          </h3>
-          <p class="text-xs text-gray-500 mt-1 mb-4">Los insumos que consume cada venta de esta variante. El stock se descuenta por insumo.</p>
-
-          @if (draft().hasSizes) {
-            <div class="flex flex-wrap gap-2 mb-4">
+            <div class="flex flex-wrap gap-2 mt-4">
               @for (v of draft().variants; track v.localId) {
                 <button type="button" (click)="activeLocalId.set(v.localId)"
                   class="px-4 py-1.5 rounded-lg border text-sm font-semibold transition-colors"
@@ -166,60 +157,183 @@ import { SearchableSelectComponent } from '../../../shared/searchable-select/sea
                   {{ v.name }}
                 </button>
               }
+              <button type="button" (click)="addVariant()"
+                class="border-2 border-dashed border-gray-300 rounded-lg px-4 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                + Agregar tamaño
+              </button>
             </div>
           }
 
           @if (activeVariant(); as av) {
-            <div class="space-y-2">
-              @if (av.recipe.length === 0) {
-                <p class="text-sm text-gray-400">Sin insumos. Agrega los que consume esta variante.</p>
-              }
-              @for (line of av.recipe; track $index) {
-                <div class="flex items-center gap-2">
-                  <app-searchable-select [ngModel]="line.inventory_item_id"
-                    (ngModelChange)="setRecipeField(av.localId, $index, 'inventory_item_id', $event)"
-                    [options]="inventoryOptions()" placeholder="Insumo…" class="flex-1" />
-                  <input type="number" min="0" step="0.001" [value]="line.quantity"
-                    (input)="setRecipeField(av.localId, $index, 'quantity', +$any($event.target).value)" placeholder="Cant."
-                    class="w-24 px-2 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                  <span class="w-12 text-xs text-gray-400">{{ unitAbbr(line.inventory_item_id) }}</span>
-                  <button type="button" (click)="removeRecipeLine(av.localId, $index)"
-                    class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg">✕</button>
+            <div class="mt-4 space-y-5">
+              <!-- Nombre y precio del tamaño -->
+              <div class="flex flex-wrap items-end gap-3">
+                @if (draft().hasSizes) {
+                  <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Nombre</label>
+                    <input [value]="av.name" (input)="setVariantField(av.localId, 'name', $any($event.target).value)"
+                      class="w-40 px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                }
+                <div>
+                  <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
+                  <div class="flex items-center gap-1.5 border border-gray-300 rounded-xl px-3 py-2 w-36">
+                    <span class="text-gray-400 text-sm">$</span>
+                    <input type="number" min="0" [value]="av.price"
+                      (input)="setVariantField(av.localId, 'price', +$any($event.target).value)"
+                      class="w-full text-sm outline-none" />
+                  </div>
                 </div>
+                @if (draft().hasSizes && draft().variants.length > 1) {
+                  <button type="button" (click)="removeVariant(av.localId)"
+                    class="px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors">
+                    Eliminar tamaño
+                  </button>
+                }
+              </div>
+
+              <!-- Insumos fijos -->
+              <div>
+                <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insumos fijos</h4>
+                <p class="text-xs text-gray-400 mt-0.5 mb-2">Se descuentan siempre que se venda este tamaño.</p>
+                <div class="space-y-2">
+                  @if (av.recipe.length === 0) {
+                    <p class="text-sm text-gray-400">Ninguno todavía.</p>
+                  }
+                  @for (line of av.recipe; track $index) {
+                    <div class="flex items-center gap-2">
+                      <app-searchable-select [ngModel]="line.inventory_item_id"
+                        (ngModelChange)="setRecipeField(av.localId, $index, 'inventory_item_id', $event)"
+                        [options]="inventoryOptions()" placeholder="Insumo…" class="flex-1" />
+                      <input type="number" min="0" step="0.001" [value]="line.quantity"
+                        (input)="setRecipeField(av.localId, $index, 'quantity', +$any($event.target).value)" placeholder="Cant."
+                        class="w-24 px-2 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                      <span class="w-12 text-xs text-gray-400">{{ unitAbbr(line.inventory_item_id) }}</span>
+                      <button type="button" (click)="removeRecipeLine(av.localId, $index)"
+                        class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg">✕</button>
+                    </div>
+                  }
+                  <button type="button" (click)="addRecipeLine(av.localId)"
+                    class="text-sm font-medium text-indigo-600 hover:text-indigo-700">+ Agregar insumo</button>
+                </div>
+              </div>
+
+              <!-- Sabores a elegir -->
+              <div>
+                <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Sabores a elegir</h4>
+                <p class="text-xs text-gray-400 mt-0.5 mb-2">El cliente elige, y se descuenta la cantidad indicada del insumo de <strong>cada</strong> opción que elija.</p>
+                <div class="space-y-3">
+                  @if (av.optionGroups.length === 0) {
+                    <p class="text-sm text-gray-400">Ninguno. Este tamaño no pide elegir nada.</p>
+                  }
+                  @for (g of av.optionGroups; track $index) {
+                    @let bd = groupBreakdown(g);
+                    <div class="rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <app-searchable-select [ngModel]="g.option_group_id"
+                          (ngModelChange)="setGroupField(av.localId, $index, 'option_group_id', $event)"
+                          [options]="groupOptionsFor(av.localId, $index)" placeholder="Grupo…" class="flex-1 min-w-40" />
+                        <button type="button" (click)="removeGroup(av.localId, $index)"
+                          class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg">✕</button>
+                      </div>
+
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-2 text-sm">
+                        <span class="text-gray-600">elige</span>
+                        <input type="number" min="0" [value]="g.min_select"
+                          (input)="setGroupField(av.localId, $index, 'min_select', +$any($event.target).value)"
+                          class="w-16 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                        <span class="text-gray-600">a</span>
+                        <input type="number" min="1" [value]="g.max_select"
+                          (input)="setGroupField(av.localId, $index, 'max_select', +$any($event.target).value)"
+                          class="w-16 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                        <span class="text-gray-600 ml-2">descuenta</span>
+                        <input type="number" min="0" step="0.001" [value]="g.quantity_per_option"
+                          (input)="setGroupField(av.localId, $index, 'quantity_per_option', +$any($event.target).value)"
+                          class="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                        <span class="text-gray-500 text-xs">{{ groupUnit(g) }} por cada uno</span>
+                        @if (groupTotalHint(g); as hint) {
+                          <span class="text-xs font-semibold text-gray-700">{{ hint }}</span>
+                        }
+                      </div>
+
+                      @if (groupError(g); as err) {
+                        <p class="text-xs text-red-600 mt-1.5">{{ err }}</p>
+                      }
+                      @for (w of groupWarnings(g); track w) {
+                        <p class="text-xs text-amber-700 mt-1.5">⚠ {{ w }}</p>
+                      }
+
+                      @if (g.option_group_id) {
+                        <div class="mt-2 pt-2 border-t border-amber-200/70">
+                          <div class="flex items-start justify-between gap-3">
+                            <p class="text-xs text-gray-500 min-w-0">
+                              <span class="font-medium text-gray-600">Descuenta de:</span>
+                              {{ bd.summary }}
+                              @if (bd.missing > 0) {
+                                <span class="text-amber-700 font-medium">· ⚠ {{ bd.missing }} sin insumo</span>
+                              }
+                            </p>
+                            <a routerLink="/dashboard/ajustes/grupos-opciones" target="_blank" rel="noopener"
+                              class="shrink-0 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+                              title="Se abre en otra pestaña para no perder los cambios sin guardar">
+                              Editar grupo ↗
+                            </a>
+                          </div>
+
+                          @if (bd.rows.length > 0) {
+                            <button type="button" (click)="toggleGroupDetail(av.localId, $index)"
+                              class="mt-1 text-xs font-medium text-gray-500 hover:text-gray-700">
+                              {{ isGroupOpen(av.localId, $index) ? 'Ocultar detalle ▴' : 'Ver detalle (' + bd.rows.length + ') ▾' }}
+                            </button>
+
+                            @if (isGroupOpen(av.localId, $index)) {
+                              <div class="mt-2 rounded-lg bg-white border border-gray-100 overflow-hidden">
+                                <table class="w-full text-xs">
+                                  <thead class="bg-gray-50 text-gray-500">
+                                    <tr>
+                                      <th class="text-left font-medium px-3 py-1.5">Si elige…</th>
+                                      <th class="text-left font-medium px-3 py-1.5">Descuenta de</th>
+                                      <th class="text-right font-medium px-3 py-1.5">Cantidad</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-gray-100">
+                                    @for (r of bd.rows; track r.optionId) {
+                                      <tr [class]="r.itemName ? '' : 'bg-amber-50'">
+                                        <td class="px-3 py-1.5 text-gray-700">{{ r.optionName }}</td>
+                                        <td class="px-3 py-1.5" [class]="r.itemName ? 'text-gray-600' : 'text-amber-700'">
+                                          {{ r.itemName || 'Sin insumo asignado' }}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right whitespace-nowrap"
+                                          [class]="r.itemName ? 'text-gray-900 font-medium' : 'text-amber-700'">
+                                          {{ r.itemName ? r.amount : 'no descuenta' }}
+                                          @if (r.itemName && r.extra) {
+                                            <span class="block text-gray-400 font-normal">{{ r.extra }}</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                    }
+                                  </tbody>
+                                </table>
+                              </div>
+                            }
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                  <button type="button" (click)="addGroup(av.localId)"
+                    class="text-sm font-medium text-amber-600 hover:text-amber-700">+ Agregar sabores a elegir</button>
+                </div>
+              </div>
+
+              @if (draft().hasSizes && draft().variants.length > 1) {
+                <button type="button" (click)="copyConfigToOthers(av.localId)"
+                  class="text-xs font-medium text-gray-500 hover:text-indigo-600 border border-dashed border-gray-300 hover:border-indigo-400 rounded-lg px-3 py-2 transition-colors">
+                  Copiar insumos y sabores de «{{ av.name }}» a los otros tamaños
+                </button>
               }
-              <button type="button" (click)="addRecipeLine(av.localId)"
-                class="mt-1 text-sm font-medium text-indigo-600 hover:text-indigo-700">+ Agregar línea de receta</button>
             </div>
           }
-        </section>
-
-        <!-- ===== Grupos de opciones (seleccionables) ===== -->
-        <section class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <h3 class="text-sm font-semibold text-gray-900">Grupos de opciones</h3>
-          <p class="text-xs text-gray-500 mt-1 mb-4">Grupos de los que el cliente elige (ej. sabores). Se crean en su propio módulo; aquí se asignan al producto.</p>
-
-          @if (draft().optionGroups.length > 0) {
-            <ul class="divide-y divide-gray-50 mb-3 border border-gray-100 rounded-xl overflow-hidden">
-              @for (g of draft().optionGroups; track g.option_group_id) {
-                <li class="flex items-center justify-between px-4 py-2.5">
-                  <div>
-                    <span class="text-sm font-medium text-gray-900">{{ g.name }}</span>
-                    <span class="text-xs text-gray-400 ml-2">elige {{ g.min_select }}–{{ g.max_select }}</span>
-                  </div>
-                  <button type="button" (click)="removeGroup(g.option_group_id)" class="text-xs font-medium text-red-600 hover:text-red-700">Quitar</button>
-                </li>
-              }
-            </ul>
-          }
-
-          <div class="flex flex-wrap items-center gap-2">
-            <app-searchable-select [ngModel]="newGroupId()" (ngModelChange)="newGroupId.set($event)"
-              [options]="assignableGroupOptions()" placeholder="Agregar grupo existente…" class="flex-1 min-w-48" />
-            <button type="button" (click)="addGroup()" [disabled]="!newGroupId()"
-              class="px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-40 transition-colors">
-              + Asignar
-            </button>
-          </div>
         </section>
 
         <!-- ===== Acciones ===== -->
@@ -256,40 +370,43 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   /** Preview local (`URL.createObjectURL`) de la imagen pendiente. */
   readonly previewUrl = signal<string | null>(null);
   readonly activeLocalId = signal('');
-  readonly newGroupId = signal('');
   readonly draft = signal<ProductDraft>(this.emptyDraft());
+  /**
+   * Desgloses abiertos, por `${variantLocalId}:${índice}`. La clave lleva la variante
+   * porque el mismo grupo puede estar en varios tamaños con cantidades distintas, y
+   * son desgloses distintos.
+   */
+  private readonly openGroups = signal<ReadonlySet<string>>(new Set());
 
   readonly activeVariant = computed(
     () => this.draft().variants.find((v) => v.localId === this.activeLocalId()) ?? null,
   );
 
-  /** Grupos activos que aún no están en el draft (para el selector de asignación). */
-  readonly assignableGroups = computed(() => {
-    const used = new Set(this.draft().optionGroups.map((g) => g.option_group_id));
-    return this.optionGroupService.groups().filter((g) => g.active && !used.has(g.id));
-  });
-
-  /** Opciones para el select con buscador de grupos de opciones asignables. */
-  readonly assignableGroupOptions = computed(() =>
-    this.assignableGroups().map((g) => ({
-      id: g.id,
-      label: `${g.name} (elige ${g.min_select}–${g.max_select})`,
-    })),
+  private readonly unitLookup = computed(() =>
+    buildUnitLookup(this.inventoryService.allItems(), this.unitMeasureService.unitMeasures()),
   );
-
-  private readonly unitByItem = computed(() => {
-    const units = new Map(this.unitMeasureService.unitMeasures().map((u) => [u.id, u.abbreviation]));
-    const map = new Map<string, string>();
-    for (const item of this.inventoryService.allItems()) {
-      map.set(item.id, units.get(item.unit_measure_id) ?? '');
-    }
-    return map;
-  });
 
   /** Opciones para el select con buscador de insumos de la receta. */
   readonly inventoryOptions = computed(() =>
     this.inventoryService.allItems().map((i) => ({ id: i.id, label: i.name })),
   );
+
+  /**
+   * Grupos elegibles en una fila: los activos, menos los que ya usa **esta misma
+   * presentación** (salvo el de la propia fila, que debe seguir seleccionable).
+   */
+  groupOptionsFor(localId: string, index: number) {
+    const variant = this.draft().variants.find((v) => v.localId === localId);
+    const usados = new Set(
+      (variant?.optionGroups ?? [])
+        .filter((_, i) => i !== index)
+        .map((g) => g.option_group_id),
+    );
+    return this.optionGroupService
+      .groups()
+      .filter((g) => g.active && !usados.has(g.id))
+      .map((g) => ({ id: g.id, label: g.name }));
+  }
 
   readonly canSave = computed(() => {
     const d = this.draft();
@@ -297,9 +414,192 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       d.name.trim().length > 0 &&
       !!d.category_id &&
       d.variants.length > 0 &&
-      d.variants.every((v) => Number(v.price) >= 0)
+      d.variants.every((v) => Number(v.price) >= 0) &&
+      // Una fila sin grupo o con min/max incoherentes la rechaza el backend con 422;
+      // mejor bloquear el botón que perder el guardado a medias.
+      d.variants.every((v) => v.optionGroups.every((g) => !this.groupError(g)))
     );
   });
+
+  /** Mensaje de configuración inválida de una fila, o null si está bien. */
+  groupError(g: VariantOptionGroupDraft): string | null {
+    if (!g.option_group_id) return 'Elige un grupo.';
+    if (Number(g.min_select) < 0) return 'El mínimo no puede ser negativo.';
+    if (Number(g.max_select) < 1) return 'El máximo debe ser al menos 1.';
+    if (Number(g.max_select) < Number(g.min_select)) {
+      return 'El máximo no puede ser menor que el mínimo.';
+    }
+    const disponibles = this.groupOptions(g.option_group_id).filter((o) => o.active).length;
+    if (Number(g.min_select) > disponibles) {
+      return `Este grupo solo tiene ${disponibles} opción(es) activa(s): el cliente no podría elegir ${g.min_select}.`;
+    }
+    return null;
+  }
+
+  /** Unidad de lo que descuenta un grupo, si todas sus opciones la comparten. */
+  groupUnit(g: VariantOptionGroupDraft): string {
+    if (!g.option_group_id) return '';
+    const units = new Set(
+      this.groupOptions(g.option_group_id)
+        .filter((o) => o.inventory_item_id)
+        .map((o) => this.unitAbbr(o.inventory_item_id)),
+    );
+    return units.size === 1 ? [...units][0] : '';
+  }
+
+  /**
+   * Lo que se descontará por venta, escrito entero: `2 sabores × 120 g = 240 g`.
+   *
+   * Es el guardarraíl contra el dedazo. Un 6000 tecleado en vez de 60 se ve raro en un
+   * campo suelto, pero salta a la vista cuando el total dice "12000 g por venta".
+   * Solo se muestra si el número es determinista (`min = max`).
+   */
+  groupTotalHint(g: VariantOptionGroupDraft): string | null {
+    if (!g.option_group_id) return null;
+    const n = Number(g.min_select) || 0;
+    if (n <= 0 || n !== Number(g.max_select)) return null;
+
+    const delTamano = Number(g.quantity_per_option) || 0;
+    // Sin cantidad propia del tamaño manda la de la opción, que puede variar entre
+    // opciones; entonces no hay un total único que mostrar.
+    if (delTamano <= 0) return null;
+
+    const unidad = this.groupUnit(g);
+    const total = formatQuantity(delTamano * n);
+    const cada = formatQuantity(delTamano);
+    const u = unidad ? ` ${unidad}` : '';
+    return n === 1
+      ? `= ${total}${u} por venta`
+      : `${n} × ${cada}${u} = ${total}${u} por venta`;
+  }
+
+  /**
+   * Avisos que no impiden guardar pero casi siempre son un error de captura.
+   * Se devuelven todos para no ir descubriéndolos de uno en uno.
+   */
+  groupWarnings(g: VariantOptionGroupDraft): string[] {
+    if (!g.option_group_id) return [];
+    const avisos: string[] = [];
+    const options = this.groupOptions(g.option_group_id).filter((o) => o.active);
+    const delTamano = Number(g.quantity_per_option) || 0;
+
+    // (a) El fallo simétrico del doble descuento, y más silencioso: vender sin mover
+    // stock. Ocurre si ni el tamaño ni las opciones ponen cantidad.
+    if (delTamano <= 0) {
+      const conPropia = options.filter(
+        (o) => o.inventory_item_id && Number(o.item_quantity) > 0,
+      );
+      if (conPropia.length === 0) {
+        avisos.push(
+          'Nadie define cuánto descontar: elegir aquí no moverá el inventario. ' +
+            'Pon una cantidad por sabor.',
+        );
+      } else if (conPropia.length < options.length) {
+        avisos.push(
+          `Solo ${conPropia.length} de ${options.length} opciones traen cantidad propia; ` +
+            'el resto no descontará nada.',
+        );
+      }
+    }
+
+    // (b) Dedazo de magnitud: pedir más de lo que hay en la despensa entera.
+    if (delTamano > 0) {
+      const stocks = options
+        .map((o) => this.inventoryService.allItems().find((i) => i.id === o.inventory_item_id))
+        .filter((i): i is NonNullable<typeof i> => !!i)
+        .map((i) => Number(i.current_stock));
+      const mayor = stocks.length ? Math.max(...stocks) : 0;
+      if (stocks.length > 0 && delTamano > mayor) {
+        const u = this.groupUnit(g);
+        avisos.push(
+          `${formatQuantity(delTamano)}${u ? ` ${u}` : ''} supera el stock de todos los ` +
+            `sabores (el mayor tiene ${formatQuantity(mayor)}${u ? ` ${u}` : ''}). ` +
+            '¿Es la cantidad correcta?',
+        );
+      }
+    }
+
+    return avisos;
+  }
+
+  /**
+   * Qué descontaría cada opción del grupo si el cliente la elige.
+   *
+   * Es la respuesta a "¿sobre qué insumo estoy aplicando este grupo?": el insumo vive
+   * en cada opción (otro módulo) y la cantidad aquí, así que sin este cruce la fila no
+   * dice de dónde sale el stock.
+   *
+   * La cantidad replica `plan_line_consumption` del backend:
+   * `quantity_per_option` si el tamaño la define, y si no la de la opción. **Nunca se
+   * suman**, y la tabla lo dice fila por fila: sin eso, ver un "80 g" configurado en el
+   * sabor invita a pensar que se acumula con el del tamaño.
+   */
+  groupBreakdown(g: VariantOptionGroupDraft): SlotBreakdown {
+    const empty: SlotBreakdown = { rows: [], summary: '', missing: 0 };
+    if (!g.option_group_id) return empty;
+
+    // Solo activas: una opción desactivada no se puede elegir, así que no descuenta.
+    const options = this.groupOptions(g.option_group_id).filter((o) => o.active);
+    if (options.length === 0) return { ...empty, summary: 'este grupo no tiene opciones activas.' };
+
+    const lookup = this.unitLookup();
+    const delTamano = Number(g.quantity_per_option) || 0;
+    const mandaElTamano = delTamano > 0;
+
+    const rows: SlotBreakdownRow[] = options.map((o) => {
+      const propia = Number(o.item_quantity) || 0;
+      // La misma regla que el backend: manda el tamaño y, si no la define, la opción.
+      const efectiva = mandaElTamano ? delTamano : propia;
+      const unit = lookup.abbrOf(o.inventory_item_id);
+      return {
+        optionId: o.id,
+        optionName: o.name,
+        itemName: lookup.nameOf(o.inventory_item_id),
+        amount: efectiva > 0
+          ? `${formatQuantity(efectiva)}${unit ? ` ${unit}` : ''}`
+          : 'no descuenta',
+        // Se explica solo cuando hay un valor propio en juego: o se está ignorando
+        // (para que nadie lo cuente dos veces) o es el que manda.
+        extra: propia > 0
+          ? mandaElTamano
+            ? `reemplaza los ${formatQuantity(propia)} del sabor`
+            : 'viene del sabor, no del tamaño'
+          : '',
+      };
+    });
+
+    // Las problemáticas primero: son las que hay que ir a arreglar.
+    rows.sort((a, b) => Number(!!a.itemName) - Number(!!b.itemName));
+
+    const named = rows.filter((r) => r.itemName).map((r) => r.itemName);
+    const shown = named.slice(0, 2).join(', ');
+    const rest = named.length - 2;
+    const summary = named.length
+      ? rest > 0
+        ? `${shown} y ${rest} más`
+        : shown
+      : 'ningún insumo — este grupo no descuenta nada.';
+
+    return { rows, summary, missing: rows.length - named.length };
+  }
+
+  isGroupOpen(localId: string, index: number): boolean {
+    return this.openGroups().has(`${localId}:${index}`);
+  }
+
+  toggleGroupDetail(localId: string, index: number): void {
+    const key = `${localId}:${index}`;
+    this.openGroups.update((open) => {
+      const next = new Set(open);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  private groupOptions(groupId: string | null) {
+    if (!groupId) return [];
+    return this.optionGroupService.groups().find((g) => g.id === groupId)?.options ?? [];
+  }
 
   async ngOnInit(): Promise<void> {
     this.loading.set(true);
@@ -335,7 +635,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   }
 
   private emptyDraft(): ProductDraft {
-    const v: VariantDraft = { id: null, localId: this.nextLid(), name: 'Único', price: 0, recipe: [] };
     return {
       id: null,
       name: '',
@@ -345,9 +644,18 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       image_url: '',
       active: true,
       hasSizes: false,
-      variants: [v],
+      variants: [this.newVariant('Único')],
+    };
+  }
+
+  private newVariant(name: string, price = 0): VariantDraft {
+    return {
+      id: null,
+      localId: this.nextLid(),
+      name,
+      price,
+      recipe: [],
       optionGroups: [],
-      originalOptionGroupIds: [],
     };
   }
 
@@ -403,12 +711,12 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     this.draft.update((d) => {
       if (!d.hasSizes) {
         const base = d.variants[0];
+        // Los tamaños nuevos heredan también los grupos, no solo los insumos: si no,
+        // habría que volver a elegirlos uno por uno en cada tamaño.
         const copy = (name: string): VariantDraft => ({
-          id: null,
-          localId: this.nextLid(),
-          name,
-          price: base.price,
+          ...this.newVariant(name, base.price),
           recipe: base.recipe.map((r) => ({ ...r })),
+          optionGroups: base.optionGroups.map((g) => ({ ...g })),
         });
         const variants = [{ ...base, name: 'Grande' }, copy('Mediana'), copy('Pequeña')];
         this.activeLocalId.set(variants[0].localId);
@@ -421,9 +729,41 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   }
 
   addVariant(): void {
-    const nv: VariantDraft = { id: null, localId: this.nextLid(), name: 'Nuevo tamaño', price: 0, recipe: [] };
+    // Parte de una copia del tamaño activo: casi siempre se ajusta el precio y las
+    // cantidades, no se empieza de cero.
+    const base = this.activeVariant();
+    const nv: VariantDraft = {
+      ...this.newVariant('Nuevo tamaño', base?.price ?? 0),
+      recipe: (base?.recipe ?? []).map((r) => ({ ...r })),
+      optionGroups: (base?.optionGroups ?? []).map((g) => ({ ...g })),
+    };
     this.draft.update((d) => ({ ...d, variants: [...d.variants, nv] }));
     this.activeLocalId.set(nv.localId);
+  }
+
+  /** Propaga insumos y grupos del tamaño activo al resto (los precios no se tocan). */
+  copyConfigToOthers(localId: string): void {
+    const source = this.draft().variants.find((v) => v.localId === localId);
+    if (!source) return;
+    const otros = this.draft().variants.filter((v) => v.localId !== localId);
+    if (otros.length === 0) return;
+    const ok = confirm(
+      `Se reemplazarán los insumos y los sabores de ${otros.map((v) => v.name).join(', ')} ` +
+        `por los de «${source.name}». Los precios no cambian. ¿Continuar?`,
+    );
+    if (!ok) return;
+    this.draft.update((d) => ({
+      ...d,
+      variants: d.variants.map((v) =>
+        v.localId === localId
+          ? v
+          : {
+              ...v,
+              recipe: source.recipe.map((r) => ({ ...r })),
+              optionGroups: source.optionGroups.map((g) => ({ ...g })),
+            },
+      ),
+    }));
   }
 
   removeVariant(localId: string): void {
@@ -442,13 +782,16 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     }));
   }
 
-  // --- Receta ---
+  // --- Insumos fijos ---
   addRecipeLine(localId: string): void {
-    const first = this.inventoryService.allItems()[0]?.id ?? '';
+    const line: RecipeLineDraft = {
+      inventory_item_id: this.inventoryService.allItems()[0]?.id ?? null,
+      quantity: 1,
+    };
     this.draft.update((d) => ({
       ...d,
       variants: d.variants.map((v) =>
-        v.localId === localId ? { ...v, recipe: [...v.recipe, { inventory_item_id: first, quantity: 1 }] } : v,
+        v.localId === localId ? { ...v, recipe: [...v.recipe, line] } : v,
       ),
     }));
   }
@@ -472,42 +815,85 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       ...d,
       variants: d.variants.map((v) =>
         v.localId === localId
-          ? { ...v, recipe: v.recipe.map((l, i) => (i === index ? { ...l, [field]: value } : l)) }
+          ? {
+              ...v,
+              recipe: v.recipe.map((l, i) =>
+                i === index
+                  ? { ...l, [field]: field === 'quantity' ? value : (value as string) || null }
+                  : l,
+              ),
+            }
           : v,
       ),
     }));
   }
 
-  unitAbbr(itemId: string): string {
-    return this.unitByItem().get(itemId) ?? '';
+  unitAbbr(itemId: string | null): string {
+    return this.unitLookup().abbrOf(itemId);
   }
 
-  // --- Grupos de opciones ---
-  addGroup(): void {
-    const g = this.optionGroupService.groups().find((x) => x.id === this.newGroupId());
-    if (!g) return;
+  // --- Sabores a elegir (grupos de la presentación) ---
+  addGroup(localId: string): void {
+    // Preselecciona el primer grupo activo que esta presentación no use ya.
+    const variant = this.draft().variants.find((v) => v.localId === localId);
+    const usados = new Set((variant?.optionGroups ?? []).map((g) => g.option_group_id));
+    const candidato = this.optionGroupService
+      .groups()
+      .find((g) => g.active && !usados.has(g.id));
+    const nuevo: VariantOptionGroupDraft = {
+      option_group_id: candidato?.id ?? null,
+      name: candidato?.name ?? '',
+      // Arranca en "elige exactamente 1": es el caso normal y evita que un grupo
+      // opcional pase inadvertido y no descuente nada.
+      min_select: 1,
+      max_select: 1,
+      quantity_per_option: 0,
+    };
     this.draft.update((d) => ({
       ...d,
-      optionGroups: [
-        ...d.optionGroups,
-        {
-          option_group_id: g.id,
-          name: g.name,
-          min_select: g.min_select,
-          max_select: g.max_select,
-          assigned: false,
-        },
-      ],
+      variants: d.variants.map((v) =>
+        v.localId === localId ? { ...v, optionGroups: [...v.optionGroups, nuevo] } : v,
+      ),
     }));
-    this.newGroupId.set('');
   }
 
-  removeGroup(optionGroupId: string): void {
+  removeGroup(localId: string, index: number): void {
     this.draft.update((d) => ({
       ...d,
-      optionGroups: d.optionGroups.filter((g) => g.option_group_id !== optionGroupId),
+      variants: d.variants.map((v) =>
+        v.localId === localId
+          ? { ...v, optionGroups: v.optionGroups.filter((_, i) => i !== index) }
+          : v,
+      ),
     }));
   }
+
+  setGroupField(
+    localId: string,
+    index: number,
+    field: 'option_group_id' | 'min_select' | 'max_select' | 'quantity_per_option',
+    value: string | number,
+  ): void {
+    this.draft.update((d) => ({
+      ...d,
+      variants: d.variants.map((v) =>
+        v.localId === localId
+          ? {
+              ...v,
+              optionGroups: v.optionGroups.map((g, i) => {
+                if (i !== index) return g;
+                if (field !== 'option_group_id') return { ...g, [field]: value };
+                const id = (value as string) || null;
+                // El nombre se guarda resuelto para poder mostrarlo sin volver a buscar.
+                const found = this.optionGroupService.groups().find((x) => x.id === id);
+                return { ...g, option_group_id: id, name: found?.name ?? '' };
+              }),
+            }
+          : v,
+      ),
+    }));
+  }
+
 
   // --- Acciones ---
   async toggleActive(): Promise<void> {

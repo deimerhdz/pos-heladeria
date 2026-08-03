@@ -4,18 +4,21 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { MenuService } from '../../menu/services/menu.service';
+import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import {
   Product,
   ProductCreatePayload,
   ProductDraft,
   ProductForm,
-  ProductOptionGroupPayload,
   ProductUpdatePayload,
   RecipeItem,
+  RecipeLineDraft,
   Variant,
   VariantCreatePayload,
   VariantDraft,
   VariantForm,
+  VariantOptionGroup,
+  VariantOptionGroupDraft,
   VariantUpdatePayload,
 } from '../interfaces/product.interface';
 
@@ -57,6 +60,16 @@ interface RecipeItemResponse {
   quantity: string;
 }
 
+/** Raw backend `VariantOptionGroupResponse` de `GET /variants/{id}/option-groups`. */
+interface VariantOptionGroupResponse {
+  id: string;
+  product_variant_id: string;
+  option_group_id: string;
+  min_select: number;
+  max_select: number;
+  quantity_per_option: string;
+}
+
 interface PresignResponse {
   upload_url: string;
   key: string;
@@ -68,6 +81,7 @@ interface PresignResponse {
 export class ProductService {
   private readonly http = inject(HttpClient);
   private readonly menuService = inject(MenuService);
+  private readonly optionGroupService = inject(OptionGroupService);
   private readonly productsUrl = `${environment.apiBaseUrl}/products`;
   private readonly variantsUrl = `${environment.apiBaseUrl}/variants`;
   private readonly uploadsUrl = `${environment.apiBaseUrl}/uploads`;
@@ -199,15 +213,6 @@ export class ProductService {
     return this.run(() => this.http.delete(`${this.variantsUrl}/${variantId}`));
   }
 
-  // --- Product option groups ---
-
-  /** Assign an existing option group to a product with per-product bounds. */
-  async assignOptionGroup(productId: string, payload: ProductOptionGroupPayload): Promise<boolean> {
-    return this.run(() =>
-      this.http.post(`${this.productsUrl}/${productId}/option-groups`, payload),
-    );
-  }
-
   // --- Recipes (per variant, consume inventory items) ---
 
   /** Fetch a variant's recipe. A missing recipe (404) is a valid empty state. */
@@ -227,19 +232,44 @@ export class ProductService {
     }
   }
 
-  async putVariantRecipe(variantId: string, items: RecipeItem[]): Promise<boolean> {
-    return this.run(() =>
-      this.http.put(`${this.variantsUrl}/${variantId}/recipe`, { items }),
-    );
+  // --- Option groups (per variant) ---
+
+  /**
+   * Grupos que ofrece una variante, con su nombre resuelto contra el catálogo (el
+   * endpoint solo devuelve ids).
+   */
+  async getVariantOptionGroups(variantId: string): Promise<VariantOptionGroupDraft[]> {
+    try {
+      const [links] = await Promise.all([
+        firstValueFrom(
+          this.http.get<VariantOptionGroupResponse[]>(
+            `${this.variantsUrl}/${variantId}/option-groups`,
+          ),
+        ),
+        this.optionGroupService.groups().length
+          ? Promise.resolve()
+          : this.optionGroupService.loadGroups(),
+      ]);
+      const byId = new Map(this.optionGroupService.groups().map((g) => [g.id, g]));
+      return links.map((l) => ({
+        option_group_id: l.option_group_id,
+        name: byId.get(l.option_group_id)?.name ?? 'Grupo',
+        min_select: l.min_select,
+        max_select: l.max_select,
+        quantity_per_option: Number(l.quantity_per_option),
+      }));
+    } catch (err) {
+      if (err instanceof HttpErrorResponse && err.status === 404) return [];
+      this.error.set(this.extractError(err));
+      return [];
+    }
   }
 
   // --- Draft: single-page create/edit orchestration ---
 
   /**
-   * Loads a product and its whole graph (variants + per-variant recipe +
-   * assigned option groups) into a single editable {@link ProductDraft}.
-   * Assigned groups are read from `GET /menu` because the backend exposes no
-   * "list product option-group assignments" endpoint.
+   * Loads a product and its whole graph (cada variante con su receta y sus grupos)
+   * into a single editable {@link ProductDraft}.
    */
   async getProductDraft(id: string): Promise<ProductDraft | null> {
     const product = await this.getProduct(id);
@@ -248,28 +278,19 @@ export class ProductService {
     const variants = await this.loadVariants(id);
     const variantDrafts: VariantDraft[] = [];
     for (const v of variants) {
-      const recipe = await this.getVariantRecipe(v.id);
+      const [recipe, optionGroups] = await Promise.all([
+        this.getVariantRecipe(v.id),
+        this.getVariantOptionGroups(v.id),
+      ]);
       variantDrafts.push({
         id: v.id,
         localId: v.id,
         name: v.name,
         price: v.price,
         recipe: recipe.map((r) => ({ ...r })),
+        optionGroups,
       });
     }
-
-    await this.menuService.loadMenu();
-    const menuProduct = this.menuService
-      .categories()
-      .flatMap((c) => c.products)
-      .find((p) => p.id === id);
-    const optionGroups = (menuProduct?.option_groups ?? []).map((g) => ({
-      option_group_id: g.id,
-      name: g.name,
-      min_select: g.min_select,
-      max_select: g.max_select,
-      assigned: true,
-    }));
 
     return {
       id: product.id,
@@ -281,8 +302,6 @@ export class ProductService {
       active: product.active,
       hasSizes: variantDrafts.length > 1,
       variants: variantDrafts,
-      optionGroups,
-      originalOptionGroupIds: optionGroups.map((g) => g.option_group_id),
     };
   }
 
@@ -327,11 +346,7 @@ export class ProductService {
         i === 0 && autoId
           ? (await this.patchVariant(autoId, { name: v.name, price: v.price })).id
           : (await this.postVariant(productId, { name: v.name, price: v.price })).id;
-      await this.setRecipe(variantId, v.recipe);
-    }
-
-    for (const g of draft.optionGroups) {
-      await this.postAssignGroup(productId, g.option_group_id, g.min_select, g.max_select);
+      await this.saveVariantConfig(variantId, v);
     }
     return productId;
   }
@@ -350,12 +365,14 @@ export class ProductService {
     );
     const keptIds = new Set(draft.variants.map((v) => v.id).filter(Boolean));
 
-    // Reconcilia: actualiza las que tienen id, crea las nuevas.
+    // Reconcilia: actualiza las que tienen id, crea las nuevas. Toda la configuración
+    // de una presentación va junta y sin orden obligado entre presentaciones, porque
+    // receta y grupos son dos PUT idempotentes sobre la misma variante.
     for (const v of draft.variants) {
       const variantId = v.id
         ? (await this.patchVariant(v.id, { name: v.name, price: v.price })).id
         : (await this.postVariant(productId, { name: v.name, price: v.price })).id;
-      await this.setRecipe(variantId, v.recipe);
+      await this.saveVariantConfig(variantId, v);
     }
 
     // Elimina (soft) las variantes que el usuario quitó del draft.
@@ -364,20 +381,13 @@ export class ProductService {
         await firstValueFrom(this.http.delete(`${this.variantsUrl}/${ex.id}`));
       }
     }
-
-    // Desasigna los grupos que el usuario quitó del draft.
-    const keptGroupIds = new Set(draft.optionGroups.map((g) => g.option_group_id));
-    for (const groupId of draft.originalOptionGroupIds) {
-      if (!keptGroupIds.has(groupId)) {
-        await this.deleteAssignGroup(productId, groupId);
-      }
-    }
-
-    // Asigna solo los grupos nuevos (los ya persistidos no se vuelven a enviar).
-    for (const g of draft.optionGroups.filter((x) => !x.assigned)) {
-      await this.postAssignGroup(productId, g.option_group_id, g.min_select, g.max_select);
-    }
     return productId;
+  }
+
+  /** Receta e grupos de una presentación: dos reemplazos totales e idempotentes. */
+  private async saveVariantConfig(variantId: string, v: VariantDraft): Promise<void> {
+    await this.setRecipe(variantId, v.recipe);
+    await this.setVariantOptionGroups(variantId, v.optionGroups);
   }
 
   private toProductPayload(draft: ProductDraft): ProductCreatePayload & ProductUpdatePayload {
@@ -402,8 +412,11 @@ export class ProductService {
     );
   }
 
-  /** Replaces a variant's recipe with the valid, de-duplicated draft lines. */
-  private async setRecipe(variantId: string, lines: RecipeItem[]): Promise<void> {
+  /**
+   * Reemplazo total de los insumos fijos. Descarta las líneas sin insumo elegido o sin
+   * cantidad, y deduplica por insumo (el backend rechaza el repetido con 422).
+   */
+  private async setRecipe(variantId: string, lines: RecipeLineDraft[]): Promise<void> {
     const seen = new Set<string>();
     const items: RecipeItem[] = [];
     for (const l of lines) {
@@ -415,25 +428,29 @@ export class ProductService {
     await firstValueFrom(this.http.put(`${this.variantsUrl}/${variantId}/recipe`, { items }));
   }
 
-  private postAssignGroup(
-    productId: string,
-    optionGroupId: string,
-    minSelect: number,
-    maxSelect: number,
-  ): Promise<unknown> {
-    const payload: ProductOptionGroupPayload = {
-      option_group_id: optionGroupId,
-      min_select: minSelect,
-      max_select: maxSelect,
-    };
-    return firstValueFrom(
-      this.http.post(`${this.productsUrl}/${productId}/option-groups`, payload),
-    );
-  }
-
-  private deleteAssignGroup(productId: string, optionGroupId: string): Promise<unknown> {
-    return firstValueFrom(
-      this.http.delete(`${this.productsUrl}/${productId}/option-groups/${optionGroupId}`),
+  /**
+   * Reemplazo total de los grupos que ofrece la presentación. Descarta las filas sin
+   * grupo elegido y deduplica; `quantity_per_option` en 0 es válido (el grupo se ofrece
+   * sin descontar por sí mismo).
+   */
+  private async setVariantOptionGroups(
+    variantId: string,
+    drafts: VariantOptionGroupDraft[],
+  ): Promise<void> {
+    const seen = new Set<string>();
+    const groups: VariantOptionGroup[] = [];
+    for (const g of drafts) {
+      if (!g.option_group_id || seen.has(g.option_group_id)) continue;
+      seen.add(g.option_group_id);
+      groups.push({
+        option_group_id: g.option_group_id,
+        min_select: Number(g.min_select) || 0,
+        max_select: Number(g.max_select) || 1,
+        quantity_per_option: Number(g.quantity_per_option) || 0,
+      });
+    }
+    await firstValueFrom(
+      this.http.put(`${this.variantsUrl}/${variantId}/option-groups`, { groups }),
     );
   }
 

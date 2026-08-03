@@ -57,7 +57,11 @@ export interface SaleItem {
   id: string;
   product_variant_id: string;
   description: string;
-  options?: unknown[];
+  /**
+   * Snapshot de las opciones elegidas, congelado al vender. Se conserva el nombre
+   * para que el ticket siga siendo legible aunque la opción se desactive después.
+   */
+  options?: { option_id: string; name: string; extra_price: string }[];
   quantity: number;
   unit_price: string;
   line_total: string;
