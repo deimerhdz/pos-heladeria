@@ -178,7 +178,6 @@ export class PosTerminalStore {
   readonly discountValue = signal('');
   readonly discountReason = signal('');
   readonly appliedDiscount = signal<{ type: 'percent' | 'fixed'; value: number } | null>(null);
-  readonly tax = signal(0);
 
   readonly loading = signal(false);
   readonly submitting = signal(false);
@@ -356,7 +355,7 @@ export class PosTerminalStore {
       discount = d.type === 'percent' ? (subtotal * d.value) / 100 : d.value;
       discount = Math.max(0, Math.min(subtotal, discount));
     }
-    const tax = Math.max(0, Number(this.tax()) || 0);
+    const tax = 0; // Impuestos deprecado: se guarda/calcula siempre en 0.
     const total = Math.max(0, Math.round(subtotal - discount + tax));
     return { subtotal, discount, tax, total };
   });

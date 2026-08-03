@@ -122,15 +122,6 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
             <button (click)="store.toggleDiscountPanel()" class="text-indigo-600 hover:text-indigo-700 font-medium">Aplicar descuento (F4)</button>
             <span>{{ tot.discount > 0 ? '- ' + store.fmt(tot.discount) : store.fmt(0) }}</span>
           </div>
-          <div class="flex justify-between text-sm items-center">
-            <span>Impuestos</span>
-            <input
-              type="number" min="0"
-              [value]="store.tax()"
-              (input)="store.tax.set(+$any($event.target).value)"
-              class="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-400"
-            />
-          </div>
           <div class="border-t border-gray-200 my-1"></div>
           <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
