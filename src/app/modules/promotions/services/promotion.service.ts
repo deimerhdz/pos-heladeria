@@ -45,6 +45,7 @@ export class PromotionService {
       starts_at: form.starts_at,
       ends_at: form.ends_at,
       days_of_week: this.daysToStr(form.days_of_week),
+      days_of_month: this.daysToStr(form.days_of_month),
       start_time: form.start_time,
       end_time: form.end_time,
       min_qty: form.min_qty,
@@ -77,6 +78,7 @@ export class PromotionService {
   }
 
   private toCreate(form: PromotionForm): PromotionCreatePayload {
+    const isCombo = form.type === 'combo';
     return {
       name: form.name,
       type: form.type,
@@ -85,13 +87,17 @@ export class PromotionService {
       starts_at: form.starts_at,
       ends_at: form.ends_at,
       days_of_week: this.daysToStr(form.days_of_week),
+      days_of_month: this.daysToStr(form.days_of_month),
       start_time: form.start_time,
       end_time: form.end_time,
       min_qty: form.min_qty,
-      targets: [
-        ...form.categoryIds.map(id => ({ category_id: id, product_id: null })),
-        ...form.productIds.map(id => ({ product_id: id, category_id: null })),
-      ],
+      targets: isCombo
+        ? []
+        : [
+            ...form.categoryIds.map(id => ({ category_id: id, product_id: null })),
+            ...form.productIds.map(id => ({ product_id: id, category_id: null })),
+          ],
+      combo_items: isCombo ? form.comboItems : [],
     };
   }
 

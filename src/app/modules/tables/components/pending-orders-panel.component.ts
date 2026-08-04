@@ -13,6 +13,8 @@ import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
+import { PromotionService } from '../../promotions/services/promotion.service';
+import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 
 /**
  * Pedidos que el comensal envió y esperan que el personal los acepte.
@@ -116,6 +118,7 @@ export class PendingOrdersPanelComponent {
 
   private readonly api = inject(DiningSessionService);
   private readonly toast = inject(ToastService);
+  private readonly promotionService = inject(PromotionService);
 
   readonly busy = signal<string | null>(null);
   /** Id del pedido cuyo intento de confirmación falló por stock. */
@@ -141,7 +144,21 @@ export class PendingOrdersPanelComponent {
   }
 
   total(order: DiningOrder): number {
-    return (order.items ?? []).reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
+    const lk = buildMenuLookup(this.categories);
+    const now = new Date();
+    const promos = this.promotionService.promotions();
+    return (order.items ?? []).reduce((s, i) => {
+      if (i.combo_id) return s + Number(i.unit_price) * i.quantity;
+      const unitPrice = discountedUnitPrice(
+        promos,
+        now,
+        lk.productId(i.product_variant_id),
+        lk.categoryId(i.product_variant_id),
+        Number(i.unit_price),
+        i.quantity,
+      );
+      return s + unitPrice * i.quantity;
+    }, 0);
   }
 
   time(order: DiningOrder): string {
