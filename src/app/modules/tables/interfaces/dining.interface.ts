@@ -27,9 +27,14 @@ export type DiningOrderStatus =
 /** Per-item kitchen status (`KitchenStatus`). The kitchen board works on this. */
 export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'anulado';
 
-/** One line of a `POST /orders` request (`OrderItemIn`). */
+/**
+ * One line of a `POST /orders` (or `.../tables/{id}/items`) request
+ * (`OrderItemIn`). Exactly one of `product_variant_id` / `combo_id` must be
+ * set; a combo doesn't accept `option_ids`.
+ */
 export interface OrderItemPayload {
-  product_variant_id: string;
+  product_variant_id?: string;
+  combo_id?: string;
   quantity?: number;
   option_ids?: string[];
   notes?: string | null;
@@ -55,6 +60,12 @@ export interface DiningOrderItemOption {
 export interface DiningOrderItem {
   id: string;
   product_variant_id: string;
+  /**
+   * Combo (selección explícita) que originó esta línea. Varias líneas del
+   * mismo pedido comparten `combo_id`: son los componentes reales de un
+   * mismo combo, cada uno con su propio `product_variant_id` y receta.
+   */
+  combo_id?: string | null;
   /**
    * Comensal al que se le cobra esta línea. La asignación es **por ítem**, no
    * por pedido: por eso la cuenta dividida es exacta aunque un pedido mezcle

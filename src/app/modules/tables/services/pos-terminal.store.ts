@@ -7,6 +7,8 @@ import {
 } from '../../products/interfaces/product.interface';
 import { PaymentMethod } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../menu/services/menu.service';
+import { Promotion } from '../../promotions/interfaces/promotion.interface';
+import { PromotionService } from '../../promotions/services/promotion.service';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -39,8 +41,9 @@ import {
   saleToReceipt,
 } from './receipt.util';
 
-/** Una línea de pedido nueva sin guardar (draft del staff). */
-interface DraftLine {
+/** Una línea de pedido nueva sin guardar (draft del staff): producto o combo. */
+interface ProductDraftLine {
+  kind: 'product';
   key: string;
   product: MenuProduct;
   variant: MenuVariant;
@@ -49,6 +52,24 @@ interface DraftLine {
   notes: string | null;
   unitPrice: number;
 }
+
+/**
+ * Selección explícita de un combo. `unitPrice` es el precio del bundle (solo
+ * para el total en pantalla): al guardar se manda `combo_id` y el backend lo
+ * expande en sus componentes reales a precio normal, calculando el ahorro
+ * recién al cobrar — el draft nunca reescribe precios de producto.
+ */
+interface ComboDraftLine {
+  kind: 'combo';
+  key: string;
+  comboId: string;
+  comboName: string;
+  quantity: number;
+  notes: string | null;
+  unitPrice: number;
+}
+
+type DraftLine = ProductDraftLine | ComboDraftLine;
 
 /** Estado de mesa derivado para la vista. */
 type TableDisplayStatus =
@@ -138,6 +159,7 @@ export class PosTerminalStore {
   private readonly tableService = inject(TableService);
   private readonly api = inject(DiningSessionService);
   private readonly menuService = inject(MenuService);
+  private readonly promotionService = inject(PromotionService);
   private readonly tableSessions = inject(TableSessionService);
   private readonly paymentMethodService = inject(PaymentMethodService);
   private readonly cash = inject(CashService);
@@ -205,6 +227,47 @@ export class PosTerminalStore {
   readonly tables = this.tableService.tables;
   readonly paymentMethods = this.paymentMethodService.methods;
   readonly categories = this.menuService.categories;
+
+  /** Combos activos disponibles para vender (el staff ya tiene token de sesión). */
+  readonly combos = computed<Promotion[]>(() =>
+    this.promotionService.promotions().filter((p) => p.type === 'combo' && p.active),
+  );
+
+  /**
+   * Insignia de descuento (ej. "-50%") por producto, para las promociones
+   * `percent`/`fixed` vigentes en este instante — el catálogo no mostraba
+   * ninguna señal de que un producto tenía descuento activo, a diferencia de
+   * los combos que sí tienen su propia sección. Solo decide si se muestra la
+   * insignia; el monto real que se cobra lo sigue calculando el backend.
+   */
+  readonly productDiscountBadges = computed<Map<string, string>>(() => {
+    const now = new Date();
+    const promos = this.promotionService.promotions().filter(
+      (p) => (p.type === 'percent' || p.type === 'fixed') && this.isPromoActiveNow(p, now),
+    );
+    const result = new Map<string, string>();
+    if (promos.length === 0) return result;
+
+    for (const c of this.categories()) {
+      for (const prod of c.products) {
+        const price = prod.variants.length ? Math.min(...prod.variants.map((v) => v.price)) : 0;
+        let bestAmount = 0;
+        let bestLabel = '';
+        for (const p of promos) {
+          const matches = p.targets.length === 0
+            || p.targets.some((t) => t.product_id === prod.id || t.category_id === c.id);
+          if (!matches) continue;
+          const amount = p.type === 'percent' ? (price * Number(p.value)) / 100 : Math.min(Number(p.value), price);
+          if (amount > bestAmount) {
+            bestAmount = amount;
+            bestLabel = p.type === 'percent' ? `-${Number(p.value)}%` : `-${this.fmt(Number(p.value))}`;
+          }
+        }
+        if (bestAmount > 0) result.set(prod.id, bestLabel);
+      }
+    }
+    return result;
+  });
 
   private readonly lookup = computed<MenuLookup>(() => buildMenuLookup(this.menuService.categories()));
 
@@ -314,32 +377,71 @@ export class PosTerminalStore {
   readonly cartView = computed(() => {
     const lk = this.lookup();
     const order = this.selectedOrder();
-    const persisted = (order?.items ?? [])
-      .filter((i) => i.estado_cocina !== 'anulado')
-      .map((i) => ({
-        kind: 'persisted' as const,
-        key: i.id,
-        qty: i.quantity,
-        name: lk.variantLabel(i.product_variant_id),
-        bullets: [
-          ...(i.options ?? []).map((o) => lk.optionLabel(o.option_id)).filter(Boolean),
-          ...(i.notes ? [i.notes] : []),
-        ],
-        unitPrice: Number(i.unit_price),
-        subtotal: Number(i.unit_price) * i.quantity,
-        ready: !NOT_READY.includes(i.estado_cocina),
-      }));
-    const draft = this.draftLines().map((l) => ({
-      kind: 'draft' as const,
-      key: l.key,
-      qty: l.quantity,
-      name: l.product.name,
-      bullets: [...l.options.map((o) => o.name), ...(l.notes ? [l.notes] : [])],
-      unitPrice: l.unitPrice,
-      subtotal: l.unitPrice * l.quantity,
-      ready: true,
+    const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
+
+    const plainItems = items.filter((i) => !i.combo_id);
+    const persistedPlain = plainItems.map((i) => ({
+      kind: 'persisted' as const,
+      key: i.id,
+      comboId: undefined as string | undefined,
+      qty: i.quantity,
+      name: lk.variantLabel(i.product_variant_id),
+      bullets: [
+        ...(i.options ?? []).map((o) => lk.optionLabel(o.option_id)).filter(Boolean),
+        ...(i.notes ? [i.notes] : []),
+      ],
+      unitPrice: Number(i.unit_price),
+      subtotal: Number(i.unit_price) * i.quantity,
+      ready: !NOT_READY.includes(i.estado_cocina),
     }));
-    return [...persisted, ...draft];
+
+    // Un combo son N order_items reales (uno por componente) que comparten
+    // combo_id: se agrupan en una sola línea de carrito, como lo ve el cajero.
+    const comboGroups = this.groupByCombo(items);
+    const persistedCombos = [...comboGroups.entries()].map(([comboId, its]) => {
+      const promo = this.combos().find((p) => p.id === comboId);
+      const units = this.comboUnitsPresent(comboId, its);
+      const subtotal = this.comboDisplaySubtotal(promo, its, units);
+      return {
+        kind: 'persisted' as const,
+        key: 'combo:' + comboId,
+        comboId,
+        qty: units > 0 ? units : 1,
+        name: `🎁 ${promo?.name ?? 'Combo'}`,
+        bullets: its.map((it) => `${it.quantity}x ${lk.variantLabel(it.product_variant_id)}`),
+        unitPrice: units > 0 ? subtotal / units : subtotal,
+        subtotal,
+        ready: its.every((it) => !NOT_READY.includes(it.estado_cocina)),
+      };
+    });
+
+    const draft = this.draftLines().map((l) => {
+      if (l.kind === 'combo') {
+        return {
+          kind: 'draft' as const,
+          key: l.key,
+          comboId: l.comboId,
+          qty: l.quantity,
+          name: `🎁 ${l.comboName}`,
+          bullets: this.comboBullets(l.comboId),
+          unitPrice: l.unitPrice,
+          subtotal: l.unitPrice * l.quantity,
+          ready: true,
+        };
+      }
+      return {
+        kind: 'draft' as const,
+        key: l.key,
+        comboId: undefined as string | undefined,
+        qty: l.quantity,
+        name: l.product.name,
+        bullets: [...l.options.map((o) => o.name), ...(l.notes ? [l.notes] : [])],
+        unitPrice: l.unitPrice,
+        subtotal: l.unitPrice * l.quantity,
+        ready: true,
+      };
+    });
+    return [...persistedPlain, ...persistedCombos, ...draft];
   });
 
   readonly cartEmpty = computed(() => this.cartView().length === 0);
@@ -383,6 +485,7 @@ export class PosTerminalStore {
         this.reloadOrders(),
         this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
         this.menuService.categories().length === 0 ? this.menuService.loadMenu() : null,
+        this.promotionService.promotions().length === 0 ? this.promotionService.load() : null,
         this.cash.shift() ? null : this.cash.restoreShift(),
       ]);
       const cats = this.menuService.categories();
@@ -613,21 +716,122 @@ export class PosTerminalStore {
       if (existing) {
         return lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + sel.quantity } : l));
       }
-      return [
-        ...lines,
-        {
-          key,
-          product: sel.product,
-          variant: sel.variant,
-          options: sel.options,
-          quantity: sel.quantity,
-          notes: sel.notes,
-          unitPrice,
-        },
-      ];
+      const line: ProductDraftLine = {
+        kind: 'product',
+        key,
+        product: sel.product,
+        variant: sel.variant,
+        options: sel.options,
+        quantity: sel.quantity,
+        notes: sel.notes,
+        unitPrice,
+      };
+      return [...lines, line];
     });
     this.configuringProduct.set(null);
     this.catalogOpen.set(false);
+  }
+
+  /** Selección explícita de un combo (paralelo a `addDraftFromSelection`). */
+  addComboDraft(promo: Promotion, quantity: number): void {
+    const key = 'combo:' + promo.id;
+    this.draftLines.update((lines) => {
+      const existing = lines.find((l) => l.key === key);
+      if (existing) {
+        return lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + quantity } : l));
+      }
+      const line: ComboDraftLine = {
+        kind: 'combo',
+        key,
+        comboId: promo.id,
+        comboName: promo.name,
+        quantity,
+        notes: null,
+        unitPrice: Number(promo.value),
+      };
+      return [...lines, line];
+    });
+    this.configuringProduct.set(null);
+    this.catalogOpen.set(false);
+  }
+
+  /**
+   * Réplica de `_valid_now()` del backend (`promotions/service.py`), solo para
+   * decidir si se muestra la insignia de descuento en el catálogo — el cálculo
+   * real del descuento sigue siendo responsabilidad exclusiva del backend.
+   */
+  private isPromoActiveNow(p: Promotion, now: Date): boolean {
+    if (!p.active) return false;
+    if (p.starts_at && now < new Date(p.starts_at)) return false;
+    if (p.ends_at && now > new Date(p.ends_at)) return false;
+    if (p.days_of_week) {
+      const allowed = p.days_of_week.split(',').map((d) => d.trim());
+      const weekday = (now.getDay() + 6) % 7; // JS 0=domingo..6=sábado → 0=lunes..6=domingo
+      if (!allowed.includes(String(weekday))) return false;
+    }
+    if (p.days_of_month) {
+      const allowed = p.days_of_month.split(',').map((d) => d.trim());
+      if (!allowed.includes(String(now.getDate()))) return false;
+    }
+    const hhmm = now.toTimeString().slice(0, 5);
+    if (p.start_time && hhmm < p.start_time.slice(0, 5)) return false;
+    if (p.end_time && hhmm > p.end_time.slice(0, 5)) return false;
+    return true;
+  }
+
+  /** Productos incluidos en un combo, para mostrarlos como bullets del carrito. */
+  private comboBullets(comboId: string): string[] {
+    const promo = this.combos().find((p) => p.id === comboId);
+    const lk = this.lookup();
+    return (promo?.combo_items ?? []).map((ci) => `${ci.quantity}x ${lk.variantLabel(ci.product_variant_id)}`);
+  }
+
+  /** Agrupa ítems de pedido por `combo_id`: sus componentes reales comparten uno. */
+  private groupByCombo(items: DiningOrderItem[]): Map<string, DiningOrderItem[]> {
+    const groups = new Map<string, DiningOrderItem[]>();
+    for (const it of items) {
+      if (!it.combo_id) continue;
+      const arr = groups.get(it.combo_id) ?? [];
+      arr.push(it);
+      groups.set(it.combo_id, arr);
+    }
+    return groups;
+  }
+
+  /**
+   * Cuántas unidades completas del combo hay presentes entre sus componentes ya
+   * guardados (mínimo por componente, igual que `combo_discount_for_lines` del
+   * backend) — para mostrar "2x Combo X" en vez de una línea por componente.
+   */
+  private comboUnitsPresent(comboId: string, items: DiningOrderItem[]): number {
+    const promo = this.combos().find((p) => p.id === comboId);
+    const recipe = promo?.combo_items ?? [];
+    if (recipe.length === 0) return 0;
+    const qtyByVariant = new Map<string, number>();
+    for (const it of items) {
+      qtyByVariant.set(it.product_variant_id, (qtyByVariant.get(it.product_variant_id) ?? 0) + it.quantity);
+    }
+    return Math.min(...recipe.map((ci) => Math.floor((qtyByVariant.get(ci.product_variant_id) ?? 0) / ci.quantity)));
+  }
+
+  /**
+   * Subtotal a mostrar para un combo ya guardado: las unidades que forman un
+   * combo completo se muestran al precio del bundle, y solo el remanente que
+   * no alcanza a formarlo (por una anulación parcial en cocina) se muestra a
+   * precio normal — mismo criterio que `combo_discount_for_lines` del backend,
+   * para que el número que ve el cajero coincida con lo que se cobrará.
+   */
+  private comboDisplaySubtotal(promo: Promotion | undefined, its: DiningOrderItem[], units: number): number {
+    const normalTotal = its.reduce((s, it) => s + Number(it.unit_price) * it.quantity, 0);
+    if (units <= 0 || !promo) return normalTotal;
+
+    const priceByVariant = new Map<string, number>();
+    for (const it of its) priceByVariant.set(it.product_variant_id, Number(it.unit_price));
+    const coveredNormalTotal = promo.combo_items.reduce(
+      (s, ci) => s + (priceByVariant.get(ci.product_variant_id) ?? 0) * ci.quantity * units,
+      0,
+    );
+    return Number(promo.value) * units + (normalTotal - coveredNormalTotal);
   }
 
   incDraft(key: string): void {
@@ -651,12 +855,17 @@ export class PosTerminalStore {
     try {
       let order: DiningOrder | null = null;
       for (const l of this.draftLines()) {
-        order = await this.api.addTableItem(tableId, {
-          product_variant_id: l.variant.id,
-          quantity: l.quantity,
-          option_ids: l.options.map((o) => o.id),
-          notes: l.notes,
-        });
+        order = await this.api.addTableItem(
+          tableId,
+          l.kind === 'combo'
+            ? { combo_id: l.comboId, quantity: l.quantity, notes: l.notes }
+            : {
+                product_variant_id: l.variant.id,
+                quantity: l.quantity,
+                option_ids: l.options.map((o) => o.id),
+                notes: l.notes,
+              },
+        );
       }
       this.draftLines.set([]);
       await this.reload();
@@ -667,6 +876,31 @@ export class PosTerminalStore {
       this.error.set(this.api.extractError(err, 'No se pudo guardar el pedido.'));
       this.toast.error(this.error()!);
       return false;
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  /** Anula todos los componentes reales de un combo agrupado en una sola acción. */
+  async voidPersistedCombo(comboId: string): Promise<void> {
+    const order = this.selectedOrder();
+    if (!order) return;
+    const ids = (order.items ?? [])
+      .filter((i) => i.combo_id === comboId && i.estado_cocina !== 'anulado')
+      .map((i) => i.id);
+    if (ids.length === 0) return;
+    const ok = await this.confirm.ask({
+      title: 'Anular combo',
+      message: '¿Anular todos los productos de este combo? Se revierte el inventario de lo que aún no se preparó.',
+      confirmText: 'Anular',
+    });
+    if (!ok) return;
+    this.submitting.set(true);
+    try {
+      for (const id of ids) await this.api.voidItem(id, 'Combo anulado desde terminal');
+      await this.reload();
+    } catch (err) {
+      this.toast.error(this.api.extractError(err, 'No se pudo anular el combo.'));
     } finally {
       this.submitting.set(false);
     }
@@ -852,9 +1086,15 @@ export class PosTerminalStore {
   }
 
   private orderSubtotal(o: DiningOrder): number {
-    return (o.items ?? [])
-      .filter((i) => i.estado_cocina !== 'anulado')
-      .reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
+    const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
+    const plain = items.filter((i) => !i.combo_id);
+    let total = plain.reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
+    for (const [comboId, its] of this.groupByCombo(items)) {
+      const promo = this.combos().find((p) => p.id === comboId);
+      const units = this.comboUnitsPresent(comboId, its);
+      total += this.comboDisplaySubtotal(promo, its, units);
+    }
+    return total;
   }
 
   private elapsedLabel(ts: number | null): string {

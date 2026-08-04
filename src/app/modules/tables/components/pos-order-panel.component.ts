@@ -100,7 +100,10 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
                       {{ it.ready ? 'Listo' : 'En cocina' }}
                     </span>
                   </div>
-                  <button (click)="store.voidPersistedItem(it.key)" class="text-xs font-medium text-red-600 hover:text-red-700">Anular</button>
+                  <button
+                    (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
+                    class="text-xs font-medium text-red-600 hover:text-red-700"
+                  >Anular</button>
                 }
               </div>
             </div>

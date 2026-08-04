@@ -5,6 +5,12 @@ export interface PromotionTarget {
   category_id: string | null;
 }
 
+/** Componente de un combo: variante requerida + cantidad por unidad de combo. */
+export interface ComboItem {
+  product_variant_id: string;
+  quantity: number;
+}
+
 export interface Promotion {
   id: string;
   name: string;
@@ -14,12 +20,14 @@ export interface Promotion {
   starts_at: string | null;
   ends_at: string | null;
   days_of_week: string | null;
+  days_of_month: string | null;
   start_time: string | null;
   end_time: string | null;
   min_qty: number;
   buy_qty: number | null;
   get_qty: number | null;
   targets: PromotionTarget[];
+  combo_items: ComboItem[];
 }
 
 /** Modelo del formulario (UI). */
@@ -31,11 +39,14 @@ export interface PromotionForm {
   starts_at: string | null;
   ends_at: string | null;
   days_of_week: number[]; // 0=lunes..6=domingo
+  days_of_month: number[]; // 1..31
   start_time: string | null;
   end_time: string | null;
   min_qty: number;
   categoryIds: string[];
   productIds: string[];
+  /** Solo aplica cuando `type === 'combo'`; requiere ≥2 variantes distintas. */
+  comboItems: ComboItem[];
 }
 
 export interface PromotionCreatePayload {
@@ -46,15 +57,26 @@ export interface PromotionCreatePayload {
   starts_at: string | null;
   ends_at: string | null;
   days_of_week: string | null;
+  days_of_month: string | null;
   start_time: string | null;
   end_time: string | null;
   min_qty: number;
   targets: PromotionTarget[];
+  combo_items: ComboItem[];
 }
 
 export type PromotionUpdatePayload = Partial<
   Pick<
     PromotionCreatePayload,
-    'name' | 'value' | 'active' | 'starts_at' | 'ends_at' | 'days_of_week' | 'start_time' | 'end_time' | 'min_qty'
+    | 'name'
+    | 'value'
+    | 'active'
+    | 'starts_at'
+    | 'ends_at'
+    | 'days_of_week'
+    | 'days_of_month'
+    | 'start_time'
+    | 'end_time'
+    | 'min_qty'
   >
 >;
