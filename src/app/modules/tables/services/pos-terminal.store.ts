@@ -9,6 +9,7 @@ import { PaymentMethod } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../menu/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
+import { bestProductDiscount, discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -242,28 +243,17 @@ export class PosTerminalStore {
    */
   readonly productDiscountBadges = computed<Map<string, string>>(() => {
     const now = new Date();
-    const promos = this.promotionService.promotions().filter(
-      (p) => (p.type === 'percent' || p.type === 'fixed') && this.isPromoActiveNow(p, now),
-    );
+    const promos = this.promotionService.promotions();
     const result = new Map<string, string>();
-    if (promos.length === 0) return result;
 
     for (const c of this.categories()) {
       for (const prod of c.products) {
         const price = prod.variants.length ? Math.min(...prod.variants.map((v) => v.price)) : 0;
-        let bestAmount = 0;
-        let bestLabel = '';
-        for (const p of promos) {
-          const matches = p.targets.length === 0
-            || p.targets.some((t) => t.product_id === prod.id || t.category_id === c.id);
-          if (!matches) continue;
-          const amount = p.type === 'percent' ? (price * Number(p.value)) / 100 : Math.min(Number(p.value), price);
-          if (amount > bestAmount) {
-            bestAmount = amount;
-            bestLabel = p.type === 'percent' ? `-${Number(p.value)}%` : `-${this.fmt(Number(p.value))}`;
-          }
-        }
-        if (bestAmount > 0) result.set(prod.id, bestLabel);
+        const match = bestProductDiscount(promos, now, prod.id, c.id, price);
+        if (!match) continue;
+        const label =
+          match.promo.type === 'percent' ? `-${Number(match.promo.value)}%` : `-${this.fmt(Number(match.promo.value))}`;
+        result.set(prod.id, label);
       }
     }
     return result;
@@ -376,24 +366,36 @@ export class PosTerminalStore {
   /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
   readonly cartView = computed(() => {
     const lk = this.lookup();
+    const now = new Date();
+    const promos = this.promotionService.promotions();
     const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
 
     const plainItems = items.filter((i) => !i.combo_id);
-    const persistedPlain = plainItems.map((i) => ({
-      kind: 'persisted' as const,
-      key: i.id,
-      comboId: undefined as string | undefined,
-      qty: i.quantity,
-      name: lk.variantLabel(i.product_variant_id),
-      bullets: [
-        ...(i.options ?? []).map((o) => lk.optionLabel(o.option_id)).filter(Boolean),
-        ...(i.notes ? [i.notes] : []),
-      ],
-      unitPrice: Number(i.unit_price),
-      subtotal: Number(i.unit_price) * i.quantity,
-      ready: !NOT_READY.includes(i.estado_cocina),
-    }));
+    const persistedPlain = plainItems.map((i) => {
+      const unitPrice = discountedUnitPrice(
+        promos,
+        now,
+        lk.productId(i.product_variant_id),
+        lk.categoryId(i.product_variant_id),
+        Number(i.unit_price),
+        i.quantity,
+      );
+      return {
+        kind: 'persisted' as const,
+        key: i.id,
+        comboId: undefined as string | undefined,
+        qty: i.quantity,
+        name: lk.variantLabel(i.product_variant_id),
+        bullets: [
+          ...(i.options ?? []).map((o) => lk.optionLabel(o.option_id)).filter(Boolean),
+          ...(i.notes ? [i.notes] : []),
+        ],
+        unitPrice,
+        subtotal: unitPrice * i.quantity,
+        ready: !NOT_READY.includes(i.estado_cocina),
+      };
+    });
 
     // Un combo son N order_items reales (uno por componente) que comparten
     // combo_id: se agrupan en una sola línea de carrito, como lo ve el cajero.
@@ -429,6 +431,14 @@ export class PosTerminalStore {
           ready: true,
         };
       }
+      const unitPrice = discountedUnitPrice(
+        promos,
+        now,
+        lk.productId(l.variant.id),
+        lk.categoryId(l.variant.id),
+        l.unitPrice,
+        l.quantity,
+      );
       return {
         kind: 'draft' as const,
         key: l.key,
@@ -436,8 +446,8 @@ export class PosTerminalStore {
         qty: l.quantity,
         name: l.product.name,
         bullets: [...l.options.map((o) => o.name), ...(l.notes ? [l.notes] : [])],
-        unitPrice: l.unitPrice,
-        subtotal: l.unitPrice * l.quantity,
+        unitPrice,
+        subtotal: unitPrice * l.quantity,
         ready: true,
       };
     });
@@ -755,30 +765,6 @@ export class PosTerminalStore {
     this.catalogOpen.set(false);
   }
 
-  /**
-   * Réplica de `_valid_now()` del backend (`promotions/service.py`), solo para
-   * decidir si se muestra la insignia de descuento en el catálogo — el cálculo
-   * real del descuento sigue siendo responsabilidad exclusiva del backend.
-   */
-  private isPromoActiveNow(p: Promotion, now: Date): boolean {
-    if (!p.active) return false;
-    if (p.starts_at && now < new Date(p.starts_at)) return false;
-    if (p.ends_at && now > new Date(p.ends_at)) return false;
-    if (p.days_of_week) {
-      const allowed = p.days_of_week.split(',').map((d) => d.trim());
-      const weekday = (now.getDay() + 6) % 7; // JS 0=domingo..6=sábado → 0=lunes..6=domingo
-      if (!allowed.includes(String(weekday))) return false;
-    }
-    if (p.days_of_month) {
-      const allowed = p.days_of_month.split(',').map((d) => d.trim());
-      if (!allowed.includes(String(now.getDate()))) return false;
-    }
-    const hhmm = now.toTimeString().slice(0, 5);
-    if (p.start_time && hhmm < p.start_time.slice(0, 5)) return false;
-    if (p.end_time && hhmm > p.end_time.slice(0, 5)) return false;
-    return true;
-  }
-
   /** Productos incluidos en un combo, para mostrarlos como bullets del carrito. */
   private comboBullets(comboId: string): string[] {
     const promo = this.combos().find((p) => p.id === comboId);
@@ -1086,9 +1072,22 @@ export class PosTerminalStore {
   }
 
   private orderSubtotal(o: DiningOrder): number {
+    const lk = this.lookup();
+    const now = new Date();
+    const promos = this.promotionService.promotions();
     const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
     const plain = items.filter((i) => !i.combo_id);
-    let total = plain.reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
+    let total = plain.reduce((s, i) => {
+      const unitPrice = discountedUnitPrice(
+        promos,
+        now,
+        lk.productId(i.product_variant_id),
+        lk.categoryId(i.product_variant_id),
+        Number(i.unit_price),
+        i.quantity,
+      );
+      return s + unitPrice * i.quantity;
+    }, 0);
     for (const [comboId, its] of this.groupByCombo(items)) {
       const promo = this.combos().find((p) => p.id === comboId);
       const units = this.comboUnitsPresent(comboId, its);
