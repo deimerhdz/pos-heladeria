@@ -166,6 +166,28 @@ export interface TableSession {
 }
 
 /** Una línea del desglose de la cuenta (`SessionBillLine`). */
+/** `POST /table-sessions/{id}/participants` — comensal creado por el staff. */
+export interface ParticipantCreatePayload {
+  display_name: string;
+}
+
+/**
+ * Una línea (o parte de ella) y a quién se le cobra. `participant_id: null` = sin
+ * asignar. `quantity` reparte las unidades de una misma línea entre varias personas:
+ * se mandan varias entradas del mismo `order_item_id` y **la suma debe ser exactamente
+ * la cantidad de la línea**. Omitirlo significa "la línea entera".
+ */
+export interface ItemAssignment {
+  order_item_id: string;
+  participant_id: string | null;
+  quantity?: number;
+}
+
+/** `PUT /table-sessions/{id}/assignments` — reparto en lote. */
+export interface AssignmentsPayload {
+  assignments: ItemAssignment[];
+}
+
 export interface SessionBillLine {
   /** `null` = ítems añadidos por el mesero, sin comensal asignado. */
   participant_id: string | null;
