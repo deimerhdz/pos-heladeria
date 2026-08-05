@@ -57,7 +57,11 @@ export interface SaleItem {
   id: string;
   product_variant_id: string;
   description: string;
-  options?: unknown[];
+  /**
+   * Snapshot de las opciones elegidas, congelado al vender. Se conserva el nombre
+   * para que el ticket siga siendo legible aunque la opción se desactive después.
+   */
+  options?: { option_id: string; name: string; extra_price: string }[];
   quantity: number;
   unit_price: string;
   line_total: string;
@@ -84,6 +88,9 @@ export interface SaleTable {
   name: string | null;
 }
 
+/** Estado de la venta (check constraint `Sale.status` en el backend). */
+export type SaleStatus = 'issued' | 'paid' | 'void';
+
 /** `SaleResponse` — the emitted, paid sale (receipt). */
 export interface Sale {
   id: string;
@@ -99,11 +106,28 @@ export interface Sale {
   /** Efectivo recibido y cambio entregado (RF-029). */
   paid_amount?: string | null;
   change_given?: string | null;
-  status: string;
+  status: SaleStatus;
   sold_at: string;
   items?: SaleItem[];
   payments?: SalePayment[];
   /** Consecutivo fiscal; `null` en ventas anteriores a la facturación. */
   invoice?: SaleInvoice | null;
   dining_table?: SaleTable | null;
+}
+
+/** Envoltura de paginación devuelta por el backend (`Page[T]`, app/core/pagination.py). */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+/** Filtros de `GET /sales` (`status`, `date_from`/`date_to` en `YYYY-MM-DD`, `invoice_reference`). */
+export interface SaleListFilters {
+  status: SaleStatus | '';
+  dateFrom: string;
+  dateTo: string;
+  invoiceReference: string;
 }

@@ -1,8 +1,9 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { SalesService } from '../services/sales.service';
 import { PaymentMethodService } from '../services/payment-method.service';
-import { Sale } from '../interfaces/sales.interface';
+import { Sale, SaleStatus } from '../interfaces/sales.interface';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
 import {
@@ -12,12 +13,26 @@ import {
   saleToReceipt,
 } from '../../tables/services/receipt.util';
 
+const PAGE_SIZES = [10, 20, 50, 100];
+
+const STATUS_LABELS: Record<SaleStatus, string> = {
+  issued: 'Emitida',
+  paid: 'Pagada',
+  void: 'Anulada',
+};
+
+const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
+  issued: 'bg-gray-100 text-gray-600',
+  paid: 'bg-green-100 text-green-700',
+  void: 'bg-red-100 text-red-700',
+};
+
 @Component({
   selector: 'app-sales-page',
   standalone: true,
-  imports: [DatePipe, DecimalPipe],
+  imports: [DatePipe, DecimalPipe, FormsModule],
   template: `
-    <div class="space-y-6 max-w-3xl">
+    <div class="space-y-6">
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Ventas</h1>
@@ -31,34 +46,111 @@ import {
         </button>
       </div>
 
+      <!-- Filtros -->
+      <div class="bg-white rounded-xl border border-gray-100 p-4 flex flex-wrap gap-3 items-end">
+        <div>
+          <label class="block text-[11px] font-medium text-gray-500 mb-1">Estado</label>
+          <select [ngModel]="svc.status()" (ngModelChange)="onStatusChange($event)"
+            class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">Todos</option>
+            <option value="issued">Emitida</option>
+            <option value="paid">Pagada</option>
+            <option value="void">Anulada</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-gray-500 mb-1">Desde</label>
+          <input type="date" [ngModel]="svc.dateFrom()" (ngModelChange)="onDateFromChange($event)"
+            class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-gray-500 mb-1">Hasta</label>
+          <input type="date" [ngModel]="svc.dateTo()" (ngModelChange)="onDateToChange($event)"
+            class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+        <div class="flex-1 min-w-48">
+          <label class="block text-[11px] font-medium text-gray-500 mb-1">Factura</label>
+          <input [ngModel]="invoiceSearchSignal()" (ngModelChange)="onInvoiceSearchInput($event)" type="text"
+            placeholder="Ej: A-000004"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+      </div>
+
       @if (svc.error()) {
         <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{{ svc.error() }}</div>
       }
 
-      @if (svc.loading() && svc.sales().length === 0) {
-        <div class="flex justify-center py-12">
-          <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      } @else if (svc.sales().length === 0) {
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center text-gray-400">
-          <p class="text-4xl mb-3">🧾</p>
-          <p class="font-medium">Aún no hay ventas</p>
-        </div>
-      } @else {
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-50">
-          @for (sale of svc.sales(); track sale.id) {
-            <button (click)="selected.set(sale)" class="w-full text-left px-5 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-900">{{ docLabel(sale) }}</p>
-                <p class="text-xs text-gray-400">
-                  {{ sale.sold_at | date: 'dd/MM HH:mm' }}{{ sale.customer_name ? ' · ' + sale.customer_name : '' }}
-                </p>
+      <!-- Tabla -->
+      <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        @if (svc.loading() && svc.sales().length === 0) {
+          <div class="flex items-center justify-center py-12"><p class="text-sm text-gray-400">Cargando ventas...</p></div>
+        } @else if (svc.sales().length === 0) {
+          <div class="flex flex-col items-center justify-center py-16 text-gray-400">
+            <p class="text-4xl mb-3">🧾</p>
+            <p class="font-medium">No se encontraron ventas</p>
+          </div>
+        } @else {
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-gray-100 bg-gray-50">
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fecha</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Documento</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cliente</th>
+                  <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Estado</th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
+                  <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-50">
+                @for (s of svc.sales(); track s.id) {
+                  <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-4 py-3 text-gray-600">{{ s.sold_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ docLabel(s) }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ s.customer_name || '—' }}</td>
+                    <td class="px-4 py-3">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" [class]="statusChipClass(s.status)">
+                        {{ statusLabel(s.status) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-right font-semibold text-gray-900">$ {{ +s.total | number: '1.2-2' }}</td>
+                    <td class="px-4 py-3 text-right">
+                      <button (click)="selected.set(s)"
+                        class="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (svc.totalPages() > 1) {
+            <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+              <div class="flex items-center gap-2 text-xs text-gray-500">
+                <span>Por página</span>
+                <select [ngModel]="svc.size()" (ngModelChange)="onSizeChange($event)" [disabled]="svc.loading()"
+                  class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                  @for (s of pageSizes; track s) { <option [ngValue]="s">{{ s }}</option> }
+                </select>
               </div>
-              <span class="text-sm font-bold text-gray-900 shrink-0">$ {{ +sale.total | number: '1.2-2' }}</span>
-            </button>
+              <div class="flex items-center gap-3">
+                <span class="text-xs text-gray-500">Página {{ svc.page() }} de {{ svc.totalPages() || 1 }}</span>
+                <div class="flex items-center gap-1">
+                  <button (click)="goToPage(svc.page() - 1)" [disabled]="svc.page() <= 1 || svc.loading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Anterior
+                  </button>
+                  <button (click)="goToPage(svc.page() + 1)" [disabled]="svc.page() >= svc.totalPages() || svc.loading()"
+                    class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            </div>
           }
-        </div>
-      }
+        }
+      </div>
     </div>
 
     <!-- Recibo -->
@@ -111,18 +203,63 @@ import {
     }
   `,
 })
-export class SalesPageComponent implements OnInit {
+export class SalesPageComponent implements OnInit, OnDestroy {
   readonly svc = inject(SalesService);
   private readonly methods = inject(PaymentMethodService);
   private readonly tenantInfo = inject(TenantInfoService);
   private readonly printer = inject(PrinterSettingsStore);
   readonly selected = signal<Sale | null>(null);
 
+  readonly pageSizes = PAGE_SIZES;
+
+  /** Local echo of the invoice search box; the query to the service is debounced. */
+  readonly invoiceSearchSignal = signal('');
+  private invoiceSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+
   ngOnInit(): void {
     this.svc.list();
     this.methods.load();
     // Para el ticket: nombre del negocio, logo y mensaje de cierre.
     if (!this.tenantInfo.info()) void this.tenantInfo.load();
+  }
+
+  ngOnDestroy(): void {
+    if (this.invoiceSearchDebounce) clearTimeout(this.invoiceSearchDebounce);
+  }
+
+  onStatusChange(value: SaleStatus | ''): void {
+    this.svc.setStatus(value);
+  }
+
+  onDateFromChange(value: string): void {
+    this.svc.setDateFrom(value);
+  }
+
+  onDateToChange(value: string): void {
+    this.svc.setDateTo(value);
+  }
+
+  onInvoiceSearchInput(value: string): void {
+    this.invoiceSearchSignal.set(value);
+    if (this.invoiceSearchDebounce) clearTimeout(this.invoiceSearchDebounce);
+    this.invoiceSearchDebounce = setTimeout(() => this.svc.setInvoiceReference(value), 300);
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.svc.totalPages()) return;
+    this.svc.list(page, this.svc.size());
+  }
+
+  onSizeChange(size: number): void {
+    this.svc.list(1, size);
+  }
+
+  statusLabel(status: SaleStatus): string {
+    return STATUS_LABELS[status];
+  }
+
+  statusChipClass(status: SaleStatus): string {
+    return STATUS_CHIP_CLASSES[status];
   }
 
   methodName(id: string): string {

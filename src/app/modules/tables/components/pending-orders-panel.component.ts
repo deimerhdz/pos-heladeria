@@ -8,11 +8,13 @@ import {
   signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { DiningOrder } from '../interfaces/dining.interface';
+import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
+import { PromotionService } from '../../promotions/services/promotion.service';
+import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 
 /**
  * Pedidos que el comensal envió y esperan que el personal los acepte.
@@ -64,6 +66,9 @@ import { MenuCategory } from '../../products/interfaces/product.interface';
                   <li class="text-sm text-gray-700">
                     <span class="font-medium">{{ item.quantity }}×</span>
                     {{ variantLabel(item.product_variant_id) }}
+                    @if (optionLabels(item); as opts) {
+                      <span class="block text-xs text-gray-500 pl-5">{{ opts }}</span>
+                    }
                     @if (item.notes) {
                       <span class="block text-xs text-gray-400 pl-5 italic">“{{ item.notes }}”</span>
                     }
@@ -113,6 +118,7 @@ export class PendingOrdersPanelComponent {
 
   private readonly api = inject(DiningSessionService);
   private readonly toast = inject(ToastService);
+  private readonly promotionService = inject(PromotionService);
 
   readonly busy = signal<string | null>(null);
   /** Id del pedido cuyo intento de confirmación falló por stock. */
@@ -123,8 +129,36 @@ export class PendingOrdersPanelComponent {
     return buildMenuLookup(this.categories).variantLabel(variantId);
   }
 
+  /**
+   * Sabores elegidos por el comensal. Confirmar es lo que descuenta el inventario, y
+   * la cantidad depende de qué opción se eligió, así que el mesero tiene que verlo
+   * antes de aceptar. Devuelve `null` (no cadena vacía) para que el `@if` no pinte
+   * una línea en blanco.
+   */
+  optionLabels(item: DiningOrderItem): string | null {
+    const lookup = buildMenuLookup(this.categories);
+    const names = (item.options ?? [])
+      .map((o) => lookup.optionLabel(o.option_id))
+      .filter(Boolean);
+    return names.length ? names.join(', ') : null;
+  }
+
   total(order: DiningOrder): number {
-    return (order.items ?? []).reduce((s, i) => s + Number(i.unit_price) * i.quantity, 0);
+    const lk = buildMenuLookup(this.categories);
+    const now = new Date();
+    const promos = this.promotionService.promotions();
+    return (order.items ?? []).reduce((s, i) => {
+      if (i.combo_id) return s + Number(i.unit_price) * i.quantity;
+      const unitPrice = discountedUnitPrice(
+        promos,
+        now,
+        lk.productId(i.product_variant_id),
+        lk.categoryId(i.product_variant_id),
+        Number(i.unit_price),
+        i.quantity,
+      );
+      return s + unitPrice * i.quantity;
+    }, 0);
   }
 
   time(order: DiningOrder): string {

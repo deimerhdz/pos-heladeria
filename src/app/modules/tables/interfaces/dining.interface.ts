@@ -27,9 +27,14 @@ export type DiningOrderStatus =
 /** Per-item kitchen status (`KitchenStatus`). The kitchen board works on this. */
 export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'anulado';
 
-/** One line of a `POST /orders` request (`OrderItemIn`). */
+/**
+ * One line of a `POST /orders` (or `.../tables/{id}/items`) request
+ * (`OrderItemIn`). Exactly one of `product_variant_id` / `combo_id` must be
+ * set; a combo doesn't accept `option_ids`.
+ */
 export interface OrderItemPayload {
-  product_variant_id: string;
+  product_variant_id?: string;
+  combo_id?: string;
   quantity?: number;
   option_ids?: string[];
   notes?: string | null;
@@ -55,6 +60,12 @@ export interface DiningOrderItemOption {
 export interface DiningOrderItem {
   id: string;
   product_variant_id: string;
+  /**
+   * Combo (selección explícita) que originó esta línea. Varias líneas del
+   * mismo pedido comparten `combo_id`: son los componentes reales de un
+   * mismo combo, cada uno con su propio `product_variant_id` y receta.
+   */
+  combo_id?: string | null;
   /**
    * Comensal al que se le cobra esta línea. La asignación es **por ítem**, no
    * por pedido: por eso la cuenta dividida es exacta aunque un pedido mezcle
@@ -155,6 +166,28 @@ export interface TableSession {
 }
 
 /** Una línea del desglose de la cuenta (`SessionBillLine`). */
+/** `POST /table-sessions/{id}/participants` — comensal creado por el staff. */
+export interface ParticipantCreatePayload {
+  display_name: string;
+}
+
+/**
+ * Una línea (o parte de ella) y a quién se le cobra. `participant_id: null` = sin
+ * asignar. `quantity` reparte las unidades de una misma línea entre varias personas:
+ * se mandan varias entradas del mismo `order_item_id` y **la suma debe ser exactamente
+ * la cantidad de la línea**. Omitirlo significa "la línea entera".
+ */
+export interface ItemAssignment {
+  order_item_id: string;
+  participant_id: string | null;
+  quantity?: number;
+}
+
+/** `PUT /table-sessions/{id}/assignments` — reparto en lote. */
+export interface AssignmentsPayload {
+  assignments: ItemAssignment[];
+}
+
 export interface SessionBillLine {
   /** `null` = ítems añadidos por el mesero, sin comensal asignado. */
   participant_id: string | null;

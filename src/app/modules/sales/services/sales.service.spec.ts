@@ -65,16 +65,49 @@ describe('SalesService', () => {
     expect(service.error()).toBe('Turno cerrado');
   });
 
-  it('lists sales newest first', async () => {
+  it('lists sales and updates pagination state', async () => {
     const p = service.list();
-    const req = http.expectOne(base);
+    const req = http.expectOne((r) => r.url === base);
     expect(req.request.method).toBe('GET');
-    req.flush([
-      sale({ id: 'a', sold_at: '2026-01-01T09:00:00Z' }),
-      sale({ id: 'b', sold_at: '2026-01-01T11:00:00Z' }),
-    ]);
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('size')).toBe('20');
+    req.flush({
+      items: [sale({ id: 'b', sold_at: '2026-01-01T11:00:00Z' }), sale({ id: 'a', sold_at: '2026-01-01T09:00:00Z' })],
+      total: 2,
+      page: 1,
+      size: 20,
+      pages: 1,
+    });
     await p;
     expect(service.sales().map((s) => s.id)).toEqual(['b', 'a']);
+    expect(service.total()).toBe(2);
+    expect(service.totalPages()).toBe(1);
+  });
+
+  it('sends status, date range and invoice_reference filters, stripping dashes', async () => {
+    let p: Promise<void> = service.setStatus('paid');
+    let req = http.expectOne((r) => r.url === base);
+    req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
+    await p;
+
+    p = service.setDateFrom('2026-01-01');
+    req = http.expectOne((r) => r.url === base);
+    req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
+    await p;
+
+    p = service.setDateTo('2026-01-31');
+    req = http.expectOne((r) => r.url === base);
+    req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
+    await p;
+
+    p = service.setInvoiceReference('A-000004');
+    req = http.expectOne((r) => r.url === base);
+    expect(req.request.params.get('status')).toBe('paid');
+    expect(req.request.params.get('date_from')).toBe('2026-01-01');
+    expect(req.request.params.get('date_to')).toBe('2026-01-31');
+    expect(req.request.params.get('invoice_reference')).toBe('A000004');
+    req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
+    await p;
   });
 
   it('gets a sale by id', async () => {

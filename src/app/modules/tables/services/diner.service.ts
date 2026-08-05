@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { MenuCategory } from '../../products/interfaces/product.interface';
+import { MenuCategory, MenuOptionGroup } from '../../products/interfaces/product.interface';
 import { DiningOrder } from '../interfaces/dining.interface';
 import {
   CartItemPayload,
@@ -25,6 +25,22 @@ export interface ResolvedMenu {
   table: DinerTable;
   business: ResolvedBusiness | null;
   categories: MenuCategory[];
+}
+
+/** Mapea grupos de opciones crudos; se usa a nivel de variante y de producto. */
+function mapGroups(raw: unknown): MenuOptionGroup[] {
+  return ((raw as Record<string, unknown>[]) ?? []).map((g) => ({
+    id: g['id'] as string,
+    name: g['name'] as string,
+    min_select: (g['min_select'] as number) ?? 0,
+    max_select: (g['max_select'] as number) ?? 0,
+    options: ((g['options'] as Record<string, unknown>[]) ?? []).map((o) => ({
+      id: o['id'] as string,
+      name: o['name'] as string,
+      extra_price: Number(o['extra_price']),
+      available: (o['available'] as boolean) ?? true,
+    })),
+  }));
 }
 
 /** Error de sesión: hay que volver a pedir el nombre al comensal. */
@@ -235,18 +251,15 @@ export class DinerService {
           id: v['id'] as string,
           name: v['name'] as string,
           price: Number(v['price']),
+          // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
+          // con el tamaño.
+          option_groups: mapGroups(v['option_groups']),
+          available: (v['available'] as boolean) ?? true,
         })),
-        option_groups: ((p['option_groups'] as Record<string, unknown>[]) ?? []).map((g) => ({
-          id: g['id'] as string,
-          name: g['name'] as string,
-          min_select: (g['min_select'] as number) ?? 0,
-          max_select: (g['max_select'] as number) ?? 0,
-          options: ((g['options'] as Record<string, unknown>[]) ?? []).map((o) => ({
-            id: o['id'] as string,
-            name: o['name'] as string,
-            extra_price: Number(o['extra_price']),
-          })),
-        })),
+        // `?? true` para no romper contra un backend aún sin desplegar: sin el campo,
+        // todo se comporta como antes (disponible).
+        available: (p['available'] as boolean) ?? true,
+        option_groups: mapGroups(p['option_groups']),
       })),
     };
   }

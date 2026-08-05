@@ -1,5 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
 import { DinerService, DinerSessionExpiredError } from '../services/diner.service';
@@ -18,12 +18,21 @@ import {
   puedeCancelarComensal,
 } from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
+import { IconComponent } from '../../../shared/icon/icon.component';
+import { normalizeText } from '../../../shared/normalize-text';
 import {
   ProductSelectComponent,
   ProductSelection,
 } from '../components/product-select.component';
 
 type MenuView = 'loading' | 'error' | 'name' | 'menu';
+/** Secciones navegables dentro de la vista `menu`, reflejadas en el query param `v`. */
+type MenuSection = 'carta' | 'pedidos';
+/**
+ * Nombre del query param de sección. **No puede ser `s`**: ese lo usa
+ * `DinerTokenStore` para el token de sesión del comensal.
+ */
+const SECTION_PARAM = 'v';
 
 /** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const ORDERS_POLL_MS = 10_000;
@@ -35,7 +44,7 @@ const REFRESH_DEBOUNCE_MS = 250;
 @Component({
   selector: 'app-public-menu',
   standalone: true,
-  imports: [CartComponent, ProductSelectComponent],
+  imports: [CartComponent, ProductSelectComponent, IconComponent],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -126,27 +135,63 @@ const REFRESH_DEBOUNCE_MS = 250;
                 <p class="text-xs text-gray-400 truncate">Hola, {{ customerName() }} 👋</p>
               </div>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
-              @if (myOrders().length > 0) {
-                <button
-                  (click)="ordersOpen.set(true)"
-                  class="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
-                >
-                  🧾 Mis pedidos
-                  <span class="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-600 text-white text-xs font-bold">{{ myOrders().length }}</span>
-                </button>
-              }
-              <button
-                (click)="exit()"
-                class="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition-colors"
-              >
-                🚪 Salir
-              </button>
-            </div>
           </div>
+
+          <!-- Segunda fila: lupa + pestañas de categoría. Va dentro de la cabecera
+               para compartir su sticky top-0 en vez de calcular un desplazamiento.
+               Las pestañas son de la carta; en "Mis pedidos" van el título de sección. -->
+          @if (section() === 'pedidos') {
+            <div class="max-w-5xl mx-auto px-4 py-2.5 border-t border-gray-50">
+              <h1 class="text-sm font-bold text-gray-900">Mis pedidos</h1>
+            </div>
+          } @else if (categories().length > 0) {
+            <div class="max-w-5xl mx-auto px-4 flex items-center gap-2 border-t border-gray-50">
+              @if (searchOpen()) {
+                <div class="flex items-center gap-2 w-full py-2">
+                  <span class="w-5 h-5 block text-gray-400 shrink-0"><app-icon name="search" /></span>
+                  <!-- type=text y no search: el navegador añade su propia ✕ y quedaban
+                       dos aspas seguidas. inputmode conserva el teclado de búsqueda. -->
+                  <input
+                    type="text"
+                    inputmode="search"
+                    autofocus
+                    [value]="search()"
+                    (input)="search.set($any($event.target).value)"
+                    placeholder="Buscar producto…"
+                    class="flex-1 min-w-0 py-1.5 text-sm bg-transparent focus:outline-none"
+                  />
+                  <button (click)="closeSearch()" class="shrink-0 text-gray-400 hover:text-gray-600 px-1">✕</button>
+                </div>
+              } @else {
+                <button
+                  (click)="openSearch()"
+                  aria-label="Buscar producto"
+                  class="shrink-0 p-2 -ml-1 text-gray-500 hover:text-indigo-600 transition-colors"
+                >
+                  <span class="w-5 h-5 block"><app-icon name="search" /></span>
+                </button>
+                <nav class="flex-1 min-w-0 overflow-x-auto">
+                  <div class="flex gap-1 min-w-max">
+                    @for (category of categories(); track category.id) {
+                      <button
+                        (click)="selectCategory(category.id)"
+                        class="px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
+                        [class]="activeCategory()?.id === category.id
+                          ? 'border-indigo-600 text-indigo-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'"
+                      >
+                        {{ category.name }}
+                      </button>
+                    }
+                  </div>
+                </nav>
+              }
+            </div>
+          }
         </div>
 
-        <div class="max-w-5xl mx-auto px-4 py-6 md:flex md:gap-6 md:items-start">
+        <!-- pb-24: deja sitio a la barra inferior fija, o taparía la última fila. -->
+        <div class="max-w-5xl mx-auto px-4 py-6 pb-24 md:flex md:gap-6 md:items-start">
           <!-- Menu column -->
           <div class="flex-1 min-w-0">
             @if (orderSuccess()) {
@@ -156,45 +201,120 @@ const REFRESH_DEBOUNCE_MS = 250;
               </div>
             }
 
-            @if (categories().length === 0) {
+            @if (section() === 'pedidos') {
+              <div class="space-y-3">
+                @for (order of myOrders(); track order.id) {
+                  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusClass(order)">
+                        {{ statusLabel(order) }}
+                      </span>
+                      <span class="text-xs text-gray-400">{{ orderTime(order) }}</span>
+                    </div>
+
+                    @if (esperaConfirmacion(order)) {
+                      <p class="text-xs text-violet-600 mb-2">
+                        Esperando a que el personal lo acepte.
+                      </p>
+                    }
+
+                    <ul class="space-y-1">
+                      @for (item of order.items ?? []; track item.id) {
+                        <li class="text-sm text-gray-700">
+                          <span class="font-medium">{{ item.quantity }}×</span> {{ variantLabel(item.product_variant_id) }}
+                          @if (optionLabels(item)) {
+                            <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
+                          }
+                          @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
+                            <span class="block text-xs pl-5" [class]="kitchenClass(item)">
+                              {{ kitchenLabel(item) }}
+                            </span>
+                          }
+                        </li>
+                      }
+                    </ul>
+
+                    @if (canCancel(order)) {
+                      <button
+                        (click)="cancelOrder(order)"
+                        [disabled]="cancelling() === order.id"
+                        class="mt-3 w-full py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+                      >
+                        {{ cancelling() === order.id ? 'Cancelando...' : 'Cancelar pedido' }}
+                      </button>
+                    }
+                  </div>
+                } @empty {
+                  <!-- Un panel se cerraba con la ✕; una página necesita su propia salida. -->
+                  <div class="text-center py-16">
+                    <div class="text-5xl mb-4">🧾</div>
+                    <p class="text-gray-600 font-medium">Aún no has enviado pedidos</p>
+                    <button
+                      (click)="goToSection('carta')"
+                      class="mt-4 px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors"
+                    >
+                      Ver la carta
+                    </button>
+                  </div>
+                }
+
+                @if (orderError()) {
+                  <p class="text-xs text-red-600 text-center">{{ orderError() }}</p>
+                }
+                @if (myOrders().length > 0) {
+                  <p class="text-xs text-gray-400 text-center pt-2">Se actualiza solo cada pocos segundos 🍨</p>
+                }
+              </div>
+            } @else if (categories().length === 0) {
               <div class="text-center py-16">
                 <div class="text-5xl mb-4">📋</div>
                 <p class="text-gray-600 font-medium">El menú no tiene productos disponibles</p>
               </div>
+            } @else if (visibleProducts().length === 0) {
+              <div class="text-center py-16">
+                <div class="text-5xl mb-4">🔍</div>
+                <p class="text-gray-600 font-medium">
+                  @if (searchOpen() && search()) {
+                    Ningún producto coincide con «{{ search() }}»
+                  } @else {
+                    Esta categoría no tiene productos disponibles
+                  }
+                </p>
+              </div>
             } @else {
-              @for (category of categories(); track category.id) {
-                <section class="mb-8">
-                  <h2 class="text-lg font-bold text-gray-900 mb-3">{{ category.name }}</h2>
-                  <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    @for (product of category.products; track product.id) {
-                      <button
-                        (click)="openProduct(product)"
-                        class="text-left bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-300 hover:shadow-md active:scale-[0.98] transition-all"
-                      >
-                        <div class="w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
-                          @if (product.image_url) {
-                            <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover" />
-                          } @else {
-                            🍦
-                          }
-                        </div>
-                        <div class="p-3">
-                          <p class="font-semibold text-gray-900 text-sm leading-tight">{{ product.name }}</p>
-                          @if (product.description) {
-                            <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
-                          }
-                          <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
-                        </div>
-                      </button>
-                    }
-                  </div>
-                </section>
+              @if (searchOpen() && search()) {
+                <p class="text-sm text-gray-400 mb-3">
+                  {{ visibleProducts().length }} resultado(s) en toda la carta
+                </p>
               }
+              <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                @for (product of visibleProducts(); track product.id) {
+                  <button
+                    (click)="openProduct(product)"
+                    class="text-left bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-300 hover:shadow-md active:scale-[0.98] transition-all"
+                  >
+                    <div class="w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
+                      @if (product.image_url) {
+                        <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover" />
+                      } @else {
+                        🍦
+                      }
+                    </div>
+                    <div class="p-3">
+                      <p class="font-semibold text-gray-900 text-sm leading-tight">{{ product.name }}</p>
+                      @if (product.description) {
+                        <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
+                      }
+                      <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
+                    </div>
+                  </button>
+                }
+              </div>
             }
           </div>
 
-          <!-- Cart (desktop) -->
-          <div class="hidden md:block w-80 shrink-0 sticky top-20">
+          <!-- Cart (desktop). top-32: la cabecera creció con la fila de categorías. -->
+          <div class="hidden md:block w-80 shrink-0 sticky top-32">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 min-h-64">
               <app-cart
                 [submitting]="submitting()"
@@ -206,26 +326,13 @@ const REFRESH_DEBOUNCE_MS = 250;
           </div>
         </div>
 
-        <!-- Cart FAB + drawer (mobile) -->
+        <!-- Cart drawer (mobile). El botón flotante se fue a la barra inferior. -->
         <div class="md:hidden">
-          @if (!cartDrawerOpen()) {
-            <button
-              (click)="cartDrawerOpen.set(true)"
-              class="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-indigo-700 transition-colors z-40"
-            >
-              🛒
-              @if (cart.count() > 0) {
-                <span class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                  {{ cart.count() }}
-                </span>
-              }
-            </button>
-          }
           @if (cartDrawerOpen()) {
             <div class="fixed inset-0 bg-black/40 z-40" (click)="cartDrawerOpen.set(false)"></div>
             <div class="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl z-50 p-5 max-h-[80vh] overflow-y-auto">
-              <div class="flex items-center justify-between mb-4">
-                <span class="text-base font-bold text-gray-900">Mi pedido</span>
+              <!-- El título lo pone app-cart; aquí solo el cierre, o salía dos veces. -->
+              <div class="flex items-center justify-end -mb-2">
                 <button (click)="cartDrawerOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
               </div>
               <app-cart
@@ -237,70 +344,55 @@ const REFRESH_DEBOUNCE_MS = 250;
             </div>
           }
         </div>
-      }
 
-      <!-- Mis pedidos (drawer) -->
-      @if (ordersOpen()) {
-        <div class="fixed inset-0 bg-black/40 z-40" (click)="ordersOpen.set(false)"></div>
-        <div class="fixed inset-y-0 right-0 w-full max-w-sm bg-white shadow-xl z-50 flex flex-col">
-          <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 class="text-base font-bold text-gray-900">Mis pedidos</h2>
-            <button (click)="ordersOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
-          </div>
-          <div class="flex-1 overflow-y-auto p-4 space-y-3">
-            @for (order of myOrders(); track order.id) {
-              <div class="bg-gray-50 rounded-xl border border-gray-100 p-3">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-semibold px-2 py-0.5 rounded-full" [class]="statusClass(order)">
-                    {{ statusLabel(order) }}
+        <!-- Barra inferior. z-30: por debajo de overlays (z-40) y paneles (z-50), para
+             no quedar flotando sobre un panel abierto. -->
+        <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-30">
+          <div class="max-w-5xl mx-auto grid grid-cols-4 md:grid-cols-3">
+            <button (click)="goHome()"
+              class="flex flex-col items-center gap-0.5 py-2.5 transition-colors"
+              [class]="section() === 'carta' ? 'text-indigo-600' : 'text-gray-500 hover:text-indigo-600'">
+              <span class="w-5 h-5 block"><app-icon name="home" /></span>
+              <span class="text-[11px] font-medium">Inicio</span>
+            </button>
+
+            <!-- Siempre presente, con globito solo si hay pedidos: un destino de
+                 navegación que aparece y desaparece desconcierta. -->
+            <button (click)="goToSection('pedidos')"
+              class="relative flex flex-col items-center gap-0.5 py-2.5 transition-colors"
+              [class]="section() === 'pedidos' ? 'text-indigo-600' : 'text-gray-500 hover:text-indigo-600'">
+              <span class="relative">
+                <span class="w-5 h-5 block"><app-icon name="receipt" /></span>
+                @if (myOrders().length > 0) {
+                  <span class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {{ myOrders().length }}
                   </span>
-                  <span class="text-xs text-gray-400">{{ orderTime(order) }}</span>
-                </div>
-
-                @if (esperaConfirmacion(order)) {
-                  <p class="text-xs text-violet-600 mb-2">
-                    Esperando a que el personal lo acepte.
-                  </p>
                 }
+              </span>
+              <span class="text-[11px] font-medium">Mis pedidos</span>
+            </button>
 
-                <ul class="space-y-1">
-                  @for (item of order.items ?? []; track item.id) {
-                    <li class="text-sm text-gray-700">
-                      <span class="font-medium">{{ item.quantity }}×</span> {{ variantLabel(item.product_variant_id) }}
-                      @if (optionLabels(item)) {
-                        <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
-                      }
-                      @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
-                        <span class="block text-xs pl-5" [class]="kitchenClass(item)">
-                          {{ kitchenLabel(item) }}
-                        </span>
-                      }
-                    </li>
-                  }
-                </ul>
-
-                @if (canCancel(order)) {
-                  <button
-                    (click)="cancelOrder(order)"
-                    [disabled]="cancelling() === order.id"
-                    class="mt-3 w-full py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
-                  >
-                    {{ cancelling() === order.id ? 'Cancelando...' : 'Cancelar pedido' }}
-                  </button>
+            <!-- En md+ el carrito ya está fijo en la columna lateral. -->
+            <button (click)="cartDrawerOpen.set(true)" class="md:hidden relative flex flex-col items-center gap-0.5 py-2.5 text-gray-500 hover:text-indigo-600 transition-colors">
+              <span class="relative">
+                <span class="w-5 h-5 block"><app-icon name="cart" /></span>
+                @if (cart.count() > 0) {
+                  <span class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {{ cart.count() }}
+                  </span>
                 }
-              </div>
-            } @empty {
-              <p class="text-center text-sm text-gray-400 py-8">Aún no has enviado pedidos</p>
-            }
+              </span>
+              <span class="text-[11px] font-medium">Carrito</span>
+            </button>
+
+            <button (click)="confirmExit()" class="flex flex-col items-center gap-0.5 py-2.5 text-gray-500 hover:text-red-600 transition-colors">
+              <span class="w-5 h-5 block"><app-icon name="exit" /></span>
+              <span class="text-[11px] font-medium">Salir</span>
+            </button>
           </div>
-          <div class="px-5 py-3 border-t border-gray-100">
-            @if (orderError()) {
-              <p class="text-xs text-red-600 text-center mb-2">{{ orderError() }}</p>
-            }
-            <p class="text-xs text-gray-400 text-center">Se actualiza solo cada pocos segundos 🍨</p>
-          </div>
-        </div>
+        </nav>
       }
+
 
       <!-- Product selection modal -->
       @if (selectedProduct()) {
@@ -315,6 +407,7 @@ const REFRESH_DEBOUNCE_MS = 250;
 })
 export class PublicMenuComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly api = inject(DinerService);
   private readonly tokenStore = inject(DinerTokenStore);
   private readonly realtime = inject(RealtimeService);
@@ -360,9 +453,50 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
    * reconstruyen con estado local: el avance de cocina solo lo sabe el backend.
    */
   readonly myOrders = signal<DiningOrder[]>([]);
-  readonly ordersOpen = signal(false);
+  /**
+   * Sección visible. Sale del query param `v` para que quede en el historial: desde
+   * "Mis pedidos", el botón atrás del teléfono devuelve a la carta en vez de sacar al
+   * comensal del menú.
+   */
+  readonly section = signal<MenuSection>('carta');
   /** Id del pedido que se está cancelando (para deshabilitar su botón). */
   readonly cancelling = signal<string | null>(null);
+
+  /** Categoría abierta en las pestañas. Se fija a la primera al cargar el menú. */
+  readonly activeCategoryId = signal<string | null>(null);
+  /** La lupa sustituye las pestañas por el input: en un móvil no caben las dos. */
+  readonly searchOpen = signal(false);
+  readonly search = signal('');
+
+  /**
+   * Cae en la primera categoría si no hay ninguna elegida. Así no hay que sincronizar
+   * el signal al cargar el menú ni al reanudar sesión: la carta nunca se ve vacía.
+   */
+  readonly activeCategory = computed<MenuCategory | null>(
+    () =>
+      this.categories().find((c) => c.id === this.activeCategoryId()) ??
+      // TS tipa el índice como no-nulo, pero con la carta vacía es `undefined`:
+      // el tipo explícito conserva ese caso y justifica el `?.` de la plantilla.
+      this.categories()[0] ??
+      null,
+  );
+
+  /**
+   * Lo que se pinta en la rejilla.
+   *
+   * Buscando se ignora la pestaña y se recorre **toda** la carta: quien escribe un
+   * nombre quiere ese producto, no ese producto dentro de la categoría que dejó
+   * abierta.
+   */
+  readonly visibleProducts = computed<MenuProduct[]>(() => {
+    const q = normalizeText(this.search());
+    if (this.searchOpen() && q) {
+      return this.categories()
+        .flatMap((c) => c.products)
+        .filter((p) => normalizeText(p.name).includes(q));
+    }
+    return this.activeCategory()?.products ?? [];
+  });
 
   private readonly lookup = computed(() => buildMenuLookup(this.categories()));
 
@@ -383,6 +517,12 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     this.token = this.route.snapshot.paramMap.get('token') ?? '';
+
+    // La sección la manda la URL, no el estado: así el botón atrás la deshace y una
+    // recarga estando en "Mis pedidos" vuelve ahí.
+    this.route.queryParamMap.subscribe((params) => {
+      this.section.set(params.get(SECTION_PARAM) === 'pedidos' ? 'pedidos' : 'carta');
+    });
 
     // 1. Resolver mesa + menú desde el token firmado.
     try {
@@ -462,6 +602,62 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   openProduct(product: MenuProduct): void {
     this.orderSuccess.set(false);
     this.selectedProduct.set(product);
+  }
+
+  // --- Categorías y búsqueda ---
+
+  selectCategory(categoryId: string): void {
+    this.activeCategoryId.set(categoryId);
+    this.orderSuccess.set(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  openSearch(): void {
+    this.searchOpen.set(true);
+  }
+
+  /** Cierra el buscador y limpia: reabrirlo con el texto anterior desconcierta. */
+  closeSearch(): void {
+    this.searchOpen.set(false);
+    this.search.set('');
+  }
+
+  // --- Barra inferior ---
+
+  /**
+   * Cambia de sección por la URL, no por estado suelto: es lo que mete la sección en
+   * el historial del navegador.
+   *
+   * `queryParamsHandling: 'merge'` **no es opcional**: el token de sesión del comensal
+   * viaja en el param `s` (ver `DinerTokenStore`) y reemplazar los params lo borraría,
+   * echando al comensal de su propia mesa.
+   */
+  goToSection(section: MenuSection): void {
+    this.cartDrawerOpen.set(false);
+    this.closeSearch();
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [SECTION_PARAM]: section === 'carta' ? null : section },
+      queryParamsHandling: 'merge',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /** "Inicio": vuelve a la carta, sin tocar la categoría que venía mirando. */
+  goHome(): void {
+    this.goToSection('carta');
+  }
+
+  /**
+   * Salir pide confirmación: en la cabecera era un botón apartado, pero en la barra
+   * queda a un dedo del carrito y un toque de más cerraría la sesión y el pedido.
+   * Se usa `confirm` nativo porque `app-confirm-dialog` solo vive en el dashboard.
+   */
+  confirmExit(): void {
+    const aviso = this.myOrders().length
+      ? 'Vas a salir de la mesa. Tus pedidos ya enviados siguen en cocina. ¿Continuar?'
+      : '¿Seguro que quieres salir de la mesa?';
+    if (confirm(aviso)) this.exit();
   }
 
   async onProductAdded(selection: ProductSelection): Promise<void> {
@@ -584,7 +780,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     this.cart.clear();
     this.cart.clearDiner();
     this.myOrders.set([]);
-    this.ordersOpen.set(false);
+    this.section.set('carta');
     this.errorMessage.set(
       tenia
         ? 'Gracias por tu visita 🍦 El personal cerrará tu cuenta.'
