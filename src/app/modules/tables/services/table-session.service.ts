@@ -3,9 +3,13 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
+  AssignmentsPayload,
   CloseSessionPayload,
   CloseSessionResponse,
+  ItemAssignment,
+  ParticipantCreatePayload,
   SessionBill,
+  SessionParticipant,
   TableSession,
 } from '../interfaces/dining.interface';
 
@@ -58,6 +62,30 @@ export class TableSessionService {
   close(id: string, payload: CloseSessionPayload): Promise<CloseSessionResponse> {
     return firstValueFrom(
       this.http.post<CloseSessionResponse>(`${this.api}/table-sessions/${id}/close`, payload),
+    );
+  }
+
+  // --- Reparto de la cuenta (staff) ---
+
+  /** Crea un comensal sin QR, para repartir cuando una sola persona pidió todo. */
+  addParticipant(sessionId: string, displayName: string): Promise<SessionParticipant> {
+    const payload: ParticipantCreatePayload = { display_name: displayName };
+    return firstValueFrom(
+      this.http.post<SessionParticipant>(`${this.api}/table-sessions/${sessionId}/participants`, payload),
+    );
+  }
+
+  removeParticipant(sessionId: string, participantId: string): Promise<void> {
+    return firstValueFrom(
+      this.http.delete<void>(`${this.api}/table-sessions/${sessionId}/participants/${participantId}`),
+    );
+  }
+
+  /** Reparto en lote; devuelve la cuenta ya recalculada. */
+  setAssignments(sessionId: string, assignments: ItemAssignment[]): Promise<SessionBill> {
+    const payload: AssignmentsPayload = { assignments };
+    return firstValueFrom(
+      this.http.put<SessionBill>(`${this.api}/table-sessions/${sessionId}/assignments`, payload),
     );
   }
 

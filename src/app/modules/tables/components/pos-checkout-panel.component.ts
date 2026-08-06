@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { DiningOrder, SessionBill } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
+import { SplitBillPanelComponent } from './split-bill-panel.component';
 
 /**
  * Columna derecha: cuenta de la mesa y cobro.
@@ -13,7 +15,7 @@ import { SessionBillPanelComponent } from './session-bill-panel.component';
 @Component({
   selector: 'app-pos-checkout-panel',
   standalone: true,
-  imports: [SessionBillPanelComponent],
+  imports: [SessionBillPanelComponent, SplitBillPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="w-full sm:w-[320px] shrink-0 flex flex-col border-l border-gray-200 min-h-0 bg-white">
@@ -39,6 +41,16 @@ import { SessionBillPanelComponent } from './session-bill-panel.component';
         @if (store.billLoading()) {
           <p class="text-xs text-gray-400 py-8 text-center">Cargando cuenta…</p>
         } @else {
+          @if (store.sessionBill(); as bill) {
+            <!-- Sin esto, una mesa donde pidió una sola persona no se puede dividir:
+                 el desglose tendría una única línea y el modo split queda bloqueado. -->
+            <button
+              (click)="splitOpen.set(true)"
+              class="w-full mb-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
+            >
+              Dividir la cuenta entre varias personas
+            </button>
+          }
           <app-session-bill-panel
             [bill]="store.sessionBill()"
             [methods]="store.paymentMethods()"
@@ -50,8 +62,45 @@ import { SessionBillPanelComponent } from './session-bill-panel.component';
         }
       </div>
     </div>
+
+    @if (splitOpen() && store.sessionBill(); as bill) {
+      <app-split-bill-panel
+        [sessionId]="bill.table_session_id"
+        [tableLabel]="tableLabel()"
+        [orders]="sessionOrders(bill)"
+        [categories]="store.categories()"
+        (saved)="onSplitSaved($event)"
+        (close)="splitOpen.set(false)"
+      />
+    }
   `,
 })
 export class PosCheckoutPanelComponent {
   readonly store = inject(PosTerminalStore);
+  readonly splitOpen = signal(false);
+
+  /**
+   * Los pedidos de ESTA sesión.
+   *
+   * `store.orders()` trae los de todas las mesas (`listOrders()` no filtra), así que
+   * pasarlo crudo hacía que el reparto listara productos de otras mesas y dejara sus
+   * selectores en blanco. `bill.order_ids` sale de la misma `compute_bill` que produce
+   * el desglose, así que lo que se reparte y lo que se cobra no pueden discrepar.
+   */
+  sessionOrders(bill: SessionBill): DiningOrder[] {
+    const ids = new Set(bill.order_ids);
+    return this.store.orders().filter((o) => ids.has(o.id));
+  }
+
+  /** "Mesa 1", para que se vea de qué mesa es la lista sin tener que deducirlo. */
+  tableLabel(): string {
+    const t = this.store.selectedTable();
+    return t ? `Mesa ${t.number}` : '';
+  }
+
+  /** El reparto devuelve la cuenta ya recalculada: se aprovecha en vez de repedirla. */
+  onSplitSaved(bill: SessionBill): void {
+    this.store.sessionBill.set(bill);
+    this.store.billStale.set(false);
+  }
 }
