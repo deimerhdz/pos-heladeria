@@ -6,6 +6,7 @@ import { DinerService, DinerSessionExpiredError } from '../services/diner.servic
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
+import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
@@ -561,7 +562,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   }
 
   priceLabel(product: MenuProduct): string {
-    const prices = product.variants.map((v) => v.price);
+    const prices = product.variants.map((v) => effectivePrice(v.price, v.discounted_price));
     if (prices.length === 0) return '';
     const min = Math.min(...prices);
     return prices.length > 1 ? `Desde $ ${min.toFixed(2)}` : `$ ${min.toFixed(2)}`;

@@ -47,7 +47,6 @@ export class SettingsPageComponent {
     { label: 'Métodos de pago', path: 'metodos-pago' },
     { label: 'Unidades de medida', path: 'unidades' },
     { label: 'Grupos de opciones', path: 'grupos-opciones' },
-    { label: 'Promociones', path: 'promociones' },
     { label: 'Horarios', path: 'horarios' },
     { label: 'Auditoría', path: 'auditoria' },
   ];

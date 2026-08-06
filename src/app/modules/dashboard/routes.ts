@@ -28,6 +28,8 @@ export const dashboardRoutes: Routes = [
       // Mesas salió de Ajustes a Operaciones; va antes del bloque 'ajustes'
       // para que el redirect gane al match de la ruta padre.
       { path: 'ajustes/mesas', pathMatch: 'full', redirectTo: 'mesas' },
+      // Promociones salió de Ajustes a Catálogo; mismo motivo que arriba.
+      { path: 'ajustes/promociones', pathMatch: 'full', redirectTo: 'promotions' },
       {
         path: 'ajustes',
         loadComponent: () =>
@@ -59,13 +61,6 @@ export const dashboardRoutes: Routes = [
             loadComponent: () =>
               import('../option-groups/pages/option-groups-page.component').then(
                 (m) => m.OptionGroupsPageComponent,
-              ),
-          },
-          {
-            path: 'promociones',
-            loadComponent: () =>
-              import('../promotions/pages/promotions-page.component').then(
-                (m) => m.PromotionsPageComponent,
               ),
           },
           {
@@ -130,6 +125,14 @@ export const dashboardRoutes: Routes = [
         path: 'menu',
         loadComponent: () =>
           import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        path: 'promotions',
+        loadComponent: () =>
+          import('../promotions/pages/promotions-page.component').then(
+            (m) => m.PromotionsPageComponent,
+          ),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
