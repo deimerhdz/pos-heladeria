@@ -9,7 +9,11 @@ import { PaymentMethod } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../menu/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
-import { bestProductDiscount, discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
+import {
+  bestProductDiscount,
+  discountedUnitPrice,
+  isPromoActiveNow,
+} from '../../promotions/services/promotion-pricing.util';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -229,10 +233,13 @@ export class PosTerminalStore {
   readonly paymentMethods = this.paymentMethodService.methods;
   readonly categories = this.menuService.categories;
 
-  /** Combos activos disponibles para vender (el staff ya tiene token de sesión). */
-  readonly combos = computed<Promotion[]>(() =>
-    this.promotionService.promotions().filter((p) => p.type === 'combo' && p.active),
-  );
+  /** Combos activos y vigentes ahora mismo, disponibles para vender (el staff ya tiene token de sesión). */
+  readonly combos = computed<Promotion[]>(() => {
+    const now = new Date();
+    return this.promotionService
+      .promotions()
+      .filter((p) => p.type === 'combo' && p.active && isPromoActiveNow(p, now));
+  });
 
   /**
    * Insignia de descuento (ej. "-50%") por producto, para las promociones

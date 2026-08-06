@@ -6,6 +6,7 @@ import {
 } from '../../products/interfaces/product.interface';
 import { CartResponse } from '../interfaces/diner.interface';
 import { DinerService } from './diner.service';
+import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /** Una línea del carrito, ya resuelta contra el menú para poder pintarla. */
 export interface CartLine {
@@ -147,11 +148,11 @@ export class DiningCartService {
             .filter((n): n is string => !!n),
           quantity: it.quantity,
           notes: it.notes,
-          unitPrice: Number(it.unit_price),
-          lineTotal: Number(it.line_total),
+          unitPrice: effectivePrice(it.unit_price, it.discounted_unit_price),
+          lineTotal: effectivePrice(it.line_total, it.discounted_line_total),
         };
       }),
     );
-    this.total.set(Number(cart.total));
+    this.total.set(effectivePrice(cart.total, cart.discounted_total));
   }
 }

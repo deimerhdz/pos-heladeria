@@ -16,6 +16,7 @@ import {
   MenuVariant,
 } from '../../products/interfaces/product.interface';
 import { normalizeText } from '../../../shared/normalize-text';
+import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /** Emitted when the diner confirms their selection for a product. */
 export interface ProductSelection {
@@ -75,7 +76,7 @@ export interface ProductSelection {
                     @if (v.available === false) {
                       <span class="text-xs font-semibold text-gray-400">Agotado</span>
                     } @else {
-                      <span class="font-semibold">$ {{ v.price | number:'1.2-2' }}</span>
+                      <span class="font-semibold">$ {{ variantPrice(v) | number:'1.2-2' }}</span>
                     }
                   </button>
                 }
@@ -282,10 +283,16 @@ export class ProductSelectComponent implements OnInit {
   });
 
   readonly lineTotal = computed(() => {
-    const base = this.selectedVariant()?.price ?? 0;
+    const variant = this.selectedVariant();
+    const base = variant ? effectivePrice(variant.price, variant.discounted_price) : 0;
     const extra = this.selectedOptions().reduce((s, o) => s + o.extra_price, 0);
     return (base + extra) * this.quantity();
   });
+
+  /** Precio efectivo de una presentación (con descuento si el backend lo trajo). */
+  variantPrice(v: MenuVariant): number {
+    return effectivePrice(v.price, v.discounted_price);
+  }
 
   isSelected(optId: string): boolean {
     return Object.values(this.selected()).some((ids) => ids.includes(optId));

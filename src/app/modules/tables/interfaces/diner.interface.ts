@@ -68,6 +68,12 @@ export interface CartItemResponse {
   quantity: number;
   unit_price: string;
   line_total: string;
+  /**
+   * Precio/subtotal ya con el mejor descuento vigente aplicado, o `null`/ausente
+   * si ninguna promoción aplica a esta línea (o es un combo, que ahorra aparte).
+   */
+  discounted_unit_price?: string | null;
+  discounted_line_total?: string | null;
   notes: string | null;
   options: CartItemOption[];
 }
@@ -85,6 +91,8 @@ export interface CartResponse {
   display_label: string | null;
   status: string;
   total: string;
+  /** Suma de las líneas ya con su descuento aplicado, o `null`/ausente si ninguna. */
+  discounted_total?: string | null;
   items: CartItemResponse[];
 }
 

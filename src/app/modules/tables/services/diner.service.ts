@@ -251,6 +251,7 @@ export class DinerService {
           id: v['id'] as string,
           name: v['name'] as string,
           price: Number(v['price']),
+          discounted_price: v['discounted_price'] != null ? Number(v['discounted_price']) : null,
           // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
           // con el tamaño.
           option_groups: mapGroups(v['option_groups']),
