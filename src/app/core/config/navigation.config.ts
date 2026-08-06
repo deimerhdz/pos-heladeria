@@ -17,6 +17,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Menú', icon: 'menu', route: '/dashboard/menu', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
   { label: 'Productos', icon: 'products', route: '/dashboard/products', group: 'CATÁLOGO', roles: [UserRole.ADMIN, UserRole.CASHIER] },
   { label: 'Categorías', icon: 'categories', route: '/dashboard/categories', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
+  { label: 'Promociones', icon: 'promotions', route: '/dashboard/promotions', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
 
   // ── ADMINISTRACIÓN ─────────────────────────────────────────────────────
   { label: 'Inventario', icon: 'inventory', route: '/dashboard/inventario', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN] },

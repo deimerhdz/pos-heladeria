@@ -1,4 +1,4 @@
-import { Promotion } from '../interfaces/promotion.interface';
+import { Promotion, PromotionTarget } from '../interfaces/promotion.interface';
 
 /**
  * Réplica de `_valid_now()` del backend (`promotions/service.py`): decide si
@@ -87,4 +87,82 @@ export function effectivePrice(
   discountedPrice: string | number | null | undefined,
 ): number {
   return Number(discountedPrice ?? price);
+}
+
+export type PromoStatus = 'live' | 'paused' | 'scheduled' | 'expired' | 'off';
+
+/**
+ * Estado visible de una promoción para la lista de administración. A
+ * diferencia de `isPromoActiveNow` (que solo dice si aplica ahora mismo),
+ * distingue por qué no aplica: todavía no empieza, ya terminó, está
+ * apagada, o está encendida pero fuera de su horario/días. Delega en
+ * `isPromoActiveNow` para la parte de día/hora; solo añade las
+ * comparaciones de fecha futura/pasada que esa función no expone.
+ */
+export function getPromoStatus(promo: Promotion, now: Date): PromoStatus {
+  if (!promo.active) return 'off';
+  if (promo.starts_at && now < new Date(promo.starts_at)) return 'scheduled';
+  if (promo.ends_at && now > new Date(promo.ends_at)) return 'expired';
+  return isPromoActiveNow(promo, now) ? 'live' : 'paused';
+}
+
+export interface PromoScope {
+  all: boolean;
+  categoryIds: Set<string>;
+  productIds: Set<string>;
+}
+
+/** Alcance de una promoción de tipo `percent`/`fixed` a partir de sus `targets`. */
+export function scopeOf(promo: Promotion): PromoScope {
+  const targets: PromotionTarget[] = promo.targets ?? [];
+  return {
+    all: targets.length === 0,
+    categoryIds: new Set(targets.map((t) => t.category_id).filter((id): id is string => !!id)),
+    productIds: new Set(targets.map((t) => t.product_id).filter((id): id is string => !!id)),
+  };
+}
+
+/**
+ * Si dos alcances pueden aplicar sobre el mismo producto en algún momento:
+ * "toda la venta" se cruza con cualquier cosa, categorías/productos se
+ * cruzan si comparten un id directo o si un producto de un lado cae en una
+ * categoría del otro lado.
+ */
+export function scopesOverlap(
+  a: PromoScope,
+  b: PromoScope,
+  categoryOfProduct: Map<string, string | null>,
+): boolean {
+  if (a.all || b.all) return true;
+  for (const id of a.categoryIds) if (b.categoryIds.has(id)) return true;
+  for (const id of a.productIds) if (b.productIds.has(id)) return true;
+  for (const id of a.productIds) {
+    const cat = categoryOfProduct.get(id);
+    if (cat && b.categoryIds.has(cat)) return true;
+  }
+  for (const id of b.productIds) {
+    const cat = categoryOfProduct.get(id);
+    if (cat && a.categoryIds.has(cat)) return true;
+  }
+  return false;
+}
+
+/**
+ * Primera promoción activa (live o paused, sin contar combos) cuyo alcance
+ * se cruza con `target`. Se usa para avisar que solo se aplicará el
+ * descuento mayor entre las dos.
+ */
+export function findOverlap(
+  target: PromoScope,
+  candidates: Promotion[],
+  now: Date,
+  categoryOfProduct: Map<string, string | null>,
+): Promotion | null {
+  for (const promo of candidates) {
+    if (promo.type === 'combo') continue;
+    const status = getPromoStatus(promo, now);
+    if (status !== 'live' && status !== 'paused') continue;
+    if (scopesOverlap(target, scopeOf(promo), categoryOfProduct)) return promo;
+  }
+  return null;
 }
