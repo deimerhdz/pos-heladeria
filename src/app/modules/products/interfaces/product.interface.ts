@@ -89,6 +89,20 @@ export interface VariantUpdatePayload {
   active?: boolean;
 }
 
+/**
+ * `detail` del 409 de `POST /products/{id}/variants` y `PATCH /variants/{id}` cuando el
+ * nombre ya está tomado dentro del producto.
+ *
+ * `active: false` es el caso interesante: la que estorba es una presentación
+ * soft-borrada, que el editor no lista y por eso el usuario intenta recrearla. Se
+ * resuelve restaurándola, no creando otra.
+ */
+export interface VariantNameConflict {
+  error: string;
+  variant_id: string;
+  active: boolean;
+}
+
 // --- Option groups & options ---
 
 /** An option inside a group (e.g. a flavor). Mirrors `OptionResponse`. */
@@ -239,6 +253,17 @@ export interface VariantDraft {
   optionGroups: VariantOptionGroupDraft[];
 }
 
+/**
+ * Presentación soft-borrada: no se vende ni sale en la carta, pero su fila sigue
+ * existiendo y sigue ocupando su nombre dentro del producto. Se lista aparte para poder
+ * restaurarla; no se edita, así que no necesita receta ni grupos.
+ */
+export interface DeactivatedVariant {
+  id: string;
+  name: string;
+  price: number;
+}
+
 /** Draft completo del producto para la página unificada de crear/editar. */
 export interface ProductDraft {
   id: string | null;
@@ -249,7 +274,10 @@ export interface ProductDraft {
   image_url: string;
   active: boolean;
   hasSizes: boolean;
+  /** Las presentaciones vivas: las únicas editables y las únicas que se guardan. */
   variants: VariantDraft[];
+  /** Las desactivadas del producto. Vacío en un producto nuevo. */
+  deactivated: DeactivatedVariant[];
 }
 
 // --- Public menu (`GET /menu`) ---
