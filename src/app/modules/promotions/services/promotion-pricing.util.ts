@@ -75,3 +75,16 @@ export function discountedUnitPrice(
   const match = bestProductDiscount(promotions, now, productId, categoryId, price, quantity);
   return match ? Math.max(0, price - match.amount) : price;
 }
+
+/**
+ * Precio a mostrar cuando el descuento ya lo resolvió el backend (menú público
+ * y carrito del comensal): el precio con descuento si vino, o el normal si no.
+ * A diferencia de `discountedUnitPrice`, aquí el cliente no tiene los datos de
+ * `Promotion` para calcularlo — solo decide cuál de los dos números pintar.
+ */
+export function effectivePrice(
+  price: string | number,
+  discountedPrice: string | number | null | undefined,
+): number {
+  return Number(discountedPrice ?? price);
+}

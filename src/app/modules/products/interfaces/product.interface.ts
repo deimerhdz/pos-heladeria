@@ -274,6 +274,8 @@ export interface MenuVariant {
   id: string;
   name: string;
   price: number;
+  /** Precio ya con el mejor descuento vigente aplicado, o `null`/ausente si no hay. */
+  discounted_price?: number | null;
   /**
    * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
    * grupos cambia con el tamaño.
