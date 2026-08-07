@@ -2,10 +2,10 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { MenuService } from '../../menu/services/menu.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import {
+  DeactivatedVariant,
   Product,
   ProductCreatePayload,
   ProductDraft,
@@ -17,10 +17,35 @@ import {
   VariantCreatePayload,
   VariantDraft,
   VariantForm,
+  VariantNameConflict,
   VariantOptionGroup,
   VariantOptionGroupDraft,
   VariantUpdatePayload,
 } from '../interfaces/product.interface';
+
+/**
+ * El nombre de la presentación ya está tomado dentro del producto (409 del backend).
+ *
+ * Se tipa aparte del `HttpErrorResponse` porque el guardado necesita distinguir el caso
+ * `active: false` — una presentación soft-borrada que hay que restaurar — del choque con
+ * una que el usuario tiene delante.
+ */
+export class VariantNameConflictError extends Error {
+  constructor(readonly conflict: VariantNameConflict) {
+    super(conflict.error);
+    this.name = 'VariantNameConflictError';
+  }
+}
+
+/** Extrae el `detail` del 409 si tiene la forma del conflicto de nombre. */
+function toNameConflict(err: unknown): VariantNameConflict | null {
+  if (!(err instanceof HttpErrorResponse) || err.status !== 409) return null;
+  const detail = (err.error as { detail?: unknown } | null)?.detail;
+  if (detail && typeof detail === 'object' && 'variant_id' in detail) {
+    return detail as VariantNameConflict;
+  }
+  return null;
+}
 
 /** Raw backend product. */
 interface ProductResponse {
@@ -90,6 +115,11 @@ export class ProductService {
   readonly loading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
+  /**
+   * Conflicto de nombre del último guardado, o null. El formulario lo consulta para
+   * refrescar la lista de desactivadas y dejar el botón «Restaurar» a la vista.
+   */
+  readonly lastVariantConflict = signal<VariantNameConflict | null>(null);
 
   // --- Products ---
 
@@ -182,16 +212,30 @@ export class ProductService {
 
   // --- Variants ---
 
-  async loadVariants(productId: string): Promise<Variant[]> {
+  /** Variantes del producto; `active` filtra por estado (sin él, todas). */
+  async loadVariants(productId: string, active?: boolean): Promise<Variant[]> {
     try {
       const data = await firstValueFrom(
-        this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`),
+        this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`, {
+          params: active === undefined ? {} : { active },
+        }),
       );
       return data.map((v) => this.toVariant(v));
     } catch (err) {
       this.error.set(this.extractError(err));
       return [];
     }
+  }
+
+  /** Las presentaciones soft-borradas, para la sección «desactivadas» del editor. */
+  async loadDeactivated(productId: string): Promise<DeactivatedVariant[]> {
+    const variants = await this.loadVariants(productId, false);
+    return variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
+  }
+
+  /** Devuelve una presentación desactivada a la carta. */
+  async restoreVariant(variantId: string): Promise<boolean> {
+    return this.updateVariant(variantId, { active: true });
   }
 
   async createVariant(productId: string, form: VariantForm): Promise<boolean> {
@@ -275,9 +319,12 @@ export class ProductService {
     const product = await this.getProduct(id);
     if (!product) return null;
 
+    // Una sola lectura, partida por estado: las desactivadas se listan aparte para
+    // restaurarlas, y no se les pide receta ni grupos porque no se editan. Mezclarlas con
+    // las vivas hacía que una presentación borrada reapareciera como si se vendiera.
     const variants = await this.loadVariants(id);
     const variantDrafts: VariantDraft[] = [];
-    for (const v of variants) {
+    for (const v of variants.filter((v) => v.active)) {
       const [recipe, optionGroups] = await Promise.all([
         this.getVariantRecipe(v.id),
         this.getVariantOptionGroups(v.id),
@@ -302,6 +349,9 @@ export class ProductService {
       active: product.active,
       hasSizes: variantDrafts.length > 1,
       variants: variantDrafts,
+      deactivated: variants
+        .filter((v) => !v.active)
+        .map((v) => ({ id: v.id, name: v.name, price: v.price })),
     };
   }
 
@@ -314,6 +364,7 @@ export class ProductService {
   async saveProduct(draft: ProductDraft): Promise<string | null> {
     this.isSubmitting.set(true);
     this.error.set(null);
+    this.lastVariantConflict.set(null);
     try {
       const productId = draft.id
         ? await this.saveExistingProduct(draft)
@@ -321,11 +372,23 @@ export class ProductService {
       await this.loadProducts();
       return productId;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      if (err instanceof VariantNameConflictError) {
+        this.lastVariantConflict.set(err.conflict);
+        this.error.set(this.conflictMessage(err.conflict));
+      } else {
+        this.error.set(this.extractError(err));
+      }
       return null;
     } finally {
       this.isSubmitting.set(false);
     }
+  }
+
+  /** Mensaje del 409 de nombre, dirigido a la acción que lo resuelve. */
+  private conflictMessage(conflict: VariantNameConflict): string {
+    return conflict.active
+      ? conflict.error
+      : `${conflict.error} Búscala en «Presentaciones desactivadas», más abajo.`;
   }
 
   private async saveNewProduct(draft: ProductDraft): Promise<string> {
@@ -360,8 +423,12 @@ export class ProductService {
       ),
     );
 
+    // Solo las vivas: el draft ya no las trae todas, y volver a soft-borrar una
+    // desactivada en cada guardado sería un DELETE inútil por presentación retirada.
     const existing = await firstValueFrom(
-      this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`),
+      this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`, {
+        params: { active: true },
+      }),
     );
     const keptIds = new Set(draft.variants.map((v) => v.id).filter(Boolean));
 
@@ -400,16 +467,35 @@ export class ProductService {
     };
   }
 
-  private postVariant(productId: string, form: { name: string; price: number }) {
-    return firstValueFrom(
-      this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, form),
-    );
+  /**
+   * Crea la presentación, traduciendo el 409 de nombre tomado a un error tipado. Sin
+   * esto el guardado solo podía mostrar el texto del backend, y el caso que de verdad
+   * importa —el nombre lo ocupa una presentación desactivada, que el editor no lista—
+   * quedaba indistinguible de un duplicado a la vista del usuario.
+   */
+  private async postVariant(productId: string, form: { name: string; price: number }) {
+    try {
+      return await firstValueFrom(
+        this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, form),
+      );
+    } catch (err) {
+      const conflict = toNameConflict(err);
+      if (conflict) throw new VariantNameConflictError(conflict);
+      throw err;
+    }
   }
 
-  private patchVariant(variantId: string, form: { name: string; price: number }) {
-    return firstValueFrom(
-      this.http.patch<VariantResponse>(`${this.variantsUrl}/${variantId}`, form),
-    );
+  /** Renombrar al nombre de otra presentación choca igual que crearla: mismo trato. */
+  private async patchVariant(variantId: string, form: { name: string; price: number }) {
+    try {
+      return await firstValueFrom(
+        this.http.patch<VariantResponse>(`${this.variantsUrl}/${variantId}`, form),
+      );
+    } catch (err) {
+      const conflict = toNameConflict(err);
+      if (conflict) throw new VariantNameConflictError(conflict);
+      throw err;
+    }
   }
 
   /**
@@ -522,11 +608,24 @@ export class ProductService {
     };
   }
 
+  /**
+   * Mensaje legible del error del backend. `detail` llega en tres formas: texto, la lista
+   * de pydantic en los 422, y un objeto en los 409 que traen datos para actuar (nombre
+   * de variante tomado, grupo de opciones en uso). Sin cubrir el objeto, esos 409 se
+   * mostraban como `[object Object]`.
+   */
   private extractError(err: unknown): string {
-    if (err instanceof HttpErrorResponse) {
-      const body = err.error as ApiErrorBody | null;
-      return body?.detail ?? body?.message ?? 'No se pudo completar la operación.';
+    const fallback = 'No se pudo completar la operación.';
+    if (!(err instanceof HttpErrorResponse)) return fallback;
+    const body = err.error as { detail?: unknown; message?: string } | null;
+    const detail = body?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      return (detail[0] as { msg?: string })?.msg ?? fallback;
     }
-    return 'No se pudo completar la operación.';
+    if (detail && typeof detail === 'object') {
+      return (detail as { error?: string }).error ?? fallback;
+    }
+    return body?.message ?? fallback;
   }
 }

@@ -7,6 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
@@ -15,6 +16,7 @@ import { buildUnitLookup, formatQuantity } from '../../inventory/services/unit-l
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import {
+  DeactivatedVariant,
   PreparationType,
   ProductDraft,
   RecipeLineDraft,
@@ -53,7 +55,7 @@ interface SlotBreakdown {
 @Component({
   selector: 'app-product-form',
   standalone: true,
-  imports: [RouterLink, FormsModule, SearchableSelectComponent],
+  imports: [RouterLink, FormsModule, DecimalPipe, SearchableSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="max-w-3xl mx-auto space-y-5">
@@ -161,6 +163,27 @@ interface SlotBreakdown {
                 class="border-2 border-dashed border-gray-300 rounded-lg px-4 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
                 + Agregar tamaño
               </button>
+            </div>
+          }
+
+          <!-- Presentaciones retiradas: siguen ocupando su nombre, así que la salida es
+               restaurarlas, no volver a crearlas. -->
+          @if (draft().deactivated.length) {
+            <div class="mt-4 border-t border-gray-100 pt-4">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Presentaciones desactivadas</h4>
+              <p class="text-xs text-gray-400 mt-0.5 mb-2">No se venden ni salen en la carta. Restaurar se aplica de inmediato.</p>
+              <ul class="space-y-1.5">
+                @for (dv of draft().deactivated; track dv.id) {
+                  <li class="flex items-center gap-3 text-sm">
+                    <span class="text-gray-700">{{ dv.name }}</span>
+                    <span class="text-gray-400">$ {{ dv.price | number: '1.0-0' }}</span>
+                    <button type="button" (click)="restoreVariant(dv)" [disabled]="service.isSubmitting()"
+                      class="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50">
+                      Restaurar
+                    </button>
+                  </li>
+                }
+              </ul>
             </div>
           }
 
@@ -645,6 +668,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       active: true,
       hasSizes: false,
       variants: [this.newVariant('Único')],
+      deactivated: [],
     };
   }
 
@@ -764,6 +788,53 @@ export class ProductFormComponent implements OnInit, OnDestroy {
             },
       ),
     }));
+  }
+
+  /**
+   * Devuelve una presentación desactivada a la carta y la trae al draft con su id real,
+   * su receta y sus grupos — así el guardado la actualiza (`PATCH`) en vez de intentar
+   * crearla otra vez, que es justo el choque que la constraint de nombre rechaza.
+   *
+   * A diferencia del resto del formulario, se aplica en el momento: reactivar es la
+   * operación que libera el nombre, y diferirla al «Guardar» dejaría al usuario sin
+   * salida cuando el guardado es precisamente lo que está fallando.
+   */
+  async restoreVariant(dv: DeactivatedVariant): Promise<void> {
+    const enUso = this.draft().variants.some(
+      (v) => v.name.trim().toLowerCase() === dv.name.trim().toLowerCase(),
+    );
+    if (enUso) {
+      this.service.error.set(
+        `Ya tienes un tamaño llamado «${dv.name}». Renómbralo o quítalo antes de restaurar este.`,
+      );
+      return;
+    }
+
+    const ok = await this.service.restoreVariant(dv.id);
+    if (!ok) return; // el banner ya muestra el error
+
+    const [recipe, optionGroups] = await Promise.all([
+      this.service.getVariantRecipe(dv.id),
+      this.service.getVariantOptionGroups(dv.id),
+    ]);
+    const restored: VariantDraft = {
+      id: dv.id,
+      localId: dv.id,
+      name: dv.name,
+      price: dv.price,
+      recipe,
+      optionGroups,
+    };
+    this.draft.update((d) => {
+      const variants = [...d.variants, restored];
+      return {
+        ...d,
+        variants,
+        hasSizes: d.hasSizes || variants.length > 1,
+        deactivated: d.deactivated.filter((x) => x.id !== dv.id),
+      };
+    });
+    this.activeLocalId.set(restored.localId);
   }
 
   removeVariant(localId: string): void {
@@ -924,7 +995,20 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     }
 
     const id = await this.service.saveProduct(this.draft());
-    if (id) this.router.navigate(['/dashboard/products']);
+    if (id) {
+      this.router.navigate(['/dashboard/products']);
+      return;
+    }
+    // Si el guardado chocó con una presentación desactivada, hay que ponerle el botón
+    // «Restaurar» delante: puede no estar en pantalla si la desactivó otro usuario, o
+    // en otra pestaña, después de que se cargara este formulario. Se refresca solo esa
+    // lista, no el draft entero, para no perder lo que lleva escrito.
+    const conflict = this.service.lastVariantConflict();
+    const productId = this.draft().id;
+    if (conflict && !conflict.active && productId) {
+      const deactivated = await this.service.loadDeactivated(productId);
+      this.draft.update((d) => ({ ...d, deactivated }));
+    }
   }
 
   cancel(): void {
