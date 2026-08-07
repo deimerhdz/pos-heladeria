@@ -169,6 +169,14 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() customerName = '';
   /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
   @Input() orphan = false;
+  /**
+   * Gancho que corre justo antes de cerrar: si devuelve `false` no se cobra.
+   *
+   * Lo usa la terminal para resolver de una vez los productos que siguen sin
+   * marcar como listos, que el backend rechazaría con un `409`. Va como
+   * callback para no acoplar este panel al store de la terminal.
+   */
+  @Input() beforeCharge: (() => Promise<boolean>) | null = null;
   /** Cierre completo: sus `sale_ids` son la fuente de la factura impresa. */
   @Output() charged = new EventEmitter<CloseSessionResponse>();
 
@@ -266,6 +274,9 @@ export class SessionBillPanelComponent implements OnChanges {
     this.submitting.set(true);
     this.error.set(null);
     try {
+      // Antes del cierre, no después: el 409 por ítems sin terminar dejaría al
+      // cajero con un error que solo puede resolver en otra pantalla.
+      if (this.beforeCharge && !(await this.beforeCharge())) return;
       const closed = await this.api.close(
         this.bill.table_session_id,
         this.buildPayload(this.cashShiftId),
@@ -306,7 +317,7 @@ export class SessionBillPanelComponent implements OnChanges {
 
   /**
    * Los rechazos al cerrar son accionables, no genéricos: o falta confirmar
-   * pedidos, o cocina sigue trabajando, o el split deja comensales sin cubrir.
+   * pedidos, o hay comida sin terminar, o el split deja comensales sin cubrir.
    */
   private showChargeError(err: unknown): void {
     const blocked = this.api.closeBlocked(err);

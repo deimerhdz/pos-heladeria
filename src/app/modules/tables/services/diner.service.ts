@@ -123,7 +123,7 @@ export class DinerService {
 
   /**
    * Envía el carrito como pedido. Queda en `recibida`: **no descuenta
-   * inventario** y cocina no lo ve hasta que el personal lo confirme.
+   * inventario** hasta que el personal lo confirme.
    */
   submitCart(): Promise<DiningOrder> {
     return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, {}));

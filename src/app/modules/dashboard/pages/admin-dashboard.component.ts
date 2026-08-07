@@ -173,7 +173,6 @@ export class AdminDashboardComponent implements OnInit {
 
   readonly quickActions: QuickAction[] = [
     { label: 'Terminal de mesas', icon: '🍽️', route: '/dashboard/mesas-sesiones', description: 'Cobrar y cerrar' },
-    { label: 'Cocina', icon: '🍳', route: '/dashboard/cocina', description: 'Comandas en curso' },
     { label: 'Ventas', icon: '🧾', route: '/dashboard/ventas', description: 'Historial de cobros' },
     { label: 'Gestión de Caja', icon: '💰', route: '/dashboard/caja', description: 'Turnos y arqueo' },
     { label: 'Productos', icon: '🍦', route: '/dashboard/products', description: 'Catálogo y precios' },

@@ -40,10 +40,6 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
           <path d="M13 17V5" />
           <path d="M8 17v-3" />
         }
-        @case ('kitchen') {
-          <path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z" />
-          <path d="M6 17h12" />
-        }
         @case ('orders') {
           <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
           <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />

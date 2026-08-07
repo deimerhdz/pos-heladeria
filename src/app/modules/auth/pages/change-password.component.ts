@@ -16,7 +16,6 @@ const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: '/dashboard/admin',
   [UserRole.ADMIN]: '/dashboard/admin',
   [UserRole.CASHIER]: '/dashboard/caja',
-  [UserRole.STAFF]: '/dashboard/cocina',
 };
 
 /** Validator: `new_password` and `confirm_password` must match. */

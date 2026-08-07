@@ -20,7 +20,7 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
  * Pedidos que el comensal envió y esperan que el personal los acepte.
  *
  * Es el paso que compromete el inventario: hasta que alguien confirma, el
- * pedido no ha descontado stock y **cocina no lo ve**. Por eso no salen en el
+ * pedido no ha descontado stock. Por eso no salen en el
  * KDS y hay que pedirlos aparte con `GET /orders?status=recibida`.
  */
 @Component({

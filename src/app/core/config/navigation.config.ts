@@ -8,10 +8,9 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Reportes', icon: 'reports', route: '/dashboard/reports', group: 'PRINCIPAL', roles: [UserRole.ADMIN] },
 
   // ── OPERACIONES ────────────────────────────────────────────────────────
-  { label: 'Cocina', icon: 'kitchen', route: '/dashboard/cocina', group: 'OPERACIONES', roles: [UserRole.STAFF, UserRole.ADMIN] },
-  { label: 'Órdenes', icon: 'orders', route: '/dashboard/orders', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF] },
+  { label: 'Órdenes', icon: 'orders', route: '/dashboard/orders', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER] },
   { label: 'Mesas', icon: 'tables', route: '/dashboard/mesas', group: 'OPERACIONES', roles: [UserRole.ADMIN] },
-  { label: 'Terminal de mesas', icon: 'sessions', route: '/dashboard/mesas-sesiones', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF] },
+  { label: 'Terminal de mesas', icon: 'sessions', route: '/dashboard/mesas-sesiones', group: 'OPERACIONES', roles: [UserRole.ADMIN, UserRole.CASHIER] },
 
   // ── CATÁLOGO ───────────────────────────────────────────────────────────
   { label: 'Menú', icon: 'menu', route: '/dashboard/menu', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
