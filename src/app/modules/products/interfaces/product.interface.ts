@@ -276,6 +276,8 @@ export interface MenuVariant {
   price: number;
   /** Precio ya con el mejor descuento vigente aplicado, o `null`/ausente si no hay. */
   discounted_price?: number | null;
+  /** Tipo de promoción que generó `discounted_price` ('percent'/'fixed'), o `null`/ausente si no hay. */
+  discount_kind?: string | null;
   /**
    * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
    * grupos cambia con el tamaño.

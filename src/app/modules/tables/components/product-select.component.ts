@@ -16,7 +16,7 @@ import {
   MenuVariant,
 } from '../../products/interfaces/product.interface';
 import { normalizeText } from '../../../shared/normalize-text';
-import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /** Emitted when the diner confirms their selection for a product. */
 export interface ProductSelection {
@@ -75,6 +75,18 @@ export interface ProductSelection {
                     <span class="font-medium">{{ v.name }}</span>
                     @if (v.available === false) {
                       <span class="text-xs font-semibold text-gray-400">Agotado</span>
+                    } @else if (discountFor(v); as disc) {
+                      <span class="flex items-center gap-1.5">
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                          @if (disc.kind === 'fixed') {
+                            -$ {{ disc.amountOff | number:'1.2-2' }}
+                          } @else {
+                            -{{ disc.percent }}%
+                          }
+                        </span>
+                        <span class="text-gray-400 text-xs line-through">$ {{ disc.original | number:'1.2-2' }}</span>
+                        <span class="font-semibold">$ {{ disc.discounted | number:'1.2-2' }}</span>
+                      </span>
                     } @else {
                       <span class="font-semibold">$ {{ variantPrice(v) | number:'1.2-2' }}</span>
                     }
@@ -292,6 +304,10 @@ export class ProductSelectComponent implements OnInit {
   /** Precio efectivo de una presentación (con descuento si el backend lo trajo). */
   variantPrice(v: MenuVariant): number {
     return effectivePrice(v.price, v.discounted_price);
+  }
+
+  discountFor(v: MenuVariant): DiscountInfo | null {
+    return discountInfo(v.price, v.discounted_price, v.discount_kind);
   }
 
   isSelected(optId: string): boolean {

@@ -6,7 +6,7 @@ import { DinerService, DinerSessionExpiredError } from '../services/diner.servic
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
-import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
@@ -294,7 +294,16 @@ const REFRESH_DEBOUNCE_MS = 250;
                     (click)="openProduct(product)"
                     class="text-left bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-300 hover:shadow-md active:scale-[0.98] transition-all"
                   >
-                    <div class="w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
+                    <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
+                      @if (productDiscount(product); as disc) {
+                        <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                          @if (disc.kind === 'fixed') {
+                            🏷️ -$ {{ disc.amountOff.toFixed(2) }}
+                          } @else {
+                            🏷️ -{{ disc.percent }}%
+                          }
+                        </span>
+                      }
                       @if (product.image_url) {
                         <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover" />
                       } @else {
@@ -306,7 +315,14 @@ const REFRESH_DEBOUNCE_MS = 250;
                       @if (product.description) {
                         <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
                       }
-                      <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
+                      @if (productDiscount(product); as disc) {
+                        <p class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          <span class="text-gray-400 text-xs line-through">{{ pricePrefix(product) }}{{ disc.original.toFixed(2) }}</span>
+                          <span class="text-indigo-600 font-bold text-sm">{{ pricePrefix(product) }}{{ disc.discounted.toFixed(2) }}</span>
+                        </p>
+                      } @else {
+                        <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
+                      }
                     </div>
                   </button>
                 }
@@ -566,6 +582,28 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     if (prices.length === 0) return '';
     const min = Math.min(...prices);
     return prices.length > 1 ? `Desde $ ${min.toFixed(2)}` : `$ ${min.toFixed(2)}`;
+  }
+
+  pricePrefix(product: MenuProduct): string {
+    return product.variants.length > 1 ? 'Desde $ ' : '$ ';
+  }
+
+  /**
+   * Descuento de la MISMA presentación que `priceLabel` ya muestra (la de
+   * menor precio efectivo), para que la insignia % y el precio tachado
+   * nunca contradigan el número pintado en el tile. Si solo una
+   * presentación que no es la más barata tiene descuento, el tile no
+   * muestra insignia — misma simplificación que `priceLabel` ya hace al
+   * colapsar todas las presentaciones a un solo precio representativo.
+   */
+  productDiscount(product: MenuProduct): DiscountInfo | null {
+    if (product.variants.length === 0) return null;
+    const cheapest = product.variants.reduce(
+      (min, v) =>
+        effectivePrice(v.price, v.discounted_price) < effectivePrice(min.price, min.discounted_price) ? v : min,
+      product.variants[0],
+    );
+    return discountInfo(cheapest.price, cheapest.discounted_price, cheapest.discount_kind);
   }
 
   async confirmName(): Promise<void> {

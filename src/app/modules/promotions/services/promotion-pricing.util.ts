@@ -89,6 +89,38 @@ export function effectivePrice(
   return Number(discountedPrice ?? price);
 }
 
+export interface DiscountInfo {
+  original: number;
+  discounted: number;
+  percent: number;
+  amountOff: number;
+  kind: 'percent' | 'fixed' | null;
+}
+
+/**
+ * Info de descuento para mostrar en UI (insignia % o monto fijo + precio
+ * tachado) a partir de los dos números ya resueltos por el backend — igual
+ * que `effectivePrice`, el cliente no tiene el `Promotion` original, así
+ * que el porcentaje siempre se deriva comparando `price` contra
+ * `discountedPrice`. `kind` es opcional (el backend puede no mandarlo
+ * todavía) y solo decide cómo se pinta la insignia (% vs. monto fijo) —
+ * cualquier valor que no sea exactamente `'fixed'` cae al caso porcentual
+ * de siempre, para no romper contra un backend sin desplegar.
+ */
+export function discountInfo(
+  price: number,
+  discountedPrice: number | null | undefined,
+  kind?: string | null,
+): DiscountInfo | null {
+  if (discountedPrice == null) return null;
+  const original = Number(price);
+  const discounted = Number(discountedPrice);
+  if (original <= 0 || discounted >= original) return null;
+  const percent = Math.round((1 - discounted / original) * 100);
+  if (percent <= 0) return null;
+  return { original, discounted, percent, amountOff: original - discounted, kind: kind === 'fixed' ? 'fixed' : 'percent' };
+}
+
 export type PromoStatus = 'live' | 'paused' | 'scheduled' | 'expired' | 'off';
 
 /**
