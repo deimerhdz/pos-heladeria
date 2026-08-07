@@ -57,6 +57,7 @@ import { SplitBillPanelComponent } from './split-bill-panel.component';
             [cashShiftId]="store.cashShiftId()"
             [customerName]="store.customerName()"
             [orphan]="store.billOrphan()"
+            [beforeCharge]="store.ensureReadyToCharge"
             (charged)="store.onCharged($event)"
           />
         }

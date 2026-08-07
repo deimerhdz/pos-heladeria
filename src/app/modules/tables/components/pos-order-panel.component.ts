@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { KitchenStatus } from '../interfaces/dining.interface';
+import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-status.util';
 
 /** Columna central: armado y edición del pedido de la mesa seleccionada. */
 @Component({
@@ -23,7 +25,7 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
             <div>
               <h3 class="text-lg font-bold text-gray-900">Mesa {{ store.selectedTable()?.number }}</h3>
               <p class="text-xs text-gray-400 mt-0.5">
-                {{ store.selectedOrder() ? ('Pedido · ' + (store.kitchenReady() ? 'listo para cobrar' : 'en cocina')) : 'Pedido nuevo sin guardar' }}
+                {{ store.selectedOrder() ? ('Pedido · ' + (store.kitchenReady() ? 'listo para cobrar' : 'en preparación')) : 'Pedido nuevo sin guardar' }}
               </p>
             </div>
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">← Volver</button>
@@ -96,14 +98,28 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
                 } @else {
                   <div class="flex items-center gap-2 text-xs">
                     <span class="text-gray-400">{{ store.fmt(it.unitPrice) }} c/u</span>
-                    <span class="px-2 py-0.5 rounded-full" [class]="it.ready ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
-                      {{ it.ready ? 'Listo' : 'En cocina' }}
-                    </span>
+                    @if (it.kitchenStatus; as estado) {
+                      <span class="px-2 py-0.5 rounded-full" [class]="statusClass(estado)">
+                        {{ statusLabel(estado) }}
+                      </span>
+                    }
                   </div>
-                  <button
-                    (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
-                    class="text-xs font-medium text-red-600 hover:text-red-700"
-                  >Anular</button>
+                  <div class="flex items-center gap-3">
+                    <!-- Marcar listo desde aquí es lo que sustituye al tablero de
+                         cocina: quien toma el pedido lo prepara y lo marca sin
+                         cambiar de pantalla. -->
+                    @if (!it.ready) {
+                      <button
+                        (click)="store.avanzarItem(it.key)"
+                        [disabled]="store.submitting()"
+                        class="text-xs font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
+                      >✓ Listo</button>
+                    }
+                    <button
+                      (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
+                      class="text-xs font-medium text-red-600 hover:text-red-700"
+                    >Anular</button>
+                  </div>
                 }
               </div>
             </div>
@@ -169,4 +185,13 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 })
 export class PosOrderPanelComponent {
   readonly store = inject(PosTerminalStore);
+
+  /** Las mismas etiquetas que ve el comensal en el menú del QR. */
+  statusLabel(status: KitchenStatus): string {
+    return kitchenStatusLabel(status);
+  }
+
+  statusClass(status: KitchenStatus): string {
+    return kitchenStatusClass(status);
+  }
 }
