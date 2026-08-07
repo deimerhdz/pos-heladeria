@@ -1,8 +1,9 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
+import { Page } from '../../../core/interfaces/page.interface';
 import {
   Promotion,
   PromotionCreatePayload,
@@ -15,21 +16,53 @@ export class PromotionService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/promotions`;
 
+  /** Página actual, para la tabla de Promociones. */
   readonly promotions = signal<Promotion[]>([]);
+  /**
+   * Lista completa (tope 100), exclusiva para el motor de detección de
+   * solapamientos: cada fila se compara contra *todas* las demás promociones,
+   * no solo las de la página actual (`rows()` en promotions-page.component.ts).
+   */
+  readonly allPromotions = signal<Promotion[]>([]);
   readonly loading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
 
-  async load(): Promise<void> {
+  // Estado de paginación (reflejo del `Page<T>` del backend).
+  readonly page = signal(1);
+  readonly size = signal(20);
+  readonly total = signal(0);
+  readonly totalPages = signal(0);
+
+  async load(page: number = this.page(), size: number = this.size()): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const data = await firstValueFrom(this.http.get<Promotion[]>(this.baseUrl));
-      this.promotions.set(data);
+      const params = new HttpParams().set('page', page).set('size', size);
+      const data = await firstValueFrom(
+        this.http.get<Page<Promotion>>(this.baseUrl, { params }),
+      );
+      this.promotions.set(data.items);
+      this.page.set(data.page);
+      this.size.set(data.size);
+      this.total.set(data.total);
+      this.totalPages.set(data.pages);
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /** Lista completa (tope 100) para el motor de solapamientos. */
+  async loadAll(): Promise<void> {
+    try {
+      const data = await firstValueFrom(
+        this.http.get<Page<Promotion>>(this.baseUrl, { params: { size: 100 } }),
+      );
+      this.allPromotions.set(data.items);
+    } catch (err) {
+      this.error.set(this.extractError(err));
     }
   }
 
@@ -67,7 +100,7 @@ export class PromotionService {
     this.error.set(null);
     try {
       await firstValueFrom(request());
-      await this.load();
+      await Promise.all([this.load(this.page(), this.size()), this.loadAll()]);
       return true;
     } catch (err) {
       this.error.set(this.extractError(err));

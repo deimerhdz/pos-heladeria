@@ -1,15 +1,16 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Product } from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
 import { CategoryService } from '../../categories/services/category.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 
 @Component({
   selector: 'app-products-page',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, PaginationBarComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -30,14 +31,14 @@ import { ToastService } from '../../../shared/feedback/toast.service';
       <div class="flex gap-3 flex-wrap">
         <input
           type="text"
-          [(ngModel)]="searchTermValue"
-          (ngModelChange)="searchTerm.set($event)"
+          [ngModel]="searchSignal()"
+          (ngModelChange)="onSearchInput($event)"
           placeholder="Buscar por nombre..."
           class="flex-1 min-w-48 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         />
         <select
-          [(ngModel)]="statusFilterValue"
-          (ngModelChange)="statusFilter.set($event)"
+          [ngModel]="statusFilterValue"
+          (ngModelChange)="onStatusFilterChange($event)"
           class="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
         >
           <option value="all">Todos</option>
@@ -63,11 +64,11 @@ import { ToastService } from '../../../shared/feedback/toast.service';
       } @else {
         <!-- Table -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          @if (filteredProducts().length === 0) {
+          @if (productService.products().length === 0) {
             <!-- Empty state -->
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
               <div class="text-5xl mb-4">🍦</div>
-              @if (searchTerm() || statusFilter() !== 'all') {
+              @if (searchSignal() || statusFilterValue !== 'all') {
                 <p class="text-gray-600 font-medium">No hay productos que coincidan</p>
                 <p class="text-gray-400 text-sm mt-1">Intenta cambiar los filtros</p>
               } @else {
@@ -113,7 +114,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-50">
-                @for (product of filteredProducts(); track product.id) {
+                @for (product of productService.products(); track product.id) {
                   <tr
                     [class.opacity-50]="!product.active"
                     class="hover:bg-gray-50 transition-colors"
@@ -216,50 +217,57 @@ import { ToastService } from '../../../shared/feedback/toast.service';
               </tbody>
             </table>
           }
+          <app-pagination-bar
+            [page]="productService.page()" [size]="productService.size()"
+            [total]="productService.total()" [totalPages]="productService.totalPages()"
+            [loading]="productService.loading()"
+            (pageChange)="productService.loadProducts($event, productService.size())"
+            (sizeChange)="productService.loadProducts(1, $event)" />
         </div>
       }
     </div>
   `,
 })
-export class ProductsPageComponent implements OnInit {
+export class ProductsPageComponent implements OnInit, OnDestroy {
   readonly productService = inject(ProductService);
   private readonly categoryService = inject(CategoryService);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
 
-  readonly searchTerm = signal('');
-  readonly statusFilter = signal<'all' | 'active' | 'inactive'>('all');
+  /** Local echo of the search box; the actual query to the service is debounced. */
+  readonly searchSignal = signal('');
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-  searchTermValue = '';
   statusFilterValue: 'all' | 'active' | 'inactive' = 'all';
 
   private readonly categoryMap = computed(() => {
     const map = new Map<string, string>();
-    for (const cat of this.categoryService.categories()) {
+    for (const cat of this.categoryService.allCategories()) {
       map.set(cat.id, cat.name);
     }
     return map;
   });
 
-  readonly filteredProducts = computed(() => {
-    const term = this.searchTerm().toLowerCase();
-    const status = this.statusFilter();
-
-    return this.productService.products().filter((p) => {
-      const matchesSearch = !term || p.name.toLowerCase().includes(term);
-      const matchesStatus =
-        status === 'all' ||
-        (status === 'active' && p.active) ||
-        (status === 'inactive' && !p.active);
-      return matchesSearch && matchesStatus;
-    });
-  });
-
   ngOnInit(): void {
     this.productService.loadProducts();
-    if (this.categoryService.categories().length === 0) {
-      this.categoryService.loadCategories();
+    if (this.categoryService.allCategories().length === 0) {
+      this.categoryService.loadAllCategories();
     }
+  }
+
+  ngOnDestroy(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+  }
+
+  onSearchInput(value: string): void {
+    this.searchSignal.set(value);
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => this.productService.setSearch(value), 300);
+  }
+
+  onStatusFilterChange(value: 'all' | 'active' | 'inactive'): void {
+    this.statusFilterValue = value;
+    this.productService.setActiveFilter(value === 'all' ? '' : value);
   }
 
   categoryName(categoryId: string): string {

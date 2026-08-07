@@ -3,6 +3,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
+import { Page } from '../../../core/interfaces/page.interface';
 import {
   AdjustForm,
   AdjustmentPayload,
@@ -13,7 +14,6 @@ import {
   InventoryItemUpdatePayload,
   InventoryMovement,
   LowStockItem,
-  Page,
   Purchase,
   PurchaseCreatePayload,
   PurchaseForm,

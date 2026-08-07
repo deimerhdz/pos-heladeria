@@ -8,15 +8,6 @@
 /** `raw_material` = materia prima a granel. `packaged` = insumo empacado. */
 export type InventoryItemType = 'raw_material' | 'packaged';
 
-/** Envoltura de paginación devuelta por el backend (`Page[T]`, app/core/pagination.py). */
-export interface Page<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
-
 /** Fila de alerta de bajo stock. Mirrors backend `LowStockResponse`. */
 export interface LowStockItem {
   id: string;

@@ -15,6 +15,7 @@ import { Product } from '../../products/interfaces/product.interface';
 import { MenuService } from '../../menu/services/menu.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import { Promotion, PromotionForm } from '../interfaces/promotion.interface';
 import { PromotionService } from '../services/promotion.service';
 import {
@@ -96,7 +97,7 @@ function vigPhrase(v: VigInput): string {
   selector: 'app-promotions-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet],
+  imports: [FormsModule, NgTemplateOutlet, PaginationBarComponent],
   template: `
     <div>
       @switch (screen()) {
@@ -270,6 +271,12 @@ function vigPhrase(v: VigInput): string {
                   </tbody>
                 </table>
               </div>
+              <app-pagination-bar
+                [page]="svc.page()" [size]="svc.size()"
+                [total]="svc.total()" [totalPages]="svc.totalPages()"
+                [loading]="svc.loading()"
+                (pageChange)="svc.load($event, svc.size())"
+                (sizeChange)="svc.load(1, $event)" />
             </div>
           }
         }
@@ -407,7 +414,7 @@ function vigPhrase(v: VigInput): string {
 
               @if (scopeMode() === 'category') {
                 <div class="flex flex-wrap gap-2 mt-3">
-                  @for (c of categories.categories(); track c.id) {
+                  @for (c of categories.allCategories(); track c.id) {
                     <button
                       type="button"
                       (click)="toggleCategory(c.id)"
@@ -1170,7 +1177,11 @@ export class PromotionsPageComponent implements OnInit {
   readonly rows = computed(() => {
     const now = this.now();
     const catMap = this.categoryOfProduct();
+    // La tabla muestra solo la página actual, pero el solapamiento se calcula
+    // contra `allPromotions` (todas) — si comparara solo contra la página
+    // actual, una promo en otra página dejaría de detectarse como solapada.
     const promos = this.svc.promotions();
+    const allPromos = this.svc.allPromotions();
     return promos.map((p) => ({
       promo: p,
       status: getPromoStatus(p, now),
@@ -1179,7 +1190,7 @@ export class PromotionsPageComponent implements OnInit {
           ? null
           : findOverlap(
               scopeOf(p),
-              promos.filter((x) => x.id !== p.id),
+              allPromos.filter((x) => x.id !== p.id),
               now,
               catMap,
             ),
@@ -1187,7 +1198,7 @@ export class PromotionsPageComponent implements OnInit {
   });
 
   readonly editingPromo = computed(
-    () => this.svc.promotions().find((p) => p.id === this.editingId()) ?? null,
+    () => this.svc.allPromotions().find((p) => p.id === this.editingId()) ?? null,
   );
 
   constructor() {
@@ -1197,7 +1208,8 @@ export class PromotionsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.svc.load();
-    if (this.categories.categories().length === 0) this.categories.loadCategories();
+    this.svc.loadAll();
+    if (this.categories.allCategories().length === 0) this.categories.loadAllCategories();
     if (this.products.products().length === 0) this.products.loadProducts();
     if (this.menu.categories().length === 0) this.menu.loadMenu();
   }
@@ -1406,7 +1418,7 @@ export class PromotionsPageComponent implements OnInit {
       categoryIds: new Set(this.scopeMode() === 'category' ? this.form.categoryIds : []),
       productIds: new Set(this.scopeMode() === 'product' ? this.form.productIds : []),
     };
-    const candidates = this.svc.promotions().filter((p) => p.id !== this.editingId());
+    const candidates = this.svc.allPromotions().filter((p) => p.id !== this.editingId());
     return findOverlap(target, candidates, this.now(), this.categoryOfProduct());
   }
 
@@ -1579,7 +1591,7 @@ export class PromotionsPageComponent implements OnInit {
       scopeSentence = 'toda la venta';
     } else if (this.scopeMode() === 'category') {
       const names = this.form.categoryIds.map(
-        (id) => this.categories.categories().find((c) => c.id === id)?.name ?? '—',
+        (id) => this.categories.allCategories().find((c) => c.id === id)?.name ?? '—',
       );
       scopeSentence = (names.length > 1 ? 'las categorías ' : 'la categoría ') + joinList(names);
     } else {
@@ -1603,7 +1615,7 @@ export class PromotionsPageComponent implements OnInit {
     if (p.targets.length === 0) return 'Toda la venta';
     const names = p.targets.map((t) => {
       if (t.category_id)
-        return this.categories.categories().find((c) => c.id === t.category_id)?.name ?? '—';
+        return this.categories.allCategories().find((c) => c.id === t.category_id)?.name ?? '—';
       return this.products.products().find((pr) => pr.id === t.product_id)?.name ?? '—';
     });
     return names.length <= 2 ? names.join(' y ') : `${names[0]} y ${names.length - 1} más`;

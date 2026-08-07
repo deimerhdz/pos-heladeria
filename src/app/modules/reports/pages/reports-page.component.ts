@@ -516,8 +516,8 @@ export class ReportsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.reportsService.loadAll();
-    if (this.categoryService.categories().length === 0) {
-      this.categoryService.loadCategories();
+    if (this.categoryService.allCategories().length === 0) {
+      this.categoryService.loadAllCategories();
     }
   }
 
