@@ -75,16 +75,19 @@ describe('deriveTableStatus', () => {
     );
   });
 
-  it('distingue cocina en curso de pedido listo', () => {
+  it('distingue preparación en curso de pedido listo', () => {
     expect(deriveTableStatus([order('o1', 'abierta', ['en_preparacion', 'listo'])], 'ocupada')).toBe(
       'en_preparacion',
     );
-    expect(deriveTableStatus([order('o1', 'abierta', ['listo', 'entregado'])], 'ocupada')).toBe(
+    expect(deriveTableStatus([order('o1', 'abierta', ['pendiente', 'listo'])], 'ocupada')).toBe(
+      'en_preparacion',
+    );
+    expect(deriveTableStatus([order('o1', 'abierta', ['listo', 'listo'])], 'ocupada')).toBe(
       'listo',
     );
   });
 
-  it('ignora los ítems anulados al mirar la cocina', () => {
+  it('ignora los ítems anulados al mirar la preparación', () => {
     expect(deriveTableStatus([order('o1', 'abierta', ['anulado'])], 'ocupada')).toBe('ocupada');
   });
 });

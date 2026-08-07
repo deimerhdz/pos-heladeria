@@ -10,7 +10,7 @@ export interface BackendUser {
   uid: string;
   tenant_id: number | null;
   is_super_admin: boolean;
-  /** Role in UPPERCASE: `ADMIN` | `CASHIER` | `STAFF`. */
+  /** Role in UPPERCASE: `ADMIN` | `CASHIER`. */
   role: string;
   /** When `true`, the user logged in with a temporary password and must change it. */
   must_change_password?: boolean;

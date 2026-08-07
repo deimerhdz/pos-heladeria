@@ -36,7 +36,7 @@ const validForm: AdminUserForm = {
   email: 'new@b.c',
   password: 'secret1',
   name: 'New',
-  role: UserRole.STAFF,
+  role: UserRole.CASHIER,
   tenant_id: 2,
 };
 
@@ -72,7 +72,7 @@ describe('SuperAdminUsersService', () => {
       email: 'new@b.c',
       password: 'secret1',
       name: 'New',
-      role: UserRole.STAFF,
+      role: UserRole.CASHIER,
       tenant_id: 2,
     });
     post.flush(adminUser({ id: '9', email: 'new@b.c' }));

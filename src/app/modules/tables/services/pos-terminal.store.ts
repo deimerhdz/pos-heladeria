@@ -27,9 +27,11 @@ import {
   CloseSessionResponse,
   DiningOrder,
   DiningOrderItem,
+  KitchenStatus,
   PaymentLine,
   SessionBill,
 } from '../interfaces/dining.interface';
+import { KITCHEN_NOT_READY } from '../../orders/order-status.util';
 import { ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
@@ -101,7 +103,17 @@ const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> =
 /** Estados que reclaman que el personal haga algo ya. */
 const NEEDS_STAFF: TableDisplayStatus[] = ['por_confirmar', 'listo', 'pago_pendiente'];
 
-const NOT_READY: DiningOrderItem['estado_cocina'][] = ['pendiente', 'en_preparacion'];
+/**
+ * Estado de una línea de combo: el **menos avanzado** de sus componentes.
+ *
+ * Un combo son N `order_items` que se pintan como una sola línea, así que
+ * mostrarlo listo mientras a uno le falta prepararse mentiría al cajero.
+ */
+function leastAdvanced(items: DiningOrderItem[]): KitchenStatus | null {
+  const orden: KitchenStatus[] = ['pendiente', 'en_preparacion', 'listo'];
+  const estados = items.map((i) => i.estado_cocina);
+  return orden.find((e) => estados.includes(e)) ?? null;
+}
 
 /** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const ORDERS_POLL_MS = 10_000;
@@ -142,10 +154,8 @@ export function deriveTableStatus(
   if (orders.some((o) => o.status === 'bloqueada')) return 'pago_pendiente';
 
   const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
-  if (items.some((i) => NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
-  if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo' || i.estado_cocina === 'entregado')) {
-    return 'listo';
-  }
+  if (items.some((i) => KITCHEN_NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
+  if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo')) return 'listo';
   if (orders.length > 0) return 'ocupada';
 
   if (tableStatus === 'ocupada') return 'ocupada';
@@ -400,7 +410,9 @@ export class PosTerminalStore {
         ],
         unitPrice,
         subtotal: unitPrice * i.quantity,
-        ready: !NOT_READY.includes(i.estado_cocina),
+        ready: !KITCHEN_NOT_READY.includes(i.estado_cocina),
+        kitchenStatus: i.estado_cocina as KitchenStatus | null,
+        pendingItemIds: KITCHEN_NOT_READY.includes(i.estado_cocina) ? [i.id] : [],
       };
     });
 
@@ -420,7 +432,11 @@ export class PosTerminalStore {
         bullets: its.map((it) => `${it.quantity}x ${lk.variantLabel(it.product_variant_id)}`),
         unitPrice: units > 0 ? subtotal / units : subtotal,
         subtotal,
-        ready: its.every((it) => !NOT_READY.includes(it.estado_cocina)),
+        ready: its.every((it) => !KITCHEN_NOT_READY.includes(it.estado_cocina)),
+        kitchenStatus: leastAdvanced(its),
+        pendingItemIds: its
+          .filter((it) => KITCHEN_NOT_READY.includes(it.estado_cocina))
+          .map((it) => it.id),
       };
     });
 
@@ -436,6 +452,8 @@ export class PosTerminalStore {
           unitPrice: l.unitPrice,
           subtotal: l.unitPrice * l.quantity,
           ready: true,
+          kitchenStatus: null,
+          pendingItemIds: [] as string[],
         };
       }
       const unitPrice = discountedUnitPrice(
@@ -456,6 +474,8 @@ export class PosTerminalStore {
         unitPrice,
         subtotal: unitPrice * l.quantity,
         ready: true,
+        kitchenStatus: null,
+        pendingItemIds: [] as string[],
       };
     });
     return [...persistedPlain, ...persistedCombos, ...draft];
@@ -483,7 +503,7 @@ export class PosTerminalStore {
   readonly kitchenReady = computed(() => {
     const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
-    return items.length > 0 && items.every((i) => !NOT_READY.includes(i.estado_cocina));
+    return items.length > 0 && items.every((i) => !KITCHEN_NOT_READY.includes(i.estado_cocina));
   });
 
   readonly catalogProducts = computed<MenuProduct[]>(() => {
@@ -917,24 +937,111 @@ export class PosTerminalStore {
     }
   }
 
-  /** Avanza todos los ítems a "listo" para poder cobrar sin depender del KDS. */
+  /**
+   * Marca listo el pedido entero, en una sola petición.
+   *
+   * Antes recorría los ítems encadenando dos PATCH por cada uno para respetar
+   * el paso intermedio; ahora `POST /orders/{id}/ready` lo resuelve del lado
+   * del servidor y emite sus eventos.
+   */
   async marcarListo(): Promise<void> {
     const order = this.selectedOrder();
     if (!order) return;
     this.submitting.set(true);
     try {
-      for (const it of (order.items ?? []).filter((i) => NOT_READY.includes(i.estado_cocina))) {
-        if (it.estado_cocina === 'pendiente') {
-          await this.api.updateItemKitchen(it.id, 'en_preparacion');
-        }
-        await this.api.updateItemKitchen(it.id, 'listo');
-      }
+      await this.api.markOrderReady(order.id);
       await this.reload();
     } catch (err) {
       this.toast.error(this.api.extractError(err, 'No se pudo marcar como listo.'));
     } finally {
       this.submitting.set(false);
     }
+  }
+
+  /**
+   * Marca listo lo que hay detrás de **una línea** del carrito.
+   *
+   * Una línea de combo son varios `order_items`, de ahí que sea una lista. Solo
+   * se tocan los que siguen en curso: mandar un PATCH sobre uno ya `listo` lo
+   * rechazaría el backend con un `409` y tumbaría el combo entero. El salto
+   * directo desde `pendiente` es legal, así que es un PATCH por ítem y no dos.
+   */
+  async avanzarItem(key: string): Promise<void> {
+    const linea = this.cartView().find((l) => l.key === key);
+    if (!linea || linea.kind !== 'persisted') return;
+    if (linea.pendingItemIds.length === 0) return;
+    this.submitting.set(true);
+    try {
+      for (const id of linea.pendingItemIds) {
+        await this.api.updateItemKitchen(id, 'listo');
+      }
+      await this.reload();
+    } catch (err) {
+      this.toast.error(this.api.extractError(err, 'No se pudo marcar el producto como listo.'));
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  /**
+   * Deja la mesa en condiciones de cobrarse. Devuelve `false` si el cajero
+   * decide no cobrar todavía.
+   *
+   * El backend rechaza cerrar una sesión con ítems sin terminar. Mandar al
+   * cajero a marcarlos uno a uno para poder cobrar era justo la fricción que
+   * obligaba a tener una pantalla de cocina aparte: aquí se le pregunta una vez
+   * y se resuelven todos de golpe.
+   *
+   * Refresca **solo los pedidos**, nunca la cuenta: llega con el efectivo ya
+   * tecleado, y un `bill` nuevo se lo borraría justo antes de cobrar.
+   */
+  readonly ensureReadyToCharge = async (): Promise<boolean> => {
+    const pedidos = this.ordersToCharge().filter((o) =>
+      (o.items ?? []).some((i) => KITCHEN_NOT_READY.includes(i.estado_cocina)),
+    );
+    const n = pedidos.reduce(
+      (total, o) =>
+        total + (o.items ?? []).filter((i) => KITCHEN_NOT_READY.includes(i.estado_cocina)).length,
+      0,
+    );
+    if (n === 0) return true;
+
+    const ok = await this.confirm.ask({
+      title: 'Quedan productos sin marcar',
+      message:
+        `${n} ${n === 1 ? 'producto sigue' : 'productos siguen'} sin marcar como ` +
+        `${n === 1 ? 'listo' : 'listos'}. Se ${n === 1 ? 'marcará' : 'marcarán'} y se cobrará la mesa.`,
+      confirmText: 'Marcar y cobrar',
+    });
+    if (!ok) return false;
+
+    try {
+      for (const o of pedidos) {
+        await this.api.markOrderReady(o.id);
+      }
+      await this.reloadOrders();
+      return true;
+    } catch (err) {
+      this.toast.error(this.api.extractError(err, 'No se pudieron marcar los productos.'));
+      return false;
+    }
+  };
+
+  /**
+   * Los pedidos que entran en el cobro en curso.
+   *
+   * `sessionBill().order_ids` sale de la misma `compute_bill` que produce el
+   * desglose, así que marcar listo y cobrar no pueden discrepar. Sin cuenta
+   * cargada se cae a los pedidos activos de la mesa.
+   */
+  private ordersToCharge(): DiningOrder[] {
+    const bill = this.sessionBill();
+    if (bill) {
+      const ids = new Set(bill.order_ids);
+      return this.orders().filter((o) => ids.has(o.id));
+    }
+    const tableId = this.selectedTableId();
+    return tableId ? this.ordersOfTable(tableId) : [];
   }
 
   // ─── Descuento ────────────────────────────────────────────────────────────────

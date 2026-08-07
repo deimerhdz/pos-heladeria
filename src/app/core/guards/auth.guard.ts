@@ -25,7 +25,6 @@ export const redirectIfAuthGuard: CanActivateFn = () => {
   const ROLE_HOME: Record<string, string> = {
     admin: '/dashboard/admin',
     cashier: '/dashboard/caja',
-    staff: '/dashboard/cocina',
   };
 
   return authService.authReady$.pipe(

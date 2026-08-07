@@ -82,17 +82,14 @@ export const dashboardRoutes: Routes = [
       { path: 'unit-measures', pathMatch: 'full', redirectTo: 'ajustes/unidades' },
       { path: 'option-groups', pathMatch: 'full', redirectTo: 'ajustes/grupos-opciones' },
       { path: 'tables', pathMatch: 'full', redirectTo: 'mesas' },
+      // El tablero de cocina se deprecó: la preparación se marca desde la
+      // terminal de mesas, en la misma pantalla donde se toma y se cobra.
+      { path: 'cocina', pathMatch: 'full', redirectTo: 'mesas-sesiones' },
       {
         path: 'ventas',
         loadComponent: () =>
           import('../sales/pages/sales-page.component').then((m) => m.SalesPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
-      },
-      {
-        path: 'cocina',
-        loadComponent: () =>
-          import('../tables/pages/kitchen-board.component').then((m) => m.KitchenBoardComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.STAFF])],
       },
       {
         path: 'categories',
@@ -152,19 +149,19 @@ export const dashboardRoutes: Routes = [
         path: 'mesas-sesiones',
         loadComponent: () =>
           import('../tables/pages/table-sessions.component').then((m) => m.TableSessionsComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
       {
         path: 'orders',
         loadComponent: () =>
           import('../orders/pages/orders-page.component').then((m) => m.OrdersPageComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
       {
         path: 'orders/:id',
         loadComponent: () =>
           import('../orders/pages/order-detail.component').then((m) => m.OrderDetailComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.STAFF])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
       {
         path: 'inventario',

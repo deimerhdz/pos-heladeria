@@ -14,8 +14,8 @@ export type OrderChannel = 'qr' | 'counter' | 'waiter';
  * Ciclo de vida del **pedido** (facturación), independiente del de cocina.
  *
  * `recibida` es el pedido que el comensal ya envió pero que el personal aún no
- * ha aceptado: **no ha descontado inventario y cocina no lo ve**. El stock se
- * compromete al confirmar (`recibida` → `abierta`).
+ * ha aceptado: **no ha descontado inventario**. El stock se compromete al
+ * confirmar (`recibida` → `abierta`).
  */
 export type DiningOrderStatus =
   | 'recibida'
@@ -24,8 +24,11 @@ export type DiningOrderStatus =
   | 'pagada'
   | 'cancelada';
 
-/** Per-item kitchen status (`KitchenStatus`). The kitchen board works on this. */
-export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'anulado';
+/**
+ * Estado de preparación por ítem (`KitchenStatus`), que mueve la terminal de
+ * mesas. El backend admite el salto directo `pendiente → listo`.
+ */
+export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'anulado';
 
 /**
  * One line of a `POST /orders` (or `.../tables/{id}/items`) request
@@ -74,12 +77,13 @@ export interface DiningOrderItem {
   participant_id?: string | null;
   quantity: number;
   unit_price: string;
-  /** Kitchen status of this item. */
+  /** Estado de preparación de este ítem. */
   estado_cocina: KitchenStatus;
   /**
    * Versión del evento de tiempo real que emitió esta escritura. Solo lo
-   * rellena `PATCH /orders/items/{id}/kitchen`; el KDS lo usa para que un evento
-   * en vuelo no revierta su parche optimista. Ver `kitchen-merge.ts`.
+   * rellena `PATCH /orders/items/{id}/kitchen`, para que una pantalla que
+   * parchee el ítem en local pueda descartar un evento en vuelo que lo
+   * revertiría.
    */
   rt_v?: number | null;
   void_de?: string | null;
