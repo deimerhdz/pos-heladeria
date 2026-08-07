@@ -63,18 +63,6 @@ export const dashboardRoutes: Routes = [
                 (m) => m.OptionGroupsPageComponent,
               ),
           },
-          {
-            path: 'horarios',
-            loadComponent: () =>
-              import('../settings/pages/business-hours.component').then(
-                (m) => m.BusinessHoursComponent,
-              ),
-          },
-          {
-            path: 'auditoria',
-            loadComponent: () =>
-              import('../settings/pages/audit-logs.component').then((m) => m.AuditLogsComponent),
-          },
         ],
       },
       // Rutas reubicadas — se conservan como redirect (deep links/marcadores).
