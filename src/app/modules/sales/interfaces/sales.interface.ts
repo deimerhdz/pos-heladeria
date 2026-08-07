@@ -115,15 +115,6 @@ export interface Sale {
   dining_table?: SaleTable | null;
 }
 
-/** Envoltura de paginación devuelta por el backend (`Page[T]`, app/core/pagination.py). */
-export interface Page<T> {
-  items: T[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
-
 /** Filtros de `GET /sales` (`status`, `date_from`/`date_to` en `YYYY-MM-DD`, `invoice_reference`). */
 export interface SaleListFilters {
   status: SaleStatus | '';
