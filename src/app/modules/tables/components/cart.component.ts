@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { MoneyPipe } from '../../../shared/money.pipe';
 import { DiningCartService } from '../services/dining-cart.service';
 
 @Component({
   selector: 'app-cart',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [MoneyPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-full">
@@ -35,27 +35,30 @@ import { DiningCartService } from '../services/dining-cart.service';
                 @if (line.notes) {
                   <p class="text-xs text-gray-400 italic truncate">“{{ line.notes }}”</p>
                 }
-                <p class="text-xs text-gray-400">$ {{ line.unitPrice | number:'1.2-2' }} c/u</p>
+                <p class="text-xs text-gray-400">{{ line.unitPrice | money }} c/u</p>
               </div>
+              <!-- 44 px: el objetivo táctil mínimo cómodo con el pulgar. -->
               <div class="flex items-center gap-1 shrink-0">
                 <button
                   (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity - 1 })"
                   [disabled]="cart.busy()"
-                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-40"
+                  [attr.aria-label]="line.quantity === 1 ? 'Quitar del pedido' : 'Quitar uno'"
+                  class="w-11 h-11 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
                 >
                   −
                 </button>
-                <span class="w-6 text-center text-sm font-semibold text-gray-900">{{ line.quantity }}</span>
+                <span class="w-8 text-center text-base font-semibold text-gray-900">{{ line.quantity }}</span>
                 <button
                   (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity + 1 })"
                   [disabled]="cart.busy()"
-                  class="w-7 h-7 rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 text-sm font-bold flex items-center justify-center transition-colors disabled:opacity-40"
+                  aria-label="Añadir uno"
+                  class="w-11 h-11 rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
                 >
                   +
                 </button>
               </div>
               <span class="text-sm font-semibold text-indigo-600 w-16 text-right shrink-0">
-                $ {{ line.lineTotal | number:'1.2-2' }}
+                {{ line.lineTotal | money }}
               </span>
             </div>
           }
@@ -65,7 +68,7 @@ import { DiningCartService } from '../services/dining-cart.service';
         <div class="border-t border-gray-100 pt-3 mb-3">
           <div class="flex justify-between items-center">
             <span class="text-sm font-semibold text-gray-700">Total</span>
-            <span class="text-base font-bold text-gray-900">$ {{ cart.total() | number:'1.2-2' }}</span>
+            <span class="text-base font-bold text-gray-900">{{ cart.total() | money }}</span>
           </div>
         </div>
       }

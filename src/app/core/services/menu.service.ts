@@ -19,6 +19,7 @@ interface MenuOptionGroupResponse {
   name: string;
   min_select: number;
   max_select: number;
+  consume?: boolean;
   options?: MenuOptionResponse[];
 }
 
@@ -52,6 +53,7 @@ function toGroup(g: MenuOptionGroupResponse): MenuOptionGroup {
     name: g.name,
     min_select: g.min_select,
     max_select: g.max_select,
+    consume: g.consume ?? false,
     options: (g.options ?? []).map((o) => ({
       id: o.id,
       name: o.name,
