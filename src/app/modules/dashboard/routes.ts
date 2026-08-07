@@ -119,12 +119,6 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
-        path: 'menu',
-        loadComponent: () =>
-          import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
-      {
         path: 'promotions',
         loadComponent: () =>
           import('../promotions/pages/promotions-page.component').then(

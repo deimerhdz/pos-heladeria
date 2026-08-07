@@ -1,9 +1,9 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../../environments/environment';
-import { ApiErrorBody } from '../../../core/auth/auth.models';
-import { MenuCategory, MenuOptionGroup } from '../../products/interfaces/product.interface';
+import { environment } from '../../../environments/environment';
+import { ApiErrorBody } from '../auth/auth.models';
+import { MenuCategory, MenuOptionGroup } from '../../modules/products/interfaces/product.interface';
 
 /** Raw backend menu (decimals arrive as strings). */
 interface MenuOptionResponse {
