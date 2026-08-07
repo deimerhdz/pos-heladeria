@@ -6,6 +6,7 @@ import { PaymentMethodService } from '../services/payment-method.service';
 import { Sale, SaleStatus } from '../interfaces/sales.interface';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import {
   buildReceiptHtml,
   formatInvoice,
@@ -13,7 +14,6 @@ import {
   saleToReceipt,
 } from '../../tables/services/receipt.util';
 
-const PAGE_SIZES = [10, 20, 50, 100];
 
 const STATUS_LABELS: Record<SaleStatus, string> = {
   issued: 'Emitida',
@@ -30,7 +30,7 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
 @Component({
   selector: 'app-sales-page',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, FormsModule],
+  imports: [DatePipe, DecimalPipe, FormsModule, PaginationBarComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -125,30 +125,12 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
               </tbody>
             </table>
           </div>
-          @if (svc.totalPages() > 1) {
-            <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-              <div class="flex items-center gap-2 text-xs text-gray-500">
-                <span>Por página</span>
-                <select [ngModel]="svc.size()" (ngModelChange)="onSizeChange($event)" [disabled]="svc.loading()"
-                  class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                  @for (s of pageSizes; track s) { <option [ngValue]="s">{{ s }}</option> }
-                </select>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="text-xs text-gray-500">Página {{ svc.page() }} de {{ svc.totalPages() || 1 }}</span>
-                <div class="flex items-center gap-1">
-                  <button (click)="goToPage(svc.page() - 1)" [disabled]="svc.page() <= 1 || svc.loading()"
-                    class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    Anterior
-                  </button>
-                  <button (click)="goToPage(svc.page() + 1)" [disabled]="svc.page() >= svc.totalPages() || svc.loading()"
-                    class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    Siguiente
-                  </button>
-                </div>
-              </div>
-            </div>
-          }
+          <app-pagination-bar
+            [page]="svc.page()" [size]="svc.size()"
+            [total]="svc.total()" [totalPages]="svc.totalPages()"
+            [loading]="svc.loading()"
+            (pageChange)="svc.list($event, svc.size())"
+            (sizeChange)="svc.list(1, $event)" />
         }
       </div>
     </div>
@@ -210,8 +192,6 @@ export class SalesPageComponent implements OnInit, OnDestroy {
   private readonly printer = inject(PrinterSettingsStore);
   readonly selected = signal<Sale | null>(null);
 
-  readonly pageSizes = PAGE_SIZES;
-
   /** Local echo of the invoice search box; the query to the service is debounced. */
   readonly invoiceSearchSignal = signal('');
   private invoiceSearchDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -243,15 +223,6 @@ export class SalesPageComponent implements OnInit, OnDestroy {
     this.invoiceSearchSignal.set(value);
     if (this.invoiceSearchDebounce) clearTimeout(this.invoiceSearchDebounce);
     this.invoiceSearchDebounce = setTimeout(() => this.svc.setInvoiceReference(value), 300);
-  }
-
-  goToPage(page: number): void {
-    if (page < 1 || page > this.svc.totalPages()) return;
-    this.svc.list(page, this.svc.size());
-  }
-
-  onSizeChange(size: number): void {
-    this.svc.list(1, size);
   }
 
   statusLabel(status: SaleStatus): string {

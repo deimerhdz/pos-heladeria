@@ -110,7 +110,7 @@ interface SlotBreakdown {
                 <select [ngModel]="draft().category_id" (ngModelChange)="setField('category_id', $event)"
                   class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="">Seleccionar categoría…</option>
-                  @for (c of categoryService.categories(); track c.id) {
+                  @for (c of categoryService.allCategories(); track c.id) {
                     <option [value]="c.id">{{ c.name }}</option>
                   }
                 </select>
@@ -630,7 +630,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     // con valor preseleccionado (categoría, insumo de receta) necesitan que sus
     // `<option>` ya existan cuando se aplica `[value]`, o quedan en blanco.
     await Promise.all([
-      this.categoryService.categories().length === 0 ? this.categoryService.loadCategories() : null,
+      this.categoryService.allCategories().length === 0 ? this.categoryService.loadAllCategories() : null,
       this.inventoryService.allItems().length === 0 ? this.inventoryService.loadAllItems() : null,
       this.unitMeasureService.unitMeasures().length === 0
         ? this.unitMeasureService.loadUnitMeasures()

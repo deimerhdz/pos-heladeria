@@ -1,13 +1,14 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Category } from '../interfaces/category.interface';
 import { CategoryService } from '../services/category.service';
 import { CategoryFormComponent } from '../components/category-form.component';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 
 @Component({
   selector: 'app-categories-page',
   standalone: true,
-  imports: [FormsModule, CategoryFormComponent],
+  imports: [FormsModule, CategoryFormComponent, PaginationBarComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -28,14 +29,14 @@ import { CategoryFormComponent } from '../components/category-form.component';
       <div class="flex gap-3 flex-wrap">
         <input
           type="text"
-          [(ngModel)]="searchTermValue"
-          (ngModelChange)="searchTerm.set($event)"
+          [ngModel]="searchSignal()"
+          (ngModelChange)="onSearchInput($event)"
           placeholder="Buscar por nombre..."
           class="flex-1 min-w-48 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         />
         <select
-          [(ngModel)]="statusFilterValue"
-          (ngModelChange)="statusFilter.set($event)"
+          [ngModel]="statusFilterValue"
+          (ngModelChange)="onStatusFilterChange($event)"
           class="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
         >
           <option value="all">Todas</option>
@@ -59,11 +60,11 @@ import { CategoryFormComponent } from '../components/category-form.component';
       } @else {
         <!-- Table -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          @if (filteredCategories().length === 0) {
+          @if (categoryService.categories().length === 0) {
             <!-- Empty state -->
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
               <div class="text-5xl mb-4">📂</div>
-              @if (searchTerm() || statusFilter() !== 'all') {
+              @if (searchSignal() || statusFilterValue !== 'all') {
                 <p class="text-gray-600 font-medium">No hay categorías que coincidan</p>
                 <p class="text-gray-400 text-sm mt-1">Intenta cambiar los filtros</p>
               } @else {
@@ -88,7 +89,7 @@ import { CategoryFormComponent } from '../components/category-form.component';
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-50">
-                @for (cat of filteredCategories(); track cat.id) {
+                @for (cat of categoryService.categories(); track cat.id) {
                   <tr [class.opacity-50]="!cat.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
@@ -138,6 +139,12 @@ import { CategoryFormComponent } from '../components/category-form.component';
               </tbody>
             </table>
           }
+          <app-pagination-bar
+            [page]="categoryService.page()" [size]="categoryService.size()"
+            [total]="categoryService.total()" [totalPages]="categoryService.totalPages()"
+            [loading]="categoryService.loading()"
+            (pageChange)="categoryService.loadCategories($event, categoryService.size())"
+            (sizeChange)="categoryService.loadCategories(1, $event)" />
         </div>
       }
     </div>
@@ -152,33 +159,38 @@ import { CategoryFormComponent } from '../components/category-form.component';
     }
   `,
 })
-export class CategoriesPageComponent implements OnInit {
+export class CategoriesPageComponent implements OnInit, OnDestroy {
   readonly categoryService = inject(CategoryService);
 
-  readonly searchTerm = signal('');
-  readonly statusFilter = signal<'all' | 'active' | 'inactive'>('all');
   readonly showForm = signal(false);
   readonly editingCategory = signal<Category | null>(null);
 
-  searchTermValue = '';
+  /** Local echo of the search box; the actual query to the service is debounced. */
+  readonly searchSignal = signal('');
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
   statusFilterValue: 'all' | 'active' | 'inactive' = 'all';
-
-  readonly filteredCategories = computed(() => {
-    const term = this.searchTerm().toLowerCase();
-    const status = this.statusFilter();
-
-    return this.categoryService.categories().filter(cat => {
-      const matchesSearch = !term || cat.name.toLowerCase().includes(term);
-      const matchesStatus =
-        status === 'all' ||
-        (status === 'active' && cat.active) ||
-        (status === 'inactive' && !cat.active);
-      return matchesSearch && matchesStatus;
-    });
-  });
 
   ngOnInit(): void {
     this.categoryService.loadCategories();
+    if (this.categoryService.allCategories().length === 0) {
+      this.categoryService.loadAllCategories();
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+  }
+
+  onSearchInput(value: string): void {
+    this.searchSignal.set(value);
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => this.categoryService.setSearch(value), 300);
+  }
+
+  onStatusFilterChange(value: 'all' | 'active' | 'inactive'): void {
+    this.statusFilterValue = value;
+    this.categoryService.setActiveFilter(value === 'all' ? '' : value);
   }
 
   openCreate(): void {

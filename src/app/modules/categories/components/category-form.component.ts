@@ -140,7 +140,7 @@ export class CategoryFormComponent implements OnChanges {
     return (control: AbstractControl): ValidationErrors | null => {
       const value = (control.value as string).trim().toLowerCase();
       const exists = this.categoryService
-        .categories()
+        .allCategories()
         .some((cat) => cat.name.toLowerCase() === value && cat.id !== this.category?.id);
       return exists ? { duplicateName: true } : null;
     };

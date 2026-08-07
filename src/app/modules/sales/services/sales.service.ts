@@ -2,7 +2,8 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { Page, Sale, SaleCreatePayload, SaleStatus } from '../interfaces/sales.interface';
+import { Page } from '../../../core/interfaces/page.interface';
+import { Sale, SaleCreatePayload, SaleStatus } from '../interfaces/sales.interface';
 
 /** Transport for sales / checkout (`/api/v1/sales`). */
 @Injectable({ providedIn: 'root' })

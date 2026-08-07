@@ -1,7 +1,8 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { Page } from '../../../core/interfaces/page.interface';
 import { MenuService } from '../../menu/services/menu.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import {
@@ -61,14 +62,6 @@ interface ProductResponse {
   updated_at?: string | null;
 }
 
-interface ProductPage {
-  items: ProductResponse[];
-  total: number;
-  page: number;
-  size: number;
-  pages: number;
-}
-
 /** Raw backend variant (decimals arrive as strings). */
 interface VariantResponse {
   id: string;
@@ -121,24 +114,54 @@ export class ProductService {
    */
   readonly lastVariantConflict = signal<VariantNameConflict | null>(null);
 
+  // Estado de paginación y filtros (reflejo del `Page<T>` del backend).
+  readonly page = signal(1);
+  readonly size = signal(20);
+  readonly total = signal(0);
+  readonly totalPages = signal(0);
+  readonly search = signal('');
+  readonly activeFilter = signal<'' | 'active' | 'inactive'>('');
+
   // --- Products ---
 
-  async loadProducts(): Promise<void> {
+  async loadProducts(page: number = this.page(), size: number = this.size()): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
     try {
-      const page = await firstValueFrom(
-        this.http.get<ProductPage>(this.productsUrl, { params: { size: 100 } }),
+      let params = new HttpParams().set('page', page).set('size', size);
+      const search = this.search().trim();
+      if (search) params = params.set('search', search);
+      if (this.activeFilter() === 'active') params = params.set('active', 'true');
+      if (this.activeFilter() === 'inactive') params = params.set('active', 'false');
+
+      const data = await firstValueFrom(
+        this.http.get<Page<ProductResponse>>(this.productsUrl, { params }),
       );
-      const products = page.items
+      const products = data.items
         .map((p) => this.toProduct(p))
         .sort((a, b) => a.name.localeCompare(b.name));
       this.products.set(products);
+      this.page.set(data.page);
+      this.size.set(data.size);
+      this.total.set(data.total);
+      this.totalPages.set(data.pages);
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** Aplica el término de búsqueda y recarga desde la página 1. */
+  async setSearch(term: string): Promise<void> {
+    this.search.set(term);
+    await this.loadProducts(1);
+  }
+
+  /** Aplica el filtro de estado y recarga desde la página 1. */
+  async setActiveFilter(filter: '' | 'active' | 'inactive'): Promise<void> {
+    this.activeFilter.set(filter);
+    await this.loadProducts(1);
   }
 
   async getProduct(id: string): Promise<Product | null> {
