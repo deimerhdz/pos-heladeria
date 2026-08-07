@@ -1226,7 +1226,7 @@ export class PromotionsPageComponent implements OnInit {
     this.showAdvanced.set(false);
     this.productPickerQuery.set('');
     this.comboSearchQuery.set('');
-    this.svc.error.set(null);
+    this.svc.otherError.set(null);
     this.screen.set('type');
   }
 
@@ -1260,7 +1260,7 @@ export class PromotionsPageComponent implements OnInit {
     this.scopeMode.set(this.scopeModeFromForm(this.form));
     this.showDateRange.set(!!(this.form.starts_at || this.form.ends_at));
     this.showAdvanced.set(this.form.min_qty > 1 || this.form.days_of_month.length > 0);
-    this.svc.error.set(null);
+    this.svc.otherError.set(null);
     this.screen.set('edit');
   }
 
@@ -1275,7 +1275,7 @@ export class PromotionsPageComponent implements OnInit {
     this.scopeMode.set(this.scopeModeFromForm(this.form));
     this.showDateRange.set(!!(this.form.starts_at || this.form.ends_at));
     this.showAdvanced.set(this.form.min_qty > 1 || this.form.days_of_month.length > 0);
-    this.svc.error.set(null);
+    this.svc.otherError.set(null);
     this.screen.set(p.type === 'combo' ? 'combo' : 'discount');
   }
 

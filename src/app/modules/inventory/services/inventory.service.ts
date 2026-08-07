@@ -1,9 +1,11 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { QueryClient } from '@tanstack/angular-query-experimental';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { Page } from '../../../core/interfaces/page.interface';
+import { injectPagedQuery } from '../../../core/query/paged-query';
 import {
   AdjustForm,
   AdjustmentPayload,
@@ -72,73 +74,114 @@ interface LowStockResponse {
 @Injectable({ providedIn: 'root' })
 export class InventoryService {
   private readonly http = inject(HttpClient);
+  private readonly queryClient = inject(QueryClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/inventory`;
 
-  /** Página actual de la tabla de Insumos. */
-  readonly items = signal<InventoryItem[]>([]);
-  /** Lista completa (tope 100) para pickers: select de compras y de kardex. */
-  readonly allItems = signal<InventoryItem[]>([]);
   /** Insumos activos en o bajo su mínimo, cargados desde `/items/low-stock`. */
   readonly lowStockItems = signal<LowStockItem[]>([]);
   readonly purchases = signal<Purchase[]>([]);
-  readonly isLoading = signal(false);
   readonly isSubmitting = signal(false);
-  readonly error = signal<string | null>(null);
+  /** true mientras carga Compras — sigue siendo 100% imperativo (fuera de
+   *  alcance de esta migración). Se funde con la query de items en `isLoading`. */
+  private readonly purchasesLoading = signal(false);
+  /** Errores fuera de las dos queries de items: low-stock, compras, mutaciones. */
+  readonly otherError = signal<string | null>(null);
 
-  // Estado de paginación y filtros de Insumos (reflejo del `Page<T>` del backend).
+  // Entrada de las queries reactivas de Insumos (antes: reflejo del `Page<T>` del backend).
   readonly itemsPage = signal(1);
   readonly itemsSize = signal(20);
-  readonly itemsTotal = signal(0);
-  readonly itemsTotalPages = signal(0);
   readonly itemsSearch = signal('');
   readonly itemsType = signal<InventoryItemType | ''>('');
   readonly itemsActive = signal<'' | 'active' | 'inactive'>('');
   readonly itemsLowStock = signal(false);
+  private readonly wantsItemsPage = signal(false);
+  private readonly wantsAllItems = signal(false);
 
-  // Estado de paginación de Compras (tamaño fijo, sin selector).
+  // Estado de paginación de Compras (tamaño fijo, sin selector) — sin cambios.
   readonly purchasesPage = signal(1);
   readonly purchasesTotal = signal(0);
   readonly purchasesTotalPages = signal(1);
   private readonly purchasesSize = 20;
 
-  async loadItems(page: number = this.itemsPage(), size: number = this.itemsSize()): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
+  /** Página actual de la tabla de Insumos. */
+  private readonly itemsQuery = injectPagedQuery<InventoryItemResponse>({
+    queryKey: () => [
+      'inventory-items',
+      'page',
+      {
+        page: this.itemsPage(),
+        size: this.itemsSize(),
+        search: this.itemsSearch().trim(),
+        type: this.itemsType(),
+        active: this.itemsActive(),
+        lowStock: this.itemsLowStock(),
+      },
+    ],
+    queryFn: () =>
+      this.fetchItemsPage(
+        this.itemsPage(),
+        this.itemsSize(),
+        this.itemsSearch().trim(),
+        this.itemsType(),
+        this.itemsActive(),
+        this.itemsLowStock(),
+      ),
+    enabled: () => this.wantsItemsPage(),
+  });
 
+  /** Lista completa (tope 100) para pickers: select de compras y de kardex. */
+  private readonly allItemsQuery = injectPagedQuery<InventoryItemResponse>({
+    queryKey: () => ['inventory-items', 'all'],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params: { size: 100 } }),
+      ),
+    enabled: () => this.wantsAllItems(),
+  });
+
+  readonly items = computed(() => (this.itemsQuery.data()?.items ?? []).map((i) => this.toItem(i)));
+  readonly allItems = computed(() => (this.allItemsQuery.data()?.items ?? []).map((i) => this.toItem(i)));
+  readonly itemsTotal = computed(() => this.itemsQuery.data()?.total ?? 0);
+  readonly itemsTotalPages = computed(() => this.itemsQuery.data()?.pages ?? 0);
+  /** true en cualquier fetch de items O mientras carga Compras — igual al
+   *  booleano compartido de antes (nada más lo escribía). */
+  readonly isLoading = computed(() => this.itemsQuery.isFetching() || this.purchasesLoading());
+  readonly error = computed(() => {
+    if (this.otherError()) return this.otherError();
+    if (this.itemsQuery.isError()) return this.extractError(this.itemsQuery.error());
+    if (this.allItemsQuery.isError()) return this.extractError(this.allItemsQuery.error());
+    return null;
+  });
+
+  private fetchItemsPage(
+    page: number,
+    size: number,
+    search: string,
+    type: InventoryItemType | '',
+    active: '' | 'active' | 'inactive',
+    lowStock: boolean,
+  ): Promise<Page<InventoryItemResponse>> {
     let params = new HttpParams().set('page', page).set('size', size);
-    const search = this.itemsSearch().trim();
     if (search) params = params.set('search', search);
-    if (this.itemsType()) params = params.set('type', this.itemsType());
-    if (this.itemsActive() === 'active') params = params.set('active', 'true');
-    if (this.itemsActive() === 'inactive') params = params.set('active', 'false');
-    if (this.itemsLowStock()) params = params.set('low_stock', 'true');
+    if (type) params = params.set('type', type);
+    if (active === 'active') params = params.set('active', 'true');
+    if (active === 'inactive') params = params.set('active', 'false');
+    if (lowStock) params = params.set('low_stock', 'true');
+    return firstValueFrom(this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params }));
+  }
 
-    try {
-      const data = await firstValueFrom(
-        this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params })
-      );
-      this.items.set(data.items.map(i => this.toItem(i)));
-      this.itemsPage.set(data.page);
-      this.itemsSize.set(data.size);
-      this.itemsTotal.set(data.total);
-      this.itemsTotalPages.set(data.pages);
-    } catch (err) {
-      this.error.set(this.extractError(err));
-    } finally {
-      this.isLoading.set(false);
-    }
+  /** Antes: async, esperaba el round-trip. Ahora: setter síncrono. */
+  loadItems(page: number = this.itemsPage(), size: number = this.itemsSize()): void {
+    this.otherError.set(null);
+    this.itemsPage.set(page);
+    this.itemsSize.set(size);
+    this.wantsItemsPage.set(true);
   }
 
   /** Lista completa (tope 100) para pickers: select de compras y de kardex. */
-  async loadAllItems(): Promise<void> {
-    try {
-      const data = await firstValueFrom(
-        this.http.get<Page<InventoryItemResponse>>(`${this.baseUrl}/items`, { params: { size: 100 } })
-      );
-      this.allItems.set(data.items.map(i => this.toItem(i)));
-    } catch (err) {
-      this.error.set(this.extractError(err));
-    }
+  loadAllItems(): void {
+    this.otherError.set(null);
+    this.wantsAllItems.set(true);
   }
 
   async loadLowStock(): Promise<void> {
@@ -155,28 +198,28 @@ export class InventoryService {
         }))
       );
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
     }
   }
 
-  async setItemsSearch(value: string): Promise<void> {
+  setItemsSearch(value: string): void {
     this.itemsSearch.set(value);
-    await this.loadItems(1);
+    this.loadItems(1);
   }
 
-  async setItemsType(value: InventoryItemType | ''): Promise<void> {
+  setItemsType(value: InventoryItemType | ''): void {
     this.itemsType.set(value);
-    await this.loadItems(1);
+    this.loadItems(1);
   }
 
-  async setItemsActive(value: '' | 'active' | 'inactive'): Promise<void> {
+  setItemsActive(value: '' | 'active' | 'inactive'): void {
     this.itemsActive.set(value);
-    await this.loadItems(1);
+    this.loadItems(1);
   }
 
-  async setItemsLowStock(value: boolean): Promise<void> {
+  setItemsLowStock(value: boolean): void {
     this.itemsLowStock.set(value);
-    await this.loadItems(1);
+    this.loadItems(1);
   }
 
   async createItem(form: InventoryItemForm): Promise<boolean> {
@@ -234,14 +277,14 @@ export class InventoryService {
       );
       return { ...data, items: data.items.map(m => this.toMovement(m)) };
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return { items: [], total: 0, page: 1, size, pages: 0 };
     }
   }
 
   async loadPurchases(page: number = this.purchasesPage()): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
+    this.purchasesLoading.set(true);
+    this.otherError.set(null);
     const params = new HttpParams().set('page', page).set('size', this.purchasesSize);
     try {
       const data = await firstValueFrom(
@@ -252,9 +295,9 @@ export class InventoryService {
       this.purchasesTotal.set(data.total);
       this.purchasesTotalPages.set(data.pages);
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
     } finally {
-      this.isLoading.set(false);
+      this.purchasesLoading.set(false);
     }
   }
 
@@ -279,13 +322,17 @@ export class InventoryService {
       })),
     };
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     try {
       await firstValueFrom(this.http.post<PurchaseResponse>(url, payload));
-      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock(), this.loadPurchases()]);
+      await Promise.all([
+        this.queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+        this.loadLowStock(),
+        this.loadPurchases(),
+      ]);
       return true;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return false;
     } finally {
       this.isSubmitting.set(false);
@@ -298,15 +345,19 @@ export class InventoryService {
     items: { purchase_item_id: string; quantity: number }[],
   ): Promise<boolean> {
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     try {
       await firstValueFrom(
         this.http.post<PurchaseResponse>(`${this.baseUrl}/purchases/${purchaseId}/receive`, { items }),
       );
-      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock(), this.loadPurchases()]);
+      await Promise.all([
+        this.queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+        this.loadLowStock(),
+        this.loadPurchases(),
+      ]);
       return true;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return false;
     } finally {
       this.isSubmitting.set(false);
@@ -319,13 +370,16 @@ export class InventoryService {
    */
   private async submit(request: () => Observable<unknown>): Promise<boolean> {
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     try {
       await firstValueFrom(request());
-      await Promise.all([this.loadItems(), this.loadAllItems(), this.loadLowStock()]);
+      await Promise.all([
+        this.queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+        this.loadLowStock(),
+      ]);
       return true;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return false;
     } finally {
       this.isSubmitting.set(false);

@@ -4,6 +4,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
+import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
 import { ProductService } from './product.service';
 import { ProductDraft } from '../interfaces/product.interface';
@@ -67,7 +68,16 @@ describe('ProductService', () => {
     // del orden de ejecución (mismo motivo que en diner.service.spec.ts).
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [ProductService, provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        ProductService,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // QueryClient fresco por test (sin retry, gcTime 0) para que no haya
+        // caché ni reintentos que crucen entre tests.
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+      ],
     });
     service = TestBed.inject(ProductService);
     http = TestBed.inject(HttpTestingController);
@@ -134,7 +144,10 @@ describe('ProductService', () => {
       // desactivada y el usuario no la quitó en esta edición.
       http.expectNone(`${VARIANTS}/muerta`);
 
-      http.expectOne(`${PRODUCTS}?size=100`).flush({ items: [], total: 0, page: 1, size: 100, pages: 0 });
+      // `saveProduct` invalida la query paginada de productos al terminar, pero
+      // este test nunca la activó (no llamó `loadProducts()`), así que no hay
+      // ningún observer activo al que refrescar — invalidar una query inactiva
+      // no dispara petición alguna.
       expect(await promise).toBe(PID);
     });
 

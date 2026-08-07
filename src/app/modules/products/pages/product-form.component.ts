@@ -702,14 +702,14 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     input.value = ''; // permite reelegir el mismo archivo
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      this.service.error.set('El archivo debe ser una imagen.');
+      this.service.otherError.set('El archivo debe ser una imagen.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      this.service.error.set('La imagen supera el máximo de 5 MB.');
+      this.service.otherError.set('La imagen supera el máximo de 5 MB.');
       return;
     }
-    this.service.error.set(null);
+    this.service.otherError.set(null);
     this.revokePreview();
     this.pendingImage.set(file);
     this.previewUrl.set(URL.createObjectURL(file));
@@ -804,7 +804,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       (v) => v.name.trim().toLowerCase() === dv.name.trim().toLowerCase(),
     );
     if (enUso) {
-      this.service.error.set(
+      this.service.otherError.set(
         `Ya tienes un tamaño llamado «${dv.name}». Renómbralo o quítalo antes de restaurar este.`,
       );
       return;
@@ -981,13 +981,13 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     const file = this.pendingImage();
     if (file) {
       this.uploading.set(true);
-      this.service.error.set(null);
+      this.service.otherError.set(null);
       try {
         const url = await this.service.uploadProductImage(file);
         this.draft.update((d) => ({ ...d, image_url: url }));
         this.clearPendingImage();
       } catch {
-        this.service.error.set('No se pudo subir la imagen.');
+        this.service.otherError.set('No se pudo subir la imagen.');
         return;
       } finally {
         this.uploading.set(false);
