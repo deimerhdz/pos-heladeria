@@ -12,7 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { CategoryService } from '../../categories/services/category.service';
 import { ProductService } from '../../products/services/product.service';
 import { Product } from '../../products/interfaces/product.interface';
-import { MenuService } from '../../menu/services/menu.service';
+import { MenuService } from '../../../core/services/menu.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';

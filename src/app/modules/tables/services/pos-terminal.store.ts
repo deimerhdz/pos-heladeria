@@ -6,7 +6,7 @@ import {
   MenuVariant,
 } from '../../products/interfaces/product.interface';
 import { PaymentMethod } from '../../sales/interfaces/sales.interface';
-import { MenuService } from '../../menu/services/menu.service';
+import { MenuService } from '../../../core/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import {

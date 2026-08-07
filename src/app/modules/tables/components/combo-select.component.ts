@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
-import { MenuService } from '../../menu/services/menu.service';
+import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 
 const DAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];

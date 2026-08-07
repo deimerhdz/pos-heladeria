@@ -4,7 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DiningOrder, DiningOrderItem } from '../../tables/interfaces/dining.interface';
 import { DiningSessionService } from '../../tables/services/dining-session.service';
 import { TableService } from '../../tables/services/table.service';
-import { MenuService } from '../../menu/services/menu.service';
+import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../../tables/services/menu-lookup';
 import { orderStatusClass, orderStatusLabel } from '../order-status.util';
 

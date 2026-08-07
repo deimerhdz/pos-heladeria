@@ -19,6 +19,8 @@ import {
   puedeCancelarComensal,
 } from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
+import { MoneyPipe } from '../../../shared/money.pipe';
+import { formatMoney } from '../../../shared/money';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { normalizeText } from '../../../shared/normalize-text';
 import {
@@ -45,7 +47,7 @@ const REFRESH_DEBOUNCE_MS = 250;
 @Component({
   selector: 'app-public-menu',
   standalone: true,
-  imports: [CartComponent, ProductSelectComponent, IconComponent],
+  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -298,7 +300,7 @@ const REFRESH_DEBOUNCE_MS = 250;
                       @if (productDiscount(product); as disc) {
                         <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
                           @if (disc.kind === 'fixed') {
-                            🏷️ -$ {{ disc.amountOff.toFixed(2) }}
+                            🏷️ -{{ disc.amountOff | money }}
                           } @else {
                             🏷️ -{{ disc.percent }}%
                           }
@@ -317,8 +319,8 @@ const REFRESH_DEBOUNCE_MS = 250;
                       }
                       @if (productDiscount(product); as disc) {
                         <p class="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                          <span class="text-gray-400 text-xs line-through">{{ pricePrefix(product) }}{{ disc.original.toFixed(2) }}</span>
-                          <span class="text-indigo-600 font-bold text-sm">{{ pricePrefix(product) }}{{ disc.discounted.toFixed(2) }}</span>
+                          <span class="text-gray-400 text-xs line-through">{{ priceWithPrefix(product, disc.original) }}</span>
+                          <span class="text-indigo-600 font-bold text-sm">{{ priceWithPrefix(product, disc.discounted) }}</span>
                         </p>
                       } @else {
                         <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
@@ -580,12 +582,16 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   priceLabel(product: MenuProduct): string {
     const prices = product.variants.map((v) => effectivePrice(v.price, v.discounted_price));
     if (prices.length === 0) return '';
-    const min = Math.min(...prices);
-    return prices.length > 1 ? `Desde $ ${min.toFixed(2)}` : `$ ${min.toFixed(2)}`;
+    return this.priceWithPrefix(product, Math.min(...prices));
   }
 
-  pricePrefix(product: MenuProduct): string {
-    return product.variants.length > 1 ? 'Desde $ ' : '$ ';
+  /**
+   * Un precio de la tarjeta, con el "Desde" delante si el producto tiene varias
+   * presentaciones y el de la tarjeta es solo la más barata.
+   */
+  priceWithPrefix(product: MenuProduct, price: number): string {
+    const prefijo = product.variants.length > 1 ? 'Desde ' : '';
+    return prefijo + formatMoney(price);
   }
 
   /**

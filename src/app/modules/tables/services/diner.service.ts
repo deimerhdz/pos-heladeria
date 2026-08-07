@@ -34,6 +34,7 @@ function mapGroups(raw: unknown): MenuOptionGroup[] {
     name: g['name'] as string,
     min_select: (g['min_select'] as number) ?? 0,
     max_select: (g['max_select'] as number) ?? 0,
+    consume: (g['consume'] as boolean) ?? false,
     options: ((g['options'] as Record<string, unknown>[]) ?? []).map((o) => ({
       id: o['id'] as string,
       name: o['name'] as string,

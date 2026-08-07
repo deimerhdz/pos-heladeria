@@ -63,18 +63,6 @@ export const dashboardRoutes: Routes = [
                 (m) => m.OptionGroupsPageComponent,
               ),
           },
-          {
-            path: 'horarios',
-            loadComponent: () =>
-              import('../settings/pages/business-hours.component').then(
-                (m) => m.BusinessHoursComponent,
-              ),
-          },
-          {
-            path: 'auditoria',
-            loadComponent: () =>
-              import('../settings/pages/audit-logs.component').then((m) => m.AuditLogsComponent),
-          },
         ],
       },
       // Rutas reubicadas — se conservan como redirect (deep links/marcadores).
@@ -116,12 +104,6 @@ export const dashboardRoutes: Routes = [
         path: 'products/:id',
         loadComponent: () =>
           import('../products/pages/product-form.component').then((m) => m.ProductFormComponent),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
-      {
-        path: 'menu',
-        loadComponent: () =>
-          import('../menu/pages/menu-page.component').then((m) => m.MenuPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {

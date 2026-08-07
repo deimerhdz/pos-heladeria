@@ -4,8 +4,9 @@ import { QueryClient } from '@tanstack/angular-query-experimental';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { Page } from '../../../core/interfaces/page.interface';
+
+import { MenuService } from '../../../core/services/menu.service';
 import { injectPagedQuery } from '../../../core/query/paged-query';
-import { MenuService } from '../../menu/services/menu.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import {
   DeactivatedVariant,
@@ -135,9 +136,15 @@ export class ProductService {
     queryKey: () => [
       'products',
       'page',
-      { page: this.page(), size: this.size(), search: this.search().trim(), active: this.activeFilter() },
+      {
+        page: this.page(),
+        size: this.size(),
+        search: this.search().trim(),
+        active: this.activeFilter(),
+      },
     ],
-    queryFn: () => this.fetchProductsPage(this.page(), this.size(), this.search().trim(), this.activeFilter()),
+    queryFn: () =>
+      this.fetchProductsPage(this.page(), this.size(), this.search().trim(), this.activeFilter()),
     enabled: () => this.wantsPage(),
   });
 
