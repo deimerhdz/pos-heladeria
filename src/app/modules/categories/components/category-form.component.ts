@@ -123,7 +123,7 @@ export class CategoryFormComponent implements OnChanges {
   }
 
   ngOnChanges(): void {
-    this.categoryService.error.set(null);
+    this.categoryService.otherError.set(null);
     if (this.category) {
       this.form.setValue({
         name: this.category.name,

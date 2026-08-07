@@ -412,9 +412,9 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
   );
 
   async ngOnInit(): Promise<void> {
+    this.service.loadItems();
+    this.service.loadAllItems();
     await Promise.all([
-      this.service.loadItems(),
-      this.service.loadAllItems(),
       this.service.loadLowStock(),
       this.unitMeasureService.loadUnitMeasures(),
       this.suppliersService.loadSuppliers(),
@@ -500,7 +500,7 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
         };
       }),
     );
-    this.service.error.set(null);
+    this.service.otherError.set(null);
     this.receivePurchase.set(p);
   }
   async submitReceive(purchaseId: string): Promise<void> {

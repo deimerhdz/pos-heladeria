@@ -1,8 +1,10 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { QueryClient } from '@tanstack/angular-query-experimental';
 import { Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { Page } from '../../../core/interfaces/page.interface';
+import { injectPagedQuery } from '../../../core/query/paged-query';
 import { MenuService } from '../../menu/services/menu.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import {
@@ -98,70 +100,97 @@ interface PresignResponse {
 @Injectable({ providedIn: 'root' })
 export class ProductService {
   private readonly http = inject(HttpClient);
+  private readonly queryClient = inject(QueryClient);
   private readonly menuService = inject(MenuService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly productsUrl = `${environment.apiBaseUrl}/products`;
   private readonly variantsUrl = `${environment.apiBaseUrl}/variants`;
   private readonly uploadsUrl = `${environment.apiBaseUrl}/uploads`;
 
-  readonly products = signal<Product[]>([]);
-  readonly loading = signal(false);
   readonly isSubmitting = signal(false);
-  readonly error = signal<string | null>(null);
+  /**
+   * Errores fuera de la query paginada: mutaciones, getProduct, drafts, subida de
+   * imagen, y validaciones de formulario del lado del cliente (`product-form.component.ts`
+   * escribe acá directo para reusar el mismo banner de error). Se funde con el
+   * error de la query paginada en el `error` público de abajo.
+   */
+  readonly otherError = signal<string | null>(null);
   /**
    * Conflicto de nombre del último guardado, o null. El formulario lo consulta para
    * refrescar la lista de desactivadas y dejar el botón «Restaurar» a la vista.
    */
   readonly lastVariantConflict = signal<VariantNameConflict | null>(null);
 
-  // Estado de paginación y filtros (reflejo del `Page<T>` del backend).
+  // Entrada de la query paginada (antes: reflejo del `Page<T>` leído del backend
+  // tras cada fetch; ahora maneja al revés — son la entrada que arma la query key).
   readonly page = signal(1);
   readonly size = signal(20);
-  readonly total = signal(0);
-  readonly totalPages = signal(0);
   readonly search = signal('');
   readonly activeFilter = signal<'' | 'active' | 'inactive'>('');
+  /** true tras el primer `loadProducts()`; gatea el fetch para que construir el
+   *  servicio vía DI (p. ej. desde otro módulo) no dispare una petición sola. */
+  private readonly wantsPage = signal(false);
+
+  private readonly productsQuery = injectPagedQuery<ProductResponse>({
+    queryKey: () => [
+      'products',
+      'page',
+      { page: this.page(), size: this.size(), search: this.search().trim(), active: this.activeFilter() },
+    ],
+    queryFn: () => this.fetchProductsPage(this.page(), this.size(), this.search().trim(), this.activeFilter()),
+    enabled: () => this.wantsPage(),
+  });
+
+  readonly products = computed(() =>
+    (this.productsQuery.data()?.items ?? [])
+      .map((p) => this.toProduct(p))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  readonly total = computed(() => this.productsQuery.data()?.total ?? 0);
+  readonly totalPages = computed(() => this.productsQuery.data()?.pages ?? 0);
+  /** true durante cualquier fetch (primero o repaginado) — igual semántica que
+   *  el `loading` de antes, que el pager usa para deshabilitarse en cada cambio. */
+  readonly loading = computed(() => this.productsQuery.isFetching());
+  readonly error = computed(
+    () =>
+      this.otherError() ??
+      (this.productsQuery.isError() ? this.extractError(this.productsQuery.error()) : null),
+  );
 
   // --- Products ---
 
-  async loadProducts(page: number = this.page(), size: number = this.size()): Promise<void> {
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      let params = new HttpParams().set('page', page).set('size', size);
-      const search = this.search().trim();
-      if (search) params = params.set('search', search);
-      if (this.activeFilter() === 'active') params = params.set('active', 'true');
-      if (this.activeFilter() === 'inactive') params = params.set('active', 'false');
+  private fetchProductsPage(
+    page: number,
+    size: number,
+    search: string,
+    activeFilter: '' | 'active' | 'inactive',
+  ): Promise<Page<ProductResponse>> {
+    let params = new HttpParams().set('page', page).set('size', size);
+    if (search) params = params.set('search', search);
+    if (activeFilter === 'active') params = params.set('active', 'true');
+    if (activeFilter === 'inactive') params = params.set('active', 'false');
+    return firstValueFrom(this.http.get<Page<ProductResponse>>(this.productsUrl, { params }));
+  }
 
-      const data = await firstValueFrom(
-        this.http.get<Page<ProductResponse>>(this.productsUrl, { params }),
-      );
-      const products = data.items
-        .map((p) => this.toProduct(p))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      this.products.set(products);
-      this.page.set(data.page);
-      this.size.set(data.size);
-      this.total.set(data.total);
-      this.totalPages.set(data.pages);
-    } catch (err) {
-      this.error.set(this.extractError(err));
-    } finally {
-      this.loading.set(false);
-    }
+  /** Antes: async, esperaba el round-trip. Ahora: setter síncrono; el fetch es un
+   *  efecto reactivo de `productsQuery` sobre page/size/search/activeFilter/wantsPage. */
+  loadProducts(page: number = this.page(), size: number = this.size()): void {
+    this.otherError.set(null);
+    this.page.set(page);
+    this.size.set(size);
+    this.wantsPage.set(true);
   }
 
   /** Aplica el término de búsqueda y recarga desde la página 1. */
-  async setSearch(term: string): Promise<void> {
+  setSearch(term: string): void {
     this.search.set(term);
-    await this.loadProducts(1);
+    this.loadProducts(1);
   }
 
   /** Aplica el filtro de estado y recarga desde la página 1. */
-  async setActiveFilter(filter: '' | 'active' | 'inactive'): Promise<void> {
+  setActiveFilter(filter: '' | 'active' | 'inactive'): void {
     this.activeFilter.set(filter);
-    await this.loadProducts(1);
+    this.loadProducts(1);
   }
 
   async getProduct(id: string): Promise<Product | null> {
@@ -169,7 +198,7 @@ export class ProductService {
       const p = await firstValueFrom(this.http.get<ProductResponse>(`${this.productsUrl}/${id}`));
       return this.toProduct(p);
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return null;
     }
   }
@@ -177,7 +206,7 @@ export class ProductService {
   /** Creates a product and returns its id (or null on error). */
   async createProduct(form: ProductForm): Promise<string | null> {
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     const payload: ProductCreatePayload = {
       category_id: form.category_id,
       name: form.name,
@@ -189,10 +218,10 @@ export class ProductService {
       const created = await firstValueFrom(
         this.http.post<ProductResponse>(this.productsUrl, payload),
       );
-      await this.loadProducts();
+      await this.queryClient.invalidateQueries({ queryKey: ['products'] });
       return created.id;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return null;
     } finally {
       this.isSubmitting.set(false);
@@ -210,7 +239,7 @@ export class ProductService {
     const ok = await this.run(() =>
       this.http.patch<ProductResponse>(`${this.productsUrl}/${id}`, payload),
     );
-    if (ok) await this.loadProducts();
+    if (ok) await this.queryClient.invalidateQueries({ queryKey: ['products'] });
     return ok;
   }
 
@@ -219,7 +248,7 @@ export class ProductService {
     const ok = await this.run(() =>
       this.http.patch<ProductResponse>(`${this.productsUrl}/${id}`, payload),
     );
-    if (ok) await this.loadProducts();
+    if (ok) await this.queryClient.invalidateQueries({ queryKey: ['products'] });
     return ok;
   }
 
@@ -229,7 +258,7 @@ export class ProductService {
     const ok = await this.run(() =>
       this.http.patch<ProductResponse>(`${this.productsUrl}/${id}`, payload),
     );
-    if (ok) await this.loadProducts();
+    if (ok) await this.queryClient.invalidateQueries({ queryKey: ['products'] });
     return ok;
   }
 
@@ -245,7 +274,7 @@ export class ProductService {
       );
       return data.map((v) => this.toVariant(v));
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return [];
     }
   }
@@ -294,7 +323,7 @@ export class ProductService {
       }));
     } catch (err) {
       if (err instanceof HttpErrorResponse && err.status === 404) return [];
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return [];
     }
   }
@@ -327,7 +356,7 @@ export class ProductService {
       }));
     } catch (err) {
       if (err instanceof HttpErrorResponse && err.status === 404) return [];
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return [];
     }
   }
@@ -386,20 +415,20 @@ export class ProductService {
    */
   async saveProduct(draft: ProductDraft): Promise<string | null> {
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     this.lastVariantConflict.set(null);
     try {
       const productId = draft.id
         ? await this.saveExistingProduct(draft)
         : await this.saveNewProduct(draft);
-      await this.loadProducts();
+      await this.queryClient.invalidateQueries({ queryKey: ['products'] });
       return productId;
     } catch (err) {
       if (err instanceof VariantNameConflictError) {
         this.lastVariantConflict.set(err.conflict);
-        this.error.set(this.conflictMessage(err.conflict));
+        this.otherError.set(this.conflictMessage(err.conflict));
       } else {
-        this.error.set(this.extractError(err));
+        this.otherError.set(this.extractError(err));
       }
       return null;
     } finally {
@@ -593,12 +622,12 @@ export class ProductService {
   /** Runs a write request under isSubmitting/error; returns success boolean. */
   private async run(request: () => Observable<unknown>): Promise<boolean> {
     this.isSubmitting.set(true);
-    this.error.set(null);
+    this.otherError.set(null);
     try {
       await firstValueFrom(request());
       return true;
     } catch (err) {
-      this.error.set(this.extractError(err));
+      this.otherError.set(this.extractError(err));
       return false;
     } finally {
       this.isSubmitting.set(false);
