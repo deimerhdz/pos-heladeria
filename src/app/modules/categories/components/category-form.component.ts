@@ -123,7 +123,7 @@ export class CategoryFormComponent implements OnChanges {
   }
 
   ngOnChanges(): void {
-    this.categoryService.error.set(null);
+    this.categoryService.otherError.set(null);
     if (this.category) {
       this.form.setValue({
         name: this.category.name,
@@ -140,7 +140,7 @@ export class CategoryFormComponent implements OnChanges {
     return (control: AbstractControl): ValidationErrors | null => {
       const value = (control.value as string).trim().toLowerCase();
       const exists = this.categoryService
-        .categories()
+        .allCategories()
         .some((cat) => cat.name.toLowerCase() === value && cat.id !== this.category?.id);
       return exists ? { duplicateName: true } : null;
     };

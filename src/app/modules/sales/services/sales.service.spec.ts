@@ -4,9 +4,13 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
+import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
 import { SalesService } from './sales.service';
 import { Sale } from '../interfaces/sales.interface';
+
+/** Drain pending microtasks so the reactive query effect fires the HTTP request. */
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 const base = `${environment.apiBaseUrl}/sales`;
 
@@ -34,7 +38,14 @@ describe('SalesService', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [SalesService, provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        SalesService,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+      ],
     });
     service = TestBed.inject(SalesService);
     http = TestBed.inject(HttpTestingController);
@@ -66,7 +77,8 @@ describe('SalesService', () => {
   });
 
   it('lists sales and updates pagination state', async () => {
-    const p = service.list();
+    service.list();
+    await tick();
     const req = http.expectOne((r) => r.url === base);
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('page')).toBe('1');
@@ -78,36 +90,40 @@ describe('SalesService', () => {
       size: 20,
       pages: 1,
     });
-    await p;
+    await tick();
     expect(service.sales().map((s) => s.id)).toEqual(['b', 'a']);
     expect(service.total()).toBe(2);
     expect(service.totalPages()).toBe(1);
   });
 
   it('sends status, date range and invoice_reference filters, stripping dashes', async () => {
-    let p: Promise<void> = service.setStatus('paid');
+    service.setStatus('paid');
+    await tick();
     let req = http.expectOne((r) => r.url === base);
     req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
-    await p;
+    await tick();
 
-    p = service.setDateFrom('2026-01-01');
+    service.setDateFrom('2026-01-01');
+    await tick();
     req = http.expectOne((r) => r.url === base);
     req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
-    await p;
+    await tick();
 
-    p = service.setDateTo('2026-01-31');
+    service.setDateTo('2026-01-31');
+    await tick();
     req = http.expectOne((r) => r.url === base);
     req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
-    await p;
+    await tick();
 
-    p = service.setInvoiceReference('A-000004');
+    service.setInvoiceReference('A-000004');
+    await tick();
     req = http.expectOne((r) => r.url === base);
     expect(req.request.params.get('status')).toBe('paid');
     expect(req.request.params.get('date_from')).toBe('2026-01-01');
     expect(req.request.params.get('date_to')).toBe('2026-01-31');
     expect(req.request.params.get('invoice_reference')).toBe('A000004');
     req.flush({ items: [], total: 0, page: 1, size: 20, pages: 0 });
-    await p;
+    await tick();
   });
 
   it('gets a sale by id', async () => {

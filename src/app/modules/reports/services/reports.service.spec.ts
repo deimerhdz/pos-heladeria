@@ -1,69 +1,141 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import {
-  HttpTestingController,
-  provideHttpClientTesting,
-} from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
 import { ReportsService } from './reports.service';
 
 const api = environment.apiBaseUrl;
-const nowIso = new Date().toISOString();
 
-function sale(id: string, total: string, items: { description: string; quantity: number; line_total: string }[], payMethod: string, payAmount: string) {
-  return {
-    id,
-    cash_shift_id: 'sh1',
-    user_id: 'u1',
-    subtotal: total,
-    discount: '0.00',
-    tax: '0.00',
-    tip: '0.00',
-    total,
-    status: 'paid',
-    sold_at: nowIso,
-    items: items.map((it, i) => ({ id: `${id}-${i}`, product_variant_id: 'v', ...it })),
-    payments: [{ id: `${id}-p`, payment_method_id: payMethod, amount: payAmount }],
-  };
-}
-
+/**
+ * El spec anterior probaba una versión del servicio que agregaba las ventas en
+ * el cliente contra `/sales`, `/sales/payment-methods` e `/inventory/items`.
+ * Ese servicio dejó de existir cuando los informes pasaron a `/reports/*`, y el
+ * spec se quedó pidiendo URLs que ya nadie llama: llevaba roto desde entonces.
+ */
 describe('ReportsService', () => {
   let service: ReportsService;
   let http: HttpTestingController;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [ReportsService, provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+        ReportsService,
+      ],
     });
     service = TestBed.inject(ReportsService);
     http = TestBed.inject(HttpTestingController);
+    TestBed.tick(); // deja correr los efectos que lanzan las queries
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    http.match(() => true); // vacía las peticiones que el test no necesitó
+    http.verify();
+  });
 
-  it('aggregates sales summary, cash/card split and top products for the period', async () => {
-    const p = service.loadAll(); // default period = 'today'; sales are dated now
+  /** Deja resolver la promesa del HttpClient y propagar la signal de la query. */
+  async function asentar(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+    TestBed.tick();
+  }
 
-    http.expectOne(`${api}/sales`).flush([
-      sale('s1', '10.00', [{ description: 'Cono', quantity: 2, line_total: '6.00' }], 'cash', '10.00'),
-      sale('s2', '5.00', [{ description: 'Cono', quantity: 1, line_total: '3.00' }], 'card', '5.00'),
+  /** URLs pedidas hasta ahora, sin el prefijo del API. */
+  function urlsPedidas(): string[] {
+    return http
+      .match(() => true)
+      .map((r) => r.request.urlWithParams.replace(`${api}/reports/`, ''));
+  }
+
+  it('pide los seis informes del rango al arrancar', () => {
+    const urls = urlsPedidas();
+    const recursos = urls.map((u) => u.split('?')[0]).sort();
+
+    expect(recursos).toEqual([
+      'cashiers',
+      'categories',
+      'inventory',
+      'profitability',
+      'sales',
+      'top-products',
     ]);
-    http.expectOne(`${api}/sales/payment-methods`).flush([
-      { id: 'cash', name: 'Efectivo', is_cash: true, active: true },
-      { id: 'card', name: 'Tarjeta', is_cash: false, active: true },
+  });
+
+  it('acota por fecha todos los informes menos el de inventario', () => {
+    const urls = urlsPedidas();
+    const hoy = new Date().toLocaleDateString('en-CA');
+
+    for (const url of urls) {
+      if (url.startsWith('inventory')) {
+        // El stock no depende del período: su clave de query tampoco.
+        expect(url).not.toContain('date_from');
+      } else {
+        expect(url).toContain(`date_from=${hoy}`);
+        expect(url).toContain(`date_to=${hoy}`);
+      }
+    }
+  });
+
+  it('pide el desglose por día salvo en el año, que lo pide por mes', () => {
+    expect(service.groupBy()).toBe('day');
+    expect(urlsPedidas().find((u) => u.startsWith('sales'))).toContain('group_by=day');
+
+    service.setPeriod('year');
+    TestBed.tick();
+
+    expect(service.groupBy()).toBe('month');
+    // Un año por día son 365 puntos: la gráfica necesita 12.
+    expect(urlsPedidas().find((u) => u.startsWith('sales'))).toContain('group_by=month');
+  });
+
+  it('el rango del año va del 1 de enero al 31 de diciembre', () => {
+    service.setPeriod('year');
+    const año = new Date().getFullYear();
+
+    expect(service.range()).toEqual({ from: `${año}-01-01`, to: `${año}-12-31` });
+  });
+
+  it('convierte a número los decimales que llegan como string', async () => {
+    http.expectOne((r) => r.url === `${api}/reports/sales`).flush({
+      total_sales: '4780.50',
+      ticket_count: 156,
+      avg_ticket: '30.64',
+      by_day: [{ day: '2026-08-04', total: '320.00', count: 11 }],
+    });
+    http.expectOne((r) => r.url === `${api}/reports/top-products`).flush([
+      { product_variant_id: 'v1', description: 'Cono', units: 84, revenue: '420.00' },
     ]);
-    http.expectOne((r) => r.url === `${api}/inventory/items`).flush([]);
+    await asentar();
 
-    await p;
+    expect(service.salesSummary()).toEqual({
+      total: 4780.5,
+      count: 156,
+      average: 30.64,
+      cashTotal: 0,
+      cardTotal: 0,
+    });
+    expect(service.dailySales()).toEqual([{ date: '2026-08-04', count: 11, total: 320 }]);
+    expect(service.topProducts()).toEqual([{ name: 'Cono', totalQty: 84, totalRevenue: 420 }]);
+  });
 
-    const summary = service.salesSummary()!;
-    expect(summary.total).toBe(15);
-    expect(summary.count).toBe(2);
-    expect(summary.cashTotal).toBe(10);
-    expect(summary.cardTotal).toBe(5);
-    expect(summary.average).toBe(7.5);
+  it('solo lista los insumos por debajo del mínimo', async () => {
+    http.expectOne((r) => r.url === `${api}/reports/inventory`).flush([
+      {
+        inventory_item_id: 'i1', name: 'Leche', current_stock: '2', min_stock: '10',
+        unit_cost: '1', stock_value: '2', below_min: true,
+      },
+      {
+        inventory_item_id: 'i2', name: 'Azúcar', current_stock: '50', min_stock: '10',
+        unit_cost: '1', stock_value: '50', below_min: false,
+      },
+    ]);
+    await asentar();
 
-    // "Cono" appears in both sales → merged, qty 3
-    expect(service.topProducts()[0]).toEqual({ name: 'Cono', totalQty: 3, totalRevenue: 9 });
+    expect(service.lowStockIngredients().map((i) => i.name)).toEqual(['Leche']);
+    expect(service.lowStockIngredients()[0].current_stock).toBe(2);
   });
 });

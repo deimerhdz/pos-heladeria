@@ -24,12 +24,11 @@ import { InventoryItemFormComponent } from '../components/inventory-item-form.co
 import { StockAdjustModalComponent } from '../components/stock-adjust-modal.component';
 import { PurchaseFormComponent } from '../components/purchase-form.component';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 
 type Tab = 'items' | 'purchases' | 'movements';
 type TypeFilter = '' | InventoryItemType;
 type ActiveFilter = '' | 'active' | 'inactive';
-
-const PAGE_SIZES = [10, 20, 50, 100];
 
 @Component({
   selector: 'app-inventory-page',
@@ -42,6 +41,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
     StockAdjustModalComponent,
     PurchaseFormComponent,
     SearchableSelectComponent,
+    PaginationBarComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -184,30 +184,12 @@ const PAGE_SIZES = [10, 20, 50, 100];
                 </tbody>
               </table>
             </div>
-            @if (service.itemsTotalPages() > 1) {
-              <div class="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-                <div class="flex items-center gap-2 text-xs text-gray-500">
-                  <span>Por página</span>
-                  <select [ngModel]="service.itemsSize()" (ngModelChange)="onItemsSizeChange($event)" [disabled]="service.isLoading()"
-                    class="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                    @for (s of pageSizes; track s) { <option [ngValue]="s">{{ s }}</option> }
-                  </select>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="text-xs text-gray-500">Página {{ service.itemsPage() }} de {{ service.itemsTotalPages() || 1 }}</span>
-                  <div class="flex items-center gap-1">
-                    <button (click)="goToItemsPage(service.itemsPage() - 1)" [disabled]="service.itemsPage() <= 1 || service.isLoading()"
-                      class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      Anterior
-                    </button>
-                    <button (click)="goToItemsPage(service.itemsPage() + 1)" [disabled]="service.itemsPage() >= service.itemsTotalPages() || service.isLoading()"
-                      class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      Siguiente
-                    </button>
-                  </div>
-                </div>
-              </div>
-            }
+            <app-pagination-bar
+              [page]="service.itemsPage()" [size]="service.itemsSize()"
+              [total]="service.itemsTotal()" [totalPages]="service.itemsTotalPages()"
+              [loading]="service.isLoading()"
+              (pageChange)="service.loadItems($event, service.itemsSize())"
+              (sizeChange)="service.loadItems(1, $event)" />
           }
         </div>
       }
@@ -393,7 +375,6 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
   private readonly toast = inject(ToastService);
 
   readonly tab = signal<Tab>('items');
-  readonly pageSizes = PAGE_SIZES;
 
   /** Local echo of the search box; the actual query to the service is debounced. */
   readonly searchSignal = signal('');
@@ -431,9 +412,9 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
   );
 
   async ngOnInit(): Promise<void> {
+    this.service.loadItems();
+    this.service.loadAllItems();
     await Promise.all([
-      this.service.loadItems(),
-      this.service.loadAllItems(),
       this.service.loadLowStock(),
       this.unitMeasureService.loadUnitMeasures(),
       this.suppliersService.loadSuppliers(),
@@ -462,15 +443,6 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
   }
   onActiveFilterChange(value: ActiveFilter): void {
     this.service.setItemsActive(value);
-  }
-
-  // --- paginación de Insumos ---
-  goToItemsPage(page: number): void {
-    if (page < 1 || page > this.service.itemsTotalPages()) return;
-    this.service.loadItems(page, this.service.itemsSize());
-  }
-  onItemsSizeChange(size: number): void {
-    this.service.loadItems(1, size);
   }
 
   // --- paginación de Compras ---
@@ -528,7 +500,7 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
         };
       }),
     );
-    this.service.error.set(null);
+    this.service.otherError.set(null);
     this.receivePurchase.set(p);
   }
   async submitReceive(purchaseId: string): Promise<void> {

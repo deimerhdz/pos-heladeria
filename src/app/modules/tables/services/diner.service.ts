@@ -34,6 +34,7 @@ function mapGroups(raw: unknown): MenuOptionGroup[] {
     name: g['name'] as string,
     min_select: (g['min_select'] as number) ?? 0,
     max_select: (g['max_select'] as number) ?? 0,
+    consume: (g['consume'] as boolean) ?? false,
     options: ((g['options'] as Record<string, unknown>[]) ?? []).map((o) => ({
       id: o['id'] as string,
       name: o['name'] as string,
@@ -123,7 +124,7 @@ export class DinerService {
 
   /**
    * Envía el carrito como pedido. Queda en `recibida`: **no descuenta
-   * inventario** y cocina no lo ve hasta que el personal lo confirme.
+   * inventario** hasta que el personal lo confirme.
    */
   submitCart(): Promise<DiningOrder> {
     return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, {}));
@@ -252,6 +253,7 @@ export class DinerService {
           name: v['name'] as string,
           price: Number(v['price']),
           discounted_price: v['discounted_price'] != null ? Number(v['discounted_price']) : null,
+          discount_kind: (v['discount_kind'] as string) ?? null,
           // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
           // con el tamaño.
           option_groups: mapGroups(v['option_groups']),

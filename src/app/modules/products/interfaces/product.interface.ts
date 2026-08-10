@@ -295,6 +295,15 @@ export interface MenuOptionGroup {
   name: string;
   min_select: number;
   max_select: number;
+  /**
+   * El grupo descuenta inventario por cada opción elegida.
+   *
+   * Cambia cuántas hay que elegir: un helado de tres bolas reparte una cantidad
+   * física fija entre los sabores, así que elegir uno solo sirve tres y
+   * descuenta uno. Por eso ahí se exige el máximo y no el mínimo. Ver
+   * `requiredCount()` en `product-select.component.ts`.
+   */
+  consume: boolean;
   options: MenuOption[];
 }
 
@@ -304,6 +313,8 @@ export interface MenuVariant {
   price: number;
   /** Precio ya con el mejor descuento vigente aplicado, o `null`/ausente si no hay. */
   discounted_price?: number | null;
+  /** Tipo de promoción que generó `discounted_price` ('percent'/'fixed'), o `null`/ausente si no hay. */
+  discount_kind?: string | null;
   /**
    * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
    * grupos cambia con el tamaño.

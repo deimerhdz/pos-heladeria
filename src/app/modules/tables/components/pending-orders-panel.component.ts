@@ -20,7 +20,7 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
  * Pedidos que el comensal envió y esperan que el personal los acepte.
  *
  * Es el paso que compromete el inventario: hasta que alguien confirma, el
- * pedido no ha descontado stock y **cocina no lo ve**. Por eso no salen en el
+ * pedido no ha descontado stock. Por eso no salen en el
  * KDS y hay que pedirlos aparte con `GET /orders?status=recibida`.
  */
 @Component({
@@ -125,6 +125,12 @@ export class PendingOrdersPanelComponent {
   readonly stockError = signal<string | null>(null);
   readonly errorMessage = signal<string>('');
 
+  constructor() {
+    // El total mostrado aplica los descuentos vigentes; sin esto el panel
+    // dependía de que otra pantalla hubiera cargado las promociones primero.
+    this.promotionService.loadActive();
+  }
+
   variantLabel(variantId: string): string {
     return buildMenuLookup(this.categories).variantLabel(variantId);
   }
@@ -146,7 +152,7 @@ export class PendingOrdersPanelComponent {
   total(order: DiningOrder): number {
     const lk = buildMenuLookup(this.categories);
     const now = new Date();
-    const promos = this.promotionService.promotions();
+    const promos = this.promotionService.activePromotions();
     return (order.items ?? []).reduce((s, i) => {
       if (i.combo_id) return s + Number(i.unit_price) * i.quantity;
       const unitPrice = discountedUnitPrice(

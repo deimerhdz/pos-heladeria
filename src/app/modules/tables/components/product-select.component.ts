@@ -8,7 +8,7 @@ import {
   computed,
   signal,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { MoneyPipe } from '../../../shared/money.pipe';
 import {
   MenuOption,
   MenuOptionGroup,
@@ -16,7 +16,7 @@ import {
   MenuVariant,
 } from '../../products/interfaces/product.interface';
 import { normalizeText } from '../../../shared/normalize-text';
-import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /** Emitted when the diner confirms their selection for a product. */
 export interface ProductSelection {
@@ -30,7 +30,7 @@ export interface ProductSelection {
 @Component({
   selector: 'app-product-select',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [MoneyPipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 sm:p-4">
@@ -75,8 +75,20 @@ export interface ProductSelection {
                     <span class="font-medium">{{ v.name }}</span>
                     @if (v.available === false) {
                       <span class="text-xs font-semibold text-gray-400">Agotado</span>
+                    } @else if (discountFor(v); as disc) {
+                      <span class="flex items-center gap-1.5">
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                          @if (disc.kind === 'fixed') {
+                            -{{ disc.amountOff | money }}
+                          } @else {
+                            -{{ disc.percent }}%
+                          }
+                        </span>
+                        <span class="text-gray-400 text-xs line-through">{{ disc.original | money }}</span>
+                        <span class="font-semibold">{{ disc.discounted | money }}</span>
+                      </span>
                     } @else {
-                      <span class="font-semibold">$ {{ variantPrice(v) | number:'1.2-2' }}</span>
+                      <span class="font-semibold">{{ variantPrice(v) | money }}</span>
                     }
                   </button>
                 }
@@ -137,7 +149,7 @@ export interface ProductSelection {
                         @if (opt.extra_price > 0) {
                           <span class="block text-xs mt-0.5"
                             [class]="isSelected(opt.id) ? 'text-indigo-100' : 'text-gray-500'">
-                            + $ {{ opt.extra_price | number:'1.2-2' }}
+                            + {{ opt.extra_price | money }}
                           </span>
                         }
                       </button>
@@ -189,10 +201,22 @@ export interface ProductSelection {
         <div class="px-6 py-4 border-t border-gray-100 shrink-0 space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium text-gray-600">Cantidad</span>
+            <!-- 44 px: el objetivo táctil mínimo cómodo con el pulgar. -->
             <div class="flex items-center gap-2">
-              <button type="button" (click)="dec()" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold">−</button>
-              <span class="w-6 text-center font-semibold">{{ quantity() }}</span>
-              <button type="button" (click)="inc()" class="w-8 h-8 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold">+</button>
+              <button
+                type="button"
+                (click)="dec()"
+                [disabled]="quantity() === 1"
+                aria-label="Quitar uno"
+                class="w-11 h-11 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
+              >−</button>
+              <span class="w-8 text-center text-lg font-semibold">{{ quantity() }}</span>
+              <button
+                type="button"
+                (click)="inc()"
+                aria-label="Añadir uno"
+                class="w-11 h-11 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xl font-bold leading-none flex items-center justify-center transition-colors"
+              >+</button>
             </div>
           </div>
           <!-- Con el grupo plegado, un botón atenuado sin más no dice qué falta. -->
@@ -205,7 +229,7 @@ export interface ProductSelection {
             @if (blockingLabel(); as falta) {
               {{ falta }}
             } @else {
-              Agregar · $ {{ lineTotal() | number:'1.2-2' }}
+              Agregar · {{ lineTotal() | money }}
             }
           </button>
         </div>
@@ -292,6 +316,10 @@ export class ProductSelectComponent implements OnInit {
   /** Precio efectivo de una presentación (con descuento si el backend lo trajo). */
   variantPrice(v: MenuVariant): number {
     return effectivePrice(v.price, v.discounted_price);
+  }
+
+  discountFor(v: MenuVariant): DiscountInfo | null {
+    return discountInfo(v.price, v.discounted_price, v.discount_kind);
   }
 
   isSelected(optId: string): boolean {
@@ -383,15 +411,31 @@ export class ProductSelectComponent implements OnInit {
       .join(', ');
   }
 
+  /**
+   * Cuántas opciones hay que elegir en este grupo para poder agregar.
+   *
+   * Un grupo que descuenta inventario reparte una cantidad física fija entre las
+   * opciones elegidas: los sabores de un helado de tres bolas. Elegir uno solo
+   * le sirve al cliente las tres bolas y descuenta una, así que ahí el mínimo
+   * real es el máximo configurado. El backend aplica la misma regla.
+   *
+   * Un grupo que descuenta pero es opcional (`min_select = 0`) se queda como
+   * está: no elegir es una respuesta válida y el consumo cuadra con lo servido.
+   */
+  requiredCount(group: MenuOptionGroup): number {
+    return group.consume && group.min_select > 0 ? group.max_select : group.min_select;
+  }
+
   groupHint(group: MenuOptionGroup): string {
     const disponibles = group.options.filter((o) => o.available).length;
     if (disponibles === 0) return 'Sin existencias';
-    if (disponibles < group.min_select) return `Solo quedan ${disponibles}`;
+    const requeridas = this.requiredCount(group);
+    if (disponibles < requeridas) return `Solo quedan ${disponibles}`;
     const n = this.chosenCount(group);
     // Con un tope fijo el progreso es lo único que importa; si el rango es abierto hay
     // que recordar además cuál es.
-    if (group.min_select === group.max_select) return `${n} de ${group.max_select}`;
-    if (group.min_select > 0) return `${n} · elige ${group.min_select}–${group.max_select}`;
+    if (requeridas === group.max_select) return `${n} de ${group.max_select}`;
+    if (requeridas > 0) return `${n} · elige ${requeridas}–${group.max_select}`;
     if (group.max_select > 0) return `${n} · hasta ${group.max_select}`;
     return 'Opcional';
   }
@@ -405,7 +449,7 @@ export class ProductSelectComponent implements OnInit {
     if (!variant) return 'Elige una presentación';
     if (variant.available === false) return 'Presentación agotada';
     for (const g of this.activeGroups()) {
-      const faltan = g.min_select - this.chosenCount(g);
+      const faltan = this.requiredCount(g) - this.chosenCount(g);
       if (faltan > 0) {
         return faltan === 1
           ? `Elige 1 más de ${g.name}`
@@ -417,12 +461,16 @@ export class ProductSelectComponent implements OnInit {
 
   groupError(group: MenuOptionGroup): string | null {
     const n = (this.selected()[group.id] ?? []).length;
-    if (n < group.min_select) {
+    const requeridas = this.requiredCount(group);
+    if (n < requeridas) {
       const disponibles = group.options.filter((o) => o.available).length;
-      if (disponibles < group.min_select) {
+      if (disponibles < requeridas) {
         return 'No hay suficientes opciones disponibles ahora mismo.';
       }
-      return `Selecciona al menos ${group.min_select}`;
+      // Con un número exacto "al menos" confunde: no es un mínimo, es la cuenta.
+      return requeridas === group.max_select
+        ? `Elige ${requeridas}`
+        : `Selecciona al menos ${requeridas}`;
     }
     return null;
   }
@@ -464,7 +512,7 @@ export class ProductSelectComponent implements OnInit {
     if (!variant || variant.available === false) return false;
     return this.activeGroups().every((g) => {
       const chosen = this.selected()[g.id] ?? [];
-      if (chosen.length < g.min_select || chosen.length > g.max_select) return false;
+      if (chosen.length < this.requiredCount(g) || chosen.length > g.max_select) return false;
       // El menú pudo refrescarse con el modal abierto y dejar agotado algo ya elegido.
       return chosen.every((id) => g.options.find((o) => o.id === id)?.available !== false);
     });

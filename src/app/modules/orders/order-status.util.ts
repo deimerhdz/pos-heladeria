@@ -8,15 +8,15 @@ import {
  * Fuente única de los estados del flujo de mesas y de cómo se pintan.
  *
  * Son **dos ejes independientes**: el pedido avanza por facturación
- * (`DiningOrderStatus`) y cada ítem avanza por cocina (`KitchenStatus`). La UI
- * necesita los dos para decidir qué se puede hacer.
+ * (`DiningOrderStatus`) y cada ítem avanza por preparación (`KitchenStatus`).
+ * La UI necesita los dos para decidir qué se puede hacer.
  */
 
 // ── Pedido (facturación) ───────────────────────────────────────────────────
 
 const ORDER_STATUS: Record<DiningOrderStatus, { label: string; classes: string }> = {
   // Enviado por el comensal, pendiente de que el personal lo acepte.
-  // No ha descontado inventario y cocina no lo ve.
+  // No ha descontado inventario.
   recibida: { label: 'Por confirmar', classes: 'bg-violet-100 text-violet-700' },
   abierta: { label: 'Abierta', classes: 'bg-amber-100 text-amber-700' },
   bloqueada: { label: 'Bloqueada', classes: 'bg-orange-100 text-orange-700' },
@@ -39,13 +39,12 @@ export function isTerminalOrder(status: DiningOrderStatus): boolean {
   return TERMINAL_ORDER_STATUSES.includes(status);
 }
 
-// ── Cocina (por ítem) ──────────────────────────────────────────────────────
+// ── Preparación (por ítem) ─────────────────────────────────────────────────
 
 const KITCHEN_STATUS: Record<KitchenStatus, { label: string; classes: string }> = {
-  pendiente: { label: 'Pendiente', classes: 'bg-gray-100 text-gray-600' },
+  pendiente: { label: 'Pendiente', classes: 'bg-amber-100 text-amber-700' },
   en_preparacion: { label: 'En preparación', classes: 'bg-blue-100 text-blue-700' },
   listo: { label: 'Listo', classes: 'bg-green-100 text-green-700' },
-  entregado: { label: 'Entregado', classes: 'bg-emerald-100 text-emerald-700' },
   anulado: { label: 'Anulado', classes: 'bg-gray-100 text-gray-400' },
 };
 
@@ -57,21 +56,7 @@ export function kitchenStatusClass(status: KitchenStatus): string {
   return KITCHEN_STATUS[status]?.classes ?? 'bg-gray-100 text-gray-500';
 }
 
-/**
- * Avance de cocina, solo hacia adelante. `null` = no hay siguiente paso.
- * Retroceder o saltarse un paso lo rechaza el backend con `409`.
- */
-const KITCHEN_NEXT: Partial<Record<KitchenStatus, KitchenStatus>> = {
-  pendiente: 'en_preparacion',
-  en_preparacion: 'listo',
-  listo: 'entregado',
-};
-
-export function nextKitchenStatus(status: KitchenStatus): KitchenStatus | null {
-  return KITCHEN_NEXT[status] ?? null;
-}
-
-/** Estados de cocina que impiden bloquear/cobrar: la comida aún está en curso. */
+/** Estados que impiden bloquear/cobrar: la comida aún está en curso. */
 export const KITCHEN_NOT_READY: readonly KitchenStatus[] = ['pendiente', 'en_preparacion'];
 
 // ── Reglas que la UI necesita ──────────────────────────────────────────────

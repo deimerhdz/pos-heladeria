@@ -25,7 +25,6 @@ import { PasswordInputComponent } from '../../../shared/password-input/password-
 const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
   { value: UserRole.ADMIN, label: 'Administrador' },
   { value: UserRole.CASHIER, label: 'Cajero' },
-  { value: UserRole.STAFF, label: 'Personal de Cocina' },
 ];
 
 @Component({

@@ -11,7 +11,7 @@ import {
 } from '../interfaces/dining.interface';
 
 /**
- * Transporte del lado **staff** del flujo de mesas: comandas, cocina y cobro.
+ * Transporte del lado **staff** del flujo de mesas: comandas, preparación y cobro.
  *
  * El flujo del comensal (menú por QR, sesión, carrito, pedidos propios) vive en
  * `DinerService`: son rutas públicas que se autentican con `x-session-token` y
@@ -53,13 +53,28 @@ export class DiningSessionService {
     );
   }
 
-  /** Advance an item's kitchen status (pendiente→en_preparacion→listo→entregado). */
+  /**
+   * Avanza la preparación de un ítem (`pendiente`→`en_preparacion`→`listo`).
+   *
+   * El backend admite el salto directo `pendiente → listo`, que es el que usa
+   * el botón de un toque de la terminal.
+   */
   async updateItemKitchen(itemId: string, estado: KitchenStatus): Promise<DiningOrderItem> {
     return firstValueFrom(
       this.http.patch<DiningOrderItem>(`${this.api}/orders/items/${itemId}/kitchen`, {
         estado_cocina: estado,
       }),
     );
+  }
+
+  /**
+   * Marca `listo` todo lo que quede en curso del pedido, en una sola petición.
+   *
+   * Existe para no encadenar un PATCH por ítem —y por transición— cada vez que
+   * el cajero cobra una mesa que aún no ha marcado.
+   */
+  async markOrderReady(orderId: string): Promise<DiningOrder> {
+    return firstValueFrom(this.http.post<DiningOrder>(`${this.api}/orders/${orderId}/ready`, {}));
   }
 
   // ── Cobro / cierre de comedor (Fase 7) ───────────────────────────────────
@@ -88,7 +103,7 @@ export class DiningSessionService {
       if (Array.isArray(detail) && detail.length > 0) {
         return (detail[0] as { msg?: string })?.msg ?? fallback;
       }
-      // El bloqueo por cocina devuelve `detail` como objeto `{error, items}`.
+      // El bloqueo por ítems sin terminar devuelve `detail` como `{error, items}`.
       if (detail && typeof detail === 'object') {
         return (detail as { error?: string }).error ?? fallback;
       }

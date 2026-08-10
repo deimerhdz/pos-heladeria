@@ -6,7 +6,7 @@ import { DinerService, DinerSessionExpiredError } from '../services/diner.servic
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
-import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
@@ -19,6 +19,8 @@ import {
   puedeCancelarComensal,
 } from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
+import { MoneyPipe } from '../../../shared/money.pipe';
+import { formatMoney } from '../../../shared/money';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { normalizeText } from '../../../shared/normalize-text';
 import {
@@ -45,7 +47,7 @@ const REFRESH_DEBOUNCE_MS = 250;
 @Component({
   selector: 'app-public-menu',
   standalone: true,
-  imports: [CartComponent, ProductSelectComponent, IconComponent],
+  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -294,7 +296,16 @@ const REFRESH_DEBOUNCE_MS = 250;
                     (click)="openProduct(product)"
                     class="text-left bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-300 hover:shadow-md active:scale-[0.98] transition-all"
                   >
-                    <div class="w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
+                    <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
+                      @if (productDiscount(product); as disc) {
+                        <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                          @if (disc.kind === 'fixed') {
+                            🏷️ -{{ disc.amountOff | money }}
+                          } @else {
+                            🏷️ -{{ disc.percent }}%
+                          }
+                        </span>
+                      }
                       @if (product.image_url) {
                         <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover" />
                       } @else {
@@ -306,7 +317,14 @@ const REFRESH_DEBOUNCE_MS = 250;
                       @if (product.description) {
                         <p class="text-xs text-gray-400 mt-0.5 line-clamp-2">{{ product.description }}</p>
                       }
-                      <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
+                      @if (productDiscount(product); as disc) {
+                        <p class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                          <span class="text-gray-400 text-xs line-through">{{ priceWithPrefix(product, disc.original) }}</span>
+                          <span class="text-indigo-600 font-bold text-sm">{{ priceWithPrefix(product, disc.discounted) }}</span>
+                        </p>
+                      } @else {
+                        <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
+                      }
                     </div>
                   </button>
                 }
@@ -564,8 +582,34 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   priceLabel(product: MenuProduct): string {
     const prices = product.variants.map((v) => effectivePrice(v.price, v.discounted_price));
     if (prices.length === 0) return '';
-    const min = Math.min(...prices);
-    return prices.length > 1 ? `Desde $ ${min.toFixed(2)}` : `$ ${min.toFixed(2)}`;
+    return this.priceWithPrefix(product, Math.min(...prices));
+  }
+
+  /**
+   * Un precio de la tarjeta, con el "Desde" delante si el producto tiene varias
+   * presentaciones y el de la tarjeta es solo la más barata.
+   */
+  priceWithPrefix(product: MenuProduct, price: number): string {
+    const prefijo = product.variants.length > 1 ? 'Desde ' : '';
+    return prefijo + formatMoney(price);
+  }
+
+  /**
+   * Descuento de la MISMA presentación que `priceLabel` ya muestra (la de
+   * menor precio efectivo), para que la insignia % y el precio tachado
+   * nunca contradigan el número pintado en el tile. Si solo una
+   * presentación que no es la más barata tiene descuento, el tile no
+   * muestra insignia — misma simplificación que `priceLabel` ya hace al
+   * colapsar todas las presentaciones a un solo precio representativo.
+   */
+  productDiscount(product: MenuProduct): DiscountInfo | null {
+    if (product.variants.length === 0) return null;
+    const cheapest = product.variants.reduce(
+      (min, v) =>
+        effectivePrice(v.price, v.discounted_price) < effectivePrice(min.price, min.discounted_price) ? v : min,
+      product.variants[0],
+    );
+    return discountInfo(cheapest.price, cheapest.discounted_price, cheapest.discount_kind);
   }
 
   async confirmName(): Promise<void> {

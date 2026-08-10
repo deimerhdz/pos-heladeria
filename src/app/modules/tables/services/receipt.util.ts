@@ -8,6 +8,12 @@
  * arqueo de caja), que tienen sus propias reglas de impresión.
  */
 import { Sale } from '../../sales/interfaces/sales.interface';
+import { formatMoney } from '../../../shared/money';
+
+// El formato de moneda se movió a `shared/` (lo necesita el menú QR, que no debe
+// arrastrar este generador de tickets). Se reexporta para no tocar a quien ya lo
+// importaba desde aquí.
+export { formatMoney };
 
 /** Una línea del ticket. */
 export interface ReceiptLine {
@@ -99,10 +105,6 @@ function tableLabel(table: Sale['dining_table']): string {
   return table.name ? `Mesa ${table.number} · ${table.name}` : `Mesa ${table.number}`;
 }
 
-/** Formato de moneda de la terminal. */
-export function formatMoney(n: number): string {
-  return '$ ' + Math.round(n || 0).toLocaleString('es-CO');
-}
 
 function escapeHtml(text: string): string {
   return text

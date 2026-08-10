@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
-import { MenuService } from '../../menu/services/menu.service';
+import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 
 const DAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
@@ -125,9 +125,6 @@ export class ComboSelectComponent implements OnInit {
     if (this.promo.days_of_week) {
       const days = this.promo.days_of_week.split(',').map((d) => DAYS[Number(d)]).filter(Boolean);
       if (days.length) parts.push(`Solo ${days.join(', ')}`);
-    }
-    if (this.promo.days_of_month) {
-      parts.push(`Solo los días ${this.promo.days_of_month.replaceAll(',', ', ')} del mes`);
     }
     return parts.length ? parts.join(' · ') : null;
   }
