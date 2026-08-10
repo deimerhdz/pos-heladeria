@@ -126,9 +126,6 @@ export class ComboSelectComponent implements OnInit {
       const days = this.promo.days_of_week.split(',').map((d) => DAYS[Number(d)]).filter(Boolean);
       if (days.length) parts.push(`Solo ${days.join(', ')}`);
     }
-    if (this.promo.days_of_month) {
-      parts.push(`Solo los días ${this.promo.days_of_month.replaceAll(',', ', ')} del mes`);
-    }
     return parts.length ? parts.join(' · ') : null;
   }
 

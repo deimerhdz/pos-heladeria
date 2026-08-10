@@ -247,8 +247,8 @@ export class PosTerminalStore {
   readonly combos = computed<Promotion[]>(() => {
     const now = new Date();
     return this.promotionService
-      .promotions()
-      .filter((p) => p.type === 'combo' && p.active && isPromoActiveNow(p, now));
+      .activePromotions()
+      .filter((p) => p.type === 'combo' && isPromoActiveNow(p, now));
   });
 
   /**
@@ -260,7 +260,7 @@ export class PosTerminalStore {
    */
   readonly productDiscountBadges = computed<Map<string, string>>(() => {
     const now = new Date();
-    const promos = this.promotionService.promotions();
+    const promos = this.promotionService.activePromotions();
     const result = new Map<string, string>();
 
     for (const c of this.categories()) {
@@ -384,7 +384,7 @@ export class PosTerminalStore {
   readonly cartView = computed(() => {
     const lk = this.lookup();
     const now = new Date();
-    const promos = this.promotionService.promotions();
+    const promos = this.promotionService.activePromotions();
     const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
 
@@ -522,7 +522,7 @@ export class PosTerminalStore {
         this.reloadOrders(),
         this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
         this.menuService.categories().length === 0 ? this.menuService.loadMenu() : null,
-        this.promotionService.promotions().length === 0 ? this.promotionService.load() : null,
+        this.promotionService.loadActive(),
         this.cash.shift() ? null : this.cash.restoreShift(),
       ]);
       const cats = this.menuService.categories();
@@ -1188,7 +1188,7 @@ export class PosTerminalStore {
   private orderSubtotal(o: DiningOrder): number {
     const lk = this.lookup();
     const now = new Date();
-    const promos = this.promotionService.promotions();
+    const promos = this.promotionService.activePromotions();
     const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
     const plain = items.filter((i) => !i.combo_id);
     let total = plain.reduce((s, i) => {
