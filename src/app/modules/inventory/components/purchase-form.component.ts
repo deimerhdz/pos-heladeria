@@ -11,13 +11,15 @@ import {
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SuppliersService } from '../../suppliers/services/suppliers.service';
+import { UnitMeasureService } from '../../../core/services/unit-measure.service';
+import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 import { PurchaseForm, PurchaseLineForm } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
 
 @Component({
   selector: 'app-purchase-form',
   standalone: true,
-  imports: [FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe, SearchableSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -73,13 +75,9 @@ import { InventoryService } from '../services/inventory.service';
 
               @for (row of rows(); track $index) {
                 <div class="grid grid-cols-12 gap-2 items-center">
-                  <select class="col-span-5 px-2 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    [ngModel]="row.inventory_item_id" (ngModelChange)="updateRow($index, 'inventory_item_id', $event)">
-                    <option value="">Seleccionar...</option>
-                    @for (i of inventoryService.allItems(); track i.id) {
-                      <option [value]="i.id">{{ i.name }}</option>
-                    }
-                  </select>
+                  <app-searchable-select class="col-span-5"
+                    [ngModel]="row.inventory_item_id" (ngModelChange)="updateRow($index, 'inventory_item_id', $event)"
+                    [options]="itemOptions()" placeholder="Buscar insumo…" />
                   <input type="number" min="0" step="0.001"
                     class="col-span-2 px-2 py-2 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     [ngModel]="row.quantity" (ngModelChange)="updateRow($index, 'quantity', $event)">
@@ -139,6 +137,26 @@ export class PurchaseFormComponent implements OnInit {
   readonly service = inject(InventoryService);
   readonly inventoryService = this.service;
   readonly suppliersService = inject(SuppliersService);
+  private readonly unitMeasureService = inject(UnitMeasureService);
+
+  /** Abreviatura por id de unidad, igual que `unitAbbr()` en la página de inventario. */
+  private readonly unitAbbr = computed(
+    () => new Map(this.unitMeasureService.unitMeasures().map((u) => [u.id, u.abbreviation])),
+  );
+
+  /**
+   * La unidad va en la etiqueta porque la cantidad se teclea en la celda de al
+   * lado: sin ella no se sabe si son 2 kg o 2 g, que es el error más fácil de
+   * cometer registrando una compra. Si las unidades aún no llegaron, la opción
+   * cae al nombre solo en vez de mostrar un « · » suelto.
+   */
+  readonly itemOptions = computed(() => {
+    const abbr = this.unitAbbr();
+    return this.service.allItems().map((i) => {
+      const unidad = abbr.get(i.unit_measure_id);
+      return { id: i.id, label: unidad ? `${i.name} · ${unidad}` : i.name };
+    });
+  });
 
   readonly supplierId = signal('');
   readonly invoiceNumber = signal('');
@@ -156,6 +174,9 @@ export class PurchaseFormComponent implements OnInit {
   ngOnInit(): void {
     if (this.inventoryService.allItems().length === 0) this.inventoryService.loadAllItems();
     if (this.suppliersService.suppliers().length === 0) this.suppliersService.loadSuppliers(true);
+    if (this.unitMeasureService.unitMeasures().length === 0) {
+      this.unitMeasureService.loadUnitMeasures();
+    }
   }
 
   addRow(): void {
