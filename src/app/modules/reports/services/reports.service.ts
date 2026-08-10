@@ -1,7 +1,9 @@
-import { HttpClient } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { Injectable, computed, inject, signal } from '@angular/core';
+import { injectQuery } from '@tanstack/angular-query-experimental';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { ApiErrorBody } from '../../../core/auth/auth.models';
 import {
   CashierReportRow,
   CategoryReportRow,
@@ -32,11 +34,17 @@ interface ProfitabilityRes {
   by_category: { category_id: string | null; category_name: string | null; revenue: number | string; cogs: number | string; margin: number | string }[];
 }
 
+/** Granularidad del desglose temporal (`group_by` de `/reports/sales`). */
+export type ReportGroupBy = 'day' | 'month';
+
 /**
- * Informes servidos por la API real (`/api/v1/reports/*`): la agregación ocurre
- * en el backend. Mantiene la API pública previa (period/selectedDate/summary/
- * dailySales/topProducts/lowStockIngredients) y añade categorías, cajeros y
- * rentabilidad.
+ * Informes servidos por `/api/v1/reports/*`, con **TanStack Query**: una query
+ * por recurso, con el rango en la clave.
+ *
+ * Antes era un `loadAll()` imperativo con `Promise.all` que había que llamar a
+ * mano y que volvía a pedir los seis endpoints en cada cambio de periodo, sin
+ * caché. Ahora basta con mover `period`: las claves cambian, las queries se
+ * relanzan solas, y volver a un rango ya visto se sirve de caché.
  */
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
@@ -45,91 +53,198 @@ export class ReportsService {
 
   readonly period = signal<ReportPeriod>('today');
   readonly selectedDate = signal<string>(new Date().toLocaleDateString('en-CA'));
-  readonly salesSummary = signal<SalesSummary | null>(null);
-  readonly dailySales = signal<DailySale[]>([]);
-  readonly topProducts = signal<TopProduct[]>([]);
-  readonly lowStockIngredients = signal<LowStockIngredient[]>([]);
-  readonly categoriesReport = signal<CategoryReportRow[]>([]);
-  readonly cashiersReport = signal<CashierReportRow[]>([]);
-  readonly profitability = signal<ProfitabilityReport | null>(null);
-  readonly isLoading = signal(false);
-  readonly error = signal<string | null>(null);
 
-  async loadAll(): Promise<void> {
-    this.isLoading.set(true);
-    this.error.set(null);
-    const { from, to } = this.getDateRange(this.period());
-    const range = { date_from: from, date_to: to };
-    try {
-      const [sales, top, categories, cashiers, inventory, profitability] = await Promise.all([
-        firstValueFrom(this.http.get<SalesReportRes>(`${this.base}/sales`, { params: range })),
-        firstValueFrom(this.http.get<ProductRowRes[]>(`${this.base}/top-products`, { params: { ...range, limit: '10' } })),
-        firstValueFrom(this.http.get<CategoryRowRes[]>(`${this.base}/categories`, { params: range })),
-        firstValueFrom(this.http.get<CashierRowRes[]>(`${this.base}/cashiers`, { params: range })),
-        firstValueFrom(this.http.get<InventoryRowRes[]>(`${this.base}/inventory`)),
-        firstValueFrom(this.http.get<ProfitabilityRes>(`${this.base}/profitability`, { params: range })),
-      ]);
+  /** Rango efectivo del periodo actual; entra en todas las claves de query. */
+  readonly range = computed(() => this.getDateRange(this.period()));
 
-      const total = Number(sales.total_sales);
-      const count = sales.ticket_count;
-      this.salesSummary.set({
-        total,
-        count,
-        average: Number(sales.avg_ticket),
-        // El desglose efectivo/tarjeta se calcula en la reconciliación de caja
-        // (no hay endpoint de reporte por método sobre un rango); se omite aquí.
-        cashTotal: 0,
-        cardTotal: 0,
-      });
-      this.dailySales.set(
-        sales.by_day.map(d => ({ date: d.day, count: d.count, total: Number(d.total) })),
-      );
-      this.topProducts.set(
-        top.map(p => ({ name: p.description, totalQty: p.units, totalRevenue: Number(p.revenue) })),
-      );
-      this.categoriesReport.set(
-        categories.map(c => ({
-          categoryId: c.category_id, categoryName: c.category_name,
-          units: c.units, revenue: Number(c.revenue),
-        })),
-      );
-      this.cashiersReport.set(
-        cashiers.map(c => ({
-          userId: c.user_id, userName: c.user_name,
-          ticketCount: c.ticket_count, total: Number(c.total),
-        })),
-      );
-      this.lowStockIngredients.set(
-        inventory.filter(i => i.below_min).map(i => ({
-          id: i.inventory_item_id, name: i.name, unit: '',
-          current_stock: Number(i.current_stock), min_stock: Number(i.min_stock),
-          reorder_point: Number(i.min_stock), category: '',
-        })),
-      );
-      this.profitability.set({
-        revenue: Number(profitability.revenue),
-        cogs: Number(profitability.cogs),
-        margin: Number(profitability.margin),
-        byCategory: profitability.by_category.map(r => ({
-          categoryId: r.category_id, categoryName: r.category_name,
-          revenue: Number(r.revenue), cogs: Number(r.cogs), margin: Number(r.margin),
-        })),
-      });
-    } catch (e: unknown) {
-      this.error.set(e instanceof Error ? e.message : 'Error al cargar los informes');
-    } finally {
-      this.isLoading.set(false);
-    }
+  /**
+   * Un año por día son 365 puntos, que ninguna gráfica dibuja: para ese periodo
+   * se pide el desglose por mes (`group_by` del backend).
+   */
+  readonly groupBy = computed<ReportGroupBy>(() =>
+    this.period() === 'year' ? 'month' : 'day',
+  );
+
+  private params(extra: Record<string, string> = {}): HttpParams {
+    const { from, to } = this.range();
+    let params = new HttpParams().set('date_from', from).set('date_to', to);
+    for (const [k, v] of Object.entries(extra)) params = params.set(k, v);
+    return params;
   }
 
-  async setPeriod(period: ReportPeriod): Promise<void> {
+  private readonly salesQuery = injectQuery(() => ({
+    queryKey: ['reports', 'sales', this.range(), this.groupBy()],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<SalesReportRes>(`${this.base}/sales`, {
+          params: this.params({ group_by: this.groupBy() }),
+        }),
+      ),
+  }));
+
+  private readonly topProductsQuery = injectQuery(() => ({
+    queryKey: ['reports', 'top-products', this.range()],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<ProductRowRes[]>(`${this.base}/top-products`, {
+          params: this.params({ limit: '10' }),
+        }),
+      ),
+  }));
+
+  private readonly categoriesQuery = injectQuery(() => ({
+    queryKey: ['reports', 'categories', this.range()],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<CategoryRowRes[]>(`${this.base}/categories`, { params: this.params() }),
+      ),
+  }));
+
+  private readonly cashiersQuery = injectQuery(() => ({
+    queryKey: ['reports', 'cashiers', this.range()],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<CashierRowRes[]>(`${this.base}/cashiers`, { params: this.params() }),
+      ),
+  }));
+
+  /** El inventario no depende del rango: su clave no lo lleva. */
+  private readonly inventoryQuery = injectQuery(() => ({
+    queryKey: ['reports', 'inventory'],
+    queryFn: () => firstValueFrom(this.http.get<InventoryRowRes[]>(`${this.base}/inventory`)),
+  }));
+
+  private readonly profitabilityQuery = injectQuery(() => ({
+    queryKey: ['reports', 'profitability', this.range()],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<ProfitabilityRes>(`${this.base}/profitability`, { params: this.params() }),
+      ),
+  }));
+
+  // ── Datos de dominio ─────────────────────────────────────────────────
+  // Los decimales llegan como string desde FastAPI; el `Number(...)` es el
+  // único sitio donde se convierten.
+
+  readonly salesSummary = computed<SalesSummary | null>(() => {
+    const s = this.salesQuery.data();
+    if (!s) return null;
+    return {
+      total: Number(s.total_sales),
+      count: s.ticket_count,
+      average: Number(s.avg_ticket),
+      // El desglose efectivo/tarjeta se calcula en la reconciliación de caja;
+      // no hay endpoint de reporte por método sobre un rango.
+      cashTotal: 0,
+      cardTotal: 0,
+    };
+  });
+
+  readonly dailySales = computed<DailySale[]>(() =>
+    (this.salesQuery.data()?.by_day ?? []).map((d) => ({
+      date: d.day,
+      count: d.count,
+      total: Number(d.total),
+    })),
+  );
+
+  readonly topProducts = computed<TopProduct[]>(() =>
+    (this.topProductsQuery.data() ?? []).map((p) => ({
+      name: p.description,
+      totalQty: p.units,
+      totalRevenue: Number(p.revenue),
+    })),
+  );
+
+  readonly categoriesReport = computed<CategoryReportRow[]>(() =>
+    (this.categoriesQuery.data() ?? []).map((c) => ({
+      categoryId: c.category_id,
+      categoryName: c.category_name,
+      units: c.units,
+      revenue: Number(c.revenue),
+    })),
+  );
+
+  readonly cashiersReport = computed<CashierReportRow[]>(() =>
+    (this.cashiersQuery.data() ?? []).map((c) => ({
+      userId: c.user_id,
+      userName: c.user_name,
+      ticketCount: c.ticket_count,
+      total: Number(c.total),
+    })),
+  );
+
+  readonly lowStockIngredients = computed<LowStockIngredient[]>(() =>
+    (this.inventoryQuery.data() ?? [])
+      .filter((i) => i.below_min)
+      .map((i) => ({
+        id: i.inventory_item_id,
+        name: i.name,
+        unit: '',
+        current_stock: Number(i.current_stock),
+        min_stock: Number(i.min_stock),
+        reorder_point: Number(i.min_stock),
+        category: '',
+      })),
+  );
+
+  readonly profitability = computed<ProfitabilityReport | null>(() => {
+    const p = this.profitabilityQuery.data();
+    if (!p) return null;
+    return {
+      revenue: Number(p.revenue),
+      cogs: Number(p.cogs),
+      margin: Number(p.margin),
+      byCategory: p.by_category.map((r) => ({
+        categoryId: r.category_id,
+        categoryName: r.category_name,
+        revenue: Number(r.revenue),
+        cogs: Number(r.cogs),
+        margin: Number(r.margin),
+      })),
+    };
+  });
+
+  // ── Estado agregado ──────────────────────────────────────────────────
+
+  /** Solo las banderas: seis queries de tipos distintos no forman una unión
+   *  llamable, y aquí no se lee el dato, solo el estado. */
+  private readonly queries: {
+    isPending: () => boolean;
+    isFetching: () => boolean;
+    isError: () => boolean;
+    error: () => unknown;
+  }[] = [
+    this.salesQuery,
+    this.topProductsQuery,
+    this.categoriesQuery,
+    this.cashiersQuery,
+    this.inventoryQuery,
+    this.profitabilityQuery,
+  ];
+
+  readonly isLoading = computed(() => this.queries.some((q) => q.isPending()));
+  readonly isFetching = computed(() => this.queries.some((q) => q.isFetching()));
+  readonly error = computed(() => {
+    const fallida = this.queries.find((q) => q.isError());
+    return fallida ? this.extractError(fallida.error()) : null;
+  });
+
+  setPeriod(period: ReportPeriod): void {
     this.period.set(period);
-    await this.loadAll();
   }
 
-  async setSelectedDate(date: string): Promise<void> {
+  setSelectedDate(date: string): void {
     this.selectedDate.set(date);
-    await this.loadAll();
+  }
+
+  private extractError(err: unknown): string {
+    if (err instanceof HttpErrorResponse) {
+      const body = err.error as ApiErrorBody | null;
+      const detail = body?.detail ?? body?.message;
+      if (typeof detail === 'string') return detail;
+    }
+    return 'No se pudieron cargar los informes.';
   }
 
   /** Rango [from, to] en `YYYY-MM-DD` (los endpoints filtran por `sold_at`). */
