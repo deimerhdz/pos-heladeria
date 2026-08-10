@@ -9,6 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
+import { normalizeText } from '../normalize-text';
 
 export interface SearchableSelectOption {
   id: string;
@@ -92,10 +93,15 @@ export class SearchableSelectComponent implements ControlValueAccessor {
     return this.options.find((o) => o.id === this.value())?.label ?? '';
   }
 
+  /**
+   * Filtra con `normalizeText`, que además de minúsculas quita los acentos:
+   * antes se comparaba con `toLowerCase()` y escribir "cafe" no encontraba
+   * "Café" ni "limon" a "Limón" — media despensa lleva tilde y nadie la teclea.
+   */
   filteredOptions(): SearchableSelectOption[] {
-    const q = this.query().toLowerCase().trim();
+    const q = normalizeText(this.query());
     if (!q) return this.options;
-    return this.options.filter((o) => o.label.toLowerCase().includes(q));
+    return this.options.filter((o) => normalizeText(o.label).includes(q));
   }
 
   toggle(): void {
