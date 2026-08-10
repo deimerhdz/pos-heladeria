@@ -2,6 +2,7 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
 
 import { routes } from './app.routes';
 import { provideTenantInitializer } from './core/tenant/tenant.initializer';
@@ -13,6 +14,9 @@ export const appConfig: ApplicationConfig = {
     provideTenantInitializer(),
     provideHttpClient(withInterceptors([authTokenInterceptor])),
     provideRouter(routes, withComponentInputBinding()),
+    // Registra los controladores de Chart.js una sola vez para toda la app; las
+    // gráficas de `shared/charts` asumen que ya está hecho.
+    provideCharts(withDefaultRegisterables()),
     provideTanStackQuery(
       new QueryClient({
         defaultOptions: {
