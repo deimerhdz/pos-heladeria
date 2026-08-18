@@ -1,5 +1,7 @@
-import { deriveTableStatus, newPendingIds } from './pos-terminal.store';
+import { currentNow, deriveTableStatus, newPendingIds } from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { Promotion } from '../../promotions/interfaces/promotion.interface';
+import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 
 function order(
   id: string,
@@ -121,5 +123,76 @@ describe('newPendingIds tras una reconexión', () => {
     // Es el motivo de comparar ids y no cantidades: el contador vuelve a su
     // sitio, pero el aviso debió sonar cuando entró.
     expect(newPendingIds(new Set(['o1']), [order('o1', 'abierta')])).toEqual([]);
+  });
+});
+
+describe('currentNow — A-09, guarda usada por combos/productDiscountBadges/cartView/orderSubtotal', () => {
+  it('antes del primer sync (ready() false), devuelve null en vez del reloj del dispositivo', () => {
+    const promotionService = { ready: () => false, now: () => new Date('2026-01-01T00:00:00Z') };
+
+    expect(currentNow(promotionService)).toBeNull();
+  });
+
+  it('tras el sync, devuelve promotionService.now(), no el reloj del sistema de pruebas', () => {
+    // Reloj real del entorno de pruebas: 2026-08-18T22:30 UTC. `now()` del
+    // doble de PromotionService dice otra cosa — la única forma de que el
+    // resultado coincida con el doble es que currentNow no use Date.now().
+    const serverInstant = new Date('2026-08-15T17:30:00Z');
+    const promotionService = { ready: () => true, now: () => serverInstant };
+
+    expect(currentNow(promotionService)).toBe(serverInstant);
+  });
+});
+
+describe('discountedUnitPrice guardado por currentNow — A-09, patrón usado por cartView/orderSubtotal', () => {
+  function promo(overrides: Partial<Promotion> = {}): Promotion {
+    return {
+      id: overrides.id ?? 'p1',
+      name: overrides.name ?? 'Promo',
+      description: null,
+      type: 'percent',
+      value: '20',
+      status: 'active',
+      priority: 0,
+      starts_at: null,
+      ends_at: null,
+      days_of_week: null,
+      start_time: '17:00',
+      end_time: '19:00',
+      min_qty: 1,
+      targets: [],
+      combo_items: [],
+      ...overrides,
+    };
+  }
+
+  /** El mismo patrón que aplican cartView/orderSubtotal tras la corrección:
+   *  sin hora sincronizada, ningún descuento de previsualización. */
+  function unitPriceComoEnElStore(
+    promotionService: { ready(): boolean; now(): Date },
+    promos: Promotion[],
+    price: number,
+  ): number {
+    const now = currentNow(promotionService);
+    if (now === null) return price;
+    return discountedUnitPrice(promos, now, 'p1', 'c1', price, 1);
+  }
+
+  it('sin sync (ready() false), el carrito no aplica descuento de previsualización (FR-004)', () => {
+    // El reloj del dispositivo diría "dentro de ventana" si se usara, pero no
+    // hay sync todavía: no se llama a discountedUnitPrice en absoluto.
+    const promotionService = { ready: () => false, now: () => new Date('2026-08-15T17:30:00Z') };
+    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
+
+    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(10000);
+  });
+
+  it('tras sync, el precio refleja el descuento con la hora del servidor, no el reloj local (FR-002, CA2)', () => {
+    // Reloj "local" simulado fuera de ventana (22:30); servidor (mock) dice
+    // que son las 17:30 — dentro de la ventana 17:00-19:00 de la promo.
+    const promotionService = { ready: () => true, now: () => new Date('2026-08-15T17:30:00') };
+    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
+
+    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(8000);
   });
 });

@@ -95,10 +95,39 @@ export class PromotionService {
     queryKey: () => ['promotions', 'active'],
     queryFn: () =>
       firstValueFrom(
-        this.http.get<Page<Promotion>>(this.baseUrl, { params: { status: 'active', size: 100 } }),
-      ),
+        this.http.get<Page<Promotion>>(this.baseUrl, {
+          params: { status: 'active', size: 100 },
+          observe: 'response',
+        }),
+      ).then((res) => {
+        // A-09: esta es la única llamada que el POS de staff hace para
+        // promociones vigentes — se aprovecha para sincronizar la hora del
+        // servidor en vez de sumar una petición dedicada (research.md
+        // Decisión 1).
+        const serverTime = res.headers.get('X-Server-Time');
+        if (serverTime) this.serverTimeOffsetMs.set(new Date(serverTime).getTime() - Date.now());
+        return res.body!;
+      }),
     enabled: () => this.wantsActive(),
   });
+
+  /** Desfase (ms) entre `X-Server-Time` del último `GET /promotions?status=active`
+   *  y el reloj local en el instante de recibirlo. `null` hasta el primer sync. */
+  readonly serverTimeOffsetMs = signal<number | null>(null);
+
+  /** `true` en cuanto hay una hora de servidor con la que evaluar vigencia. */
+  readonly ready = computed(() => this.serverTimeOffsetMs() !== null);
+
+  /**
+   * Hora a usar para evaluar vigencia de promociones en el POS de staff, en
+   * vez de `new Date()` del dispositivo (A-09). Solo debe llamarse cuando
+   * `ready()` es `true` — los consumidores deben degradar explícito (sin
+   * insignias/descuento de previsualización) mientras no haya sync, nunca caer
+   * de vuelta al reloj del dispositivo sin corregir.
+   */
+  now(): Date {
+    return new Date(Date.now() + (this.serverTimeOffsetMs() ?? 0));
+  }
 
   readonly promotions = computed(() => this.pageQuery.data()?.items ?? []);
   readonly overlapCandidates = computed(() => this.candidatesQuery.data()?.items ?? []);
