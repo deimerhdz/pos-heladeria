@@ -164,6 +164,18 @@ export function deriveTableStatus(
 }
 
 /**
+ * Hora a usar para evaluar vigencia de promociones en el POS de staff (A-09):
+ * la del servidor, sincronizada por `PromotionService`, nunca el reloj del
+ * dispositivo. Devuelve `null` mientras no haya sync (arranque en frío, corte
+ * de red) — los cuatro puntos de invocación deben degradar explícito en ese
+ * caso (sin insignias/descuento de previsualización), no usar `new Date()`
+ * como fallback: eso reintroduciría exactamente el defecto que A-09 corrige.
+ */
+export function currentNow(promotionService: { ready(): boolean; now(): Date }): Date | null {
+  return promotionService.ready() ? promotionService.now() : null;
+}
+
+/**
  * Store de la terminal POS de mesas (staff). Orquesta el catálogo, el armado del
  * pedido (draft + ítems persistidos), y la cuenta de la mesa. El cobro lo cierra
  * `SessionBillPanelComponent` contra la **sesión de mesa**, no pedido a pedido.
@@ -245,7 +257,8 @@ export class PosTerminalStore {
 
   /** Combos activos y vigentes ahora mismo, disponibles para vender (el staff ya tiene token de sesión). */
   readonly combos = computed<Promotion[]>(() => {
-    const now = new Date();
+    const now = currentNow(this.promotionService);
+    if (now === null) return []; // A-09: sin hora sincronizada aún, degrada sin combos
     return this.promotionService
       .activePromotions()
       .filter((p) => p.type === 'combo' && isPromoActiveNow(p, now));
@@ -259,7 +272,8 @@ export class PosTerminalStore {
    * insignia; el monto real que se cobra lo sigue calculando el backend.
    */
   readonly productDiscountBadges = computed<Map<string, string>>(() => {
-    const now = new Date();
+    const now = currentNow(this.promotionService);
+    if (now === null) return new Map<string, string>(); // A-09: sin hora sincronizada aún
     const promos = this.promotionService.activePromotions();
     const result = new Map<string, string>();
 
@@ -383,8 +397,12 @@ export class PosTerminalStore {
   /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
   readonly cartView = computed(() => {
     const lk = this.lookup();
-    const now = new Date();
-    const promos = this.promotionService.activePromotions();
+    const syncedNow = currentNow(this.promotionService);
+    // A-09: sin hora sincronizada aún, sin descuento de previsualización —
+    // `promos` vacío hace que discountedUnitPrice devuelva el precio normal
+    // sin tocar `now` (el placeholder nunca se evalúa contra ninguna promo).
+    const now = syncedNow ?? new Date(0);
+    const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
     const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
 
@@ -1187,8 +1205,10 @@ export class PosTerminalStore {
 
   private orderSubtotal(o: DiningOrder): number {
     const lk = this.lookup();
-    const now = new Date();
-    const promos = this.promotionService.activePromotions();
+    const syncedNow = currentNow(this.promotionService);
+    // A-09: mismo criterio que cartView — sin sync, sin descuento de previsualización.
+    const now = syncedNow ?? new Date(0);
+    const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
     const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
     const plain = items.filter((i) => !i.combo_id);
     let total = plain.reduce((s, i) => {
