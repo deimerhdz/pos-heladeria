@@ -14,6 +14,7 @@ import {
   ReceiptPresignResponse,
   SessionOpenResponse,
   StockConflictDetail,
+  SubmitCartPayload,
 } from '../interfaces/diner.interface';
 import { DinerTokenStore } from './diner-token.store';
 
@@ -163,6 +164,20 @@ export class DinerService {
   }
 
   /**
+   * Presign genérico para el comprobante (spec 025): a diferencia de
+   * `presignReceipt`, no exige ningún intento de pago previo — se usa
+   * *antes* de enviar el pedido, cuando todavía no existe ninguna orden ni
+   * intento al que asociar el archivo.
+   */
+  presignPaymentReceipt(contentType: string): Promise<ReceiptPresignResponse> {
+    return this.call(() =>
+      this.http.post<ReceiptPresignResponse>(`${this.api}/cart/payment-receipt/presign`, {
+        content_type: contentType,
+      }),
+    );
+  }
+
+  /**
    * Sube el archivo directo a R2 con la URL firmada (fuera de la API misma:
    * es un `PUT` plano al bucket, sin `x-session-token` ni JSON).
    */
@@ -180,11 +195,17 @@ export class DinerService {
   // ── Pedidos propios ──────────────────────────────────────────────────────
 
   /**
-   * Envía el carrito como pedido. Queda en `recibida`: **no descuenta
-   * inventario** hasta que el personal lo confirme.
+   * Envía el carrito como pedido, junto con su método de pago (spec 025): el
+   * pedido nace con su primer intento de pago adjunto — `receiptFileUrl` es
+   * obligatorio salvo que el método sea efectivo. Queda en `recibida`: **no
+   * descuenta inventario** hasta que el personal lo confirme.
    */
-  submitCart(): Promise<DiningOrder> {
-    return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, {}));
+  submitCart(paymentMethodId: string, receiptFileUrl?: string | null): Promise<DiningOrder> {
+    const body: SubmitCartPayload = {
+      payment_method_id: paymentMethodId,
+      receipt_file_url: receiptFileUrl ?? null,
+    };
+    return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, body));
   }
 
   /** Pedidos de este comensal. Única fuente del progreso (por polling). */

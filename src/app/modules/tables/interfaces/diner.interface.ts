@@ -152,6 +152,18 @@ export interface ReceiptAttachPayload {
   file_url: string;
 }
 
+// ── Revisión y pago antes de enviar (spec 025) ─────────────────────────────
+
+/**
+ * Body de `POST /cart/submit` (`SubmitCartIn`). El pedido nace junto con su
+ * primer intento de pago: `receipt_file_url` es obligatorio salvo que el
+ * método sea efectivo (`is_cash`).
+ */
+export interface SubmitCartPayload {
+  payment_method_id: string;
+  receipt_file_url?: string | null;
+}
+
 // ── Errores tipados que la UI debe distinguir ──────────────────────────────
 
 /**
