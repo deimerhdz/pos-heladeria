@@ -8,7 +8,10 @@ import {
   CartItemPayload,
   CartItemUpdatePayload,
   CartResponse,
+  DinerPaymentAttempt,
+  DinerPaymentMethod,
   DinerTable,
+  ReceiptPresignResponse,
   SessionOpenResponse,
   StockConflictDetail,
 } from '../interfaces/diner.interface';
@@ -118,6 +121,60 @@ export class DinerService {
 
   removeItem(itemId: string): Promise<CartResponse> {
     return this.call(() => this.http.delete<CartResponse>(`${this.api}/cart/items/${itemId}`));
+  }
+
+  // ── Pagos (spec 024) ─────────────────────────────────────────────────────
+
+  /** Métodos de pago activos del tenant — nunca incluye uno desactivado. */
+  getPaymentMethods(): Promise<DinerPaymentMethod[]> {
+    return this.call(() =>
+      this.http.get<DinerPaymentMethod[]>(`${this.api}/cart/payment-methods`),
+    );
+  }
+
+  /** Inicia un intento de pago para una orden propia. `409` si ya hay uno
+   *  pendiente de revisión (FR-015a). */
+  createPaymentAttempt(orderId: string, paymentMethodId: string): Promise<DinerPaymentAttempt> {
+    return this.call(() =>
+      this.http.post<DinerPaymentAttempt>(`${this.api}/cart/orders/${orderId}/payment-attempts`, {
+        payment_method_id: paymentMethodId,
+      }),
+    );
+  }
+
+  /** Pide la URL firmada para subir el comprobante directo a R2. */
+  presignReceipt(attemptId: string, contentType: string): Promise<ReceiptPresignResponse> {
+    return this.call(() =>
+      this.http.post<ReceiptPresignResponse>(
+        `${this.api}/cart/payment-attempts/${attemptId}/receipt/presign`,
+        { content_type: contentType },
+      ),
+    );
+  }
+
+  /** Asocia el archivo ya subido a R2 con el intento. */
+  attachReceipt(attemptId: string, fileUrl: string): Promise<DinerPaymentAttempt> {
+    return this.call(() =>
+      this.http.post<DinerPaymentAttempt>(
+        `${this.api}/cart/payment-attempts/${attemptId}/receipt`,
+        { file_url: fileUrl },
+      ),
+    );
+  }
+
+  /**
+   * Sube el archivo directo a R2 con la URL firmada (fuera de la API misma:
+   * es un `PUT` plano al bucket, sin `x-session-token` ni JSON).
+   */
+  async uploadReceiptFile(uploadUrl: string, file: File): Promise<void> {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
+    }
   }
 
   // ── Pedidos propios ──────────────────────────────────────────────────────
