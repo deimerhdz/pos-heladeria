@@ -28,33 +28,33 @@ import { ToastService } from '../../../shared/feedback/toast.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (loading()) {
-      <p class="text-xs text-gray-400">Cargando pago…</p>
+      <p class="text-sm text-gray-400">Cargando pago…</p>
     } @else if (current(); as attempt) {
       <div class="border border-amber-200 bg-amber-50/60 rounded-lg p-2.5 space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-amber-800">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-base font-semibold text-amber-800">
             💳 {{ attempt.payment_method_name }}
           </span>
-          <span class="text-[11px] px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">
+          <span class="text-sm px-2 py-1 rounded-full font-medium bg-amber-100 text-amber-700">
             Pendiente de revisión
           </span>
         </div>
 
         @if (attempt.is_cash) {
           <!-- Efectivo: el cajero registra el monto, el backend calcula el cambio. -->
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <input
               type="number"
               min="0"
               step="100"
               [(ngModel)]="amountReceived"
               placeholder="Monto recibido"
-              class="w-32 px-2 py-1 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              class="w-36 min-h-11 px-2 py-1 text-base border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
             <button
               (click)="confirmCash(attempt)"
               [disabled]="busy() || !amountReceived || amountReceived <= 0"
-              class="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
             </button>
@@ -66,55 +66,60 @@ import { ToastService } from '../../../shared/feedback/toast.service';
               [href]="attempt.receipt_file_url"
               target="_blank"
               rel="noopener"
-              class="text-xs font-medium text-indigo-600 hover:underline"
+              class="text-sm font-medium text-indigo-600 hover:underline"
             >
               Ver comprobante ↗
             </a>
             <button
               (click)="approve(attempt)"
               [disabled]="busy()"
-              class="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               Aprobar
             </button>
             <button
               (click)="showReject.set(!showReject())"
               [disabled]="busy()"
-              class="px-3 py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
             >
               Rechazar
             </button>
           </div>
 
           @if (showReject()) {
-            <div class="flex items-center gap-2 pt-1">
+            <div class="flex items-center gap-2 pt-1 flex-wrap">
               <input
                 type="text"
                 [(ngModel)]="rejectReason"
                 placeholder="Motivo del rechazo (obligatorio)"
-                class="flex-1 px-2 py-1 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300"
+                class="flex-1 min-h-11 px-2 py-1 text-base border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300"
               />
               <button
                 (click)="reject(attempt)"
                 [disabled]="busy() || !rejectReason.trim()"
-                class="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors"
+                class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors"
               >
                 Confirmar rechazo
               </button>
             </div>
           }
         } @else {
-          <p class="text-xs text-amber-700">Esperando que el comensal suba el comprobante…</p>
+          <p class="text-sm text-amber-700">Esperando que el comensal suba el comprobante…</p>
         }
       </div>
     } @else if (lastResolved(); as last) {
       @if (last.status === 'confirmado') {
-        <p class="text-xs text-emerald-700 font-medium">✓ Pago confirmado ({{ last.payment_method_name }})</p>
+        <p class="text-base text-emerald-700 font-medium">✓ Pago confirmado ({{ last.payment_method_name }})</p>
+        @if (last.is_cash) {
+          <p class="text-sm text-emerald-700">
+            Recibido: $ {{ money(last.amount_received) }} · Cambio: $ {{ money(last.change_amount) }}
+          </p>
+        }
       } @else {
-        <p class="text-xs text-gray-400">Sin pago confirmado — el último intento fue rechazado.</p>
+        <p class="text-sm text-gray-400">Sin pago confirmado — el último intento fue rechazado.</p>
       }
     } @else {
-      <p class="text-xs text-gray-400">El comensal aún no inició el pago.</p>
+      <p class="text-sm text-gray-400">El comensal aún no inició el pago.</p>
     }
   `,
 })
@@ -148,6 +153,13 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   lastResolved(): PaymentAttempt | null {
     const resolved = this.attempts().filter((a) => a.status !== 'pendiente');
     return resolved.length ? resolved[resolved.length - 1] : null;
+  }
+
+  /** spec 026, FR-004/FR-005: formatea el monto recibido/cambio de forma
+   *  consistente, incluyendo explícitamente "0.00" cuando el cambio es cero
+   *  (nunca se omite el dato). */
+  money(value: string | null): string {
+    return Number(value ?? 0).toFixed(2);
   }
 
   async load(): Promise<void> {

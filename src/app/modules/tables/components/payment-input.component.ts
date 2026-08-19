@@ -32,11 +32,11 @@ import { formatMoney } from '../services/receipt.util';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="space-y-2">
-      <label class="block text-xs font-medium text-gray-600">Método de pago</label>
+      <label class="block text-sm font-medium text-gray-600">Método de pago</label>
       <select
         [ngModel]="draft().methodId"
         (ngModelChange)="setMethod($event)"
-        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        class="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base"
       >
         <option value="">Selecciona…</option>
         @for (m of methods; track m.id) {
@@ -45,7 +45,7 @@ import { formatMoney } from '../services/receipt.util';
       </select>
 
       @if (draft().methodId) {
-        <label class="block text-xs font-medium text-gray-600">
+        <label class="block text-sm font-medium text-gray-600">
           {{ isCash(draft().methodId) ? 'Con cuánto paga' : 'Importe' }}
         </label>
         <input
@@ -54,15 +54,15 @@ import { formatMoney } from '../services/receipt.util';
           min="0"
           [ngModel]="draft().amount"
           (ngModelChange)="setAmount($event)"
-          class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          class="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base"
         />
 
-        <label class="flex items-center gap-2 text-xs text-gray-700 pt-1">
+        <label class="flex items-center gap-2 text-sm text-gray-700 pt-1">
           <input
             type="checkbox"
             [checked]="draft().combined"
             (change)="toggleCombined($any($event.target).checked)"
-            class="rounded"
+            class="rounded w-5 h-5"
           />
           Combinar con otro método
         </label>
@@ -73,7 +73,7 @@ import { formatMoney } from '../services/receipt.util';
           <select
             [ngModel]="draft().secondMethodId"
             (ngModelChange)="setSecondMethod($event)"
-            class="w-full px-2 py-1.5 border border-gray-200 rounded text-xs"
+            class="w-full min-h-11 px-2 py-1.5 border border-gray-200 rounded text-base"
           >
             <option value="">Selecciona…</option>
             <!-- Sin el método ya elegido: dos líneas iguales suman bien pero se
@@ -88,17 +88,17 @@ import { formatMoney } from '../services/receipt.util';
             min="0"
             [ngModel]="draft().secondAmount"
             (ngModelChange)="setSecondAmount($event)"
-            class="w-full px-2 py-1.5 border border-gray-200 rounded text-xs"
+            class="w-full min-h-11 px-2 py-1.5 border border-gray-200 rounded text-base"
           />
         </div>
       }
 
       @if (issue(); as problema) {
-        <p class="text-xs font-medium text-red-600">{{ problema }}</p>
+        <p class="text-sm font-medium text-red-600">{{ problema }}</p>
       } @else if (change() > 0) {
         <div class="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
-          <span class="text-xs font-medium text-emerald-800">Vuelto</span>
-          <span class="text-base font-bold text-emerald-700">{{ money(change()) }}</span>
+          <span class="text-sm font-medium text-emerald-800">Vuelto</span>
+          <span class="text-lg font-bold text-emerald-700">{{ money(change()) }}</span>
         </div>
       }
     </div>

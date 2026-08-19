@@ -239,11 +239,22 @@ export interface AssignmentsPayload {
   assignments: ItemAssignment[];
 }
 
+/** Ítem consumido, para el detalle de la cuenta (spec 026, FR-006). */
+export interface SessionBillItem {
+  description: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+}
+
 export interface SessionBillLine {
   /** `null` = ítems añadidos por el mesero, sin comensal asignado. */
   participant_id: string | null;
   display_label: string | null;
   subtotal: string;
+  /** spec 026, FR-006: detalle de ítems y descuento ya aplicado. */
+  items: SessionBillItem[];
+  discount: string;
 }
 
 /** Cuenta de la sesión (`SessionBillResponse`). */

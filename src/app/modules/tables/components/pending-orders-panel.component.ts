@@ -18,11 +18,15 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
 import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-panel.component';
 
 /**
- * Pedidos que el comensal envió y esperan que el personal los acepte.
+ * Pedidos que el comensal envió y cuyo pago todavía no está confirmado.
  *
- * Es el paso que compromete el inventario: hasta que alguien confirma, el
- * pedido no ha descontado stock. Por eso no salen en el
- * KDS y hay que pedirlos aparte con `GET /orders?status=recibida`.
+ * spec 026, FR-001: aprobar el comprobante o confirmar el efectivo (panel
+ * `app-payment-attempt-review-panel` embebido) descuenta el inventario y
+ * envía el pedido a cocina en la misma acción — ya no existe un botón
+ * "Confirmar" separado. "Rechazar" sigue siendo la forma de cancelar el
+ * pedido (p. ej. si el pago no puede resolverse). Por eso estos pedidos no
+ * salen en el KDS todavía y hay que pedirlos aparte con
+ * `GET /orders?status=recibida`.
  */
 @Component({
   selector: 'app-pending-orders-panel',
@@ -33,7 +37,7 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
     <div>
       <div class="flex items-center justify-between gap-3 mb-3">
         <p class="text-xs text-gray-500">
-          Confirmar descuenta el inventario y manda el pedido a cocina.
+          Aprobar el comprobante o confirmar el efectivo envía el pedido a cocina de inmediato.
         </p>
         <button
           (click)="refresh.emit()"
@@ -47,8 +51,8 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
         <div class="flex flex-col items-center justify-center text-center text-gray-400 py-16 gap-3">
           <div class="text-5xl">🔔</div>
           <p class="text-sm max-w-xs">
-            No hay pedidos esperando confirmación. Los que envíen los comensales desde el QR
-            aparecerán aquí.
+            No hay pagos esperando revisión. Los comprobantes o efectivos que registren los
+            comensales desde el QR aparecerán aquí.
           </p>
         </div>
       } @else {
@@ -56,22 +60,22 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
           @for (order of orders; track order.id) {
             <div class="border border-violet-100 bg-violet-50/40 rounded-xl p-3">
               <div class="flex items-center justify-between mb-1.5">
-                <span class="text-xs font-semibold text-violet-700">
+                <span class="text-base font-semibold text-violet-700">
                   {{ order.customer_name || 'Comensal' }}
                 </span>
-                <span class="text-xs text-gray-400">{{ time(order) }}</span>
+                <span class="text-sm text-gray-400">{{ time(order) }}</span>
               </div>
 
               <ul class="space-y-0.5 mb-2">
                 @for (item of order.items ?? []; track item.id) {
-                  <li class="text-sm text-gray-700">
+                  <li class="text-base text-gray-700">
                     <span class="font-medium">{{ item.quantity }}×</span>
                     {{ variantLabel(item.product_variant_id) }}
                     @if (optionLabels(item); as opts) {
-                      <span class="block text-xs text-gray-500 pl-5">{{ opts }}</span>
+                      <span class="block text-sm text-gray-500 pl-5">{{ opts }}</span>
                     }
                     @if (item.notes) {
-                      <span class="block text-xs text-gray-400 pl-5 italic">“{{ item.notes }}”</span>
+                      <span class="block text-sm text-gray-400 pl-5 italic">“{{ item.notes }}”</span>
                     }
                   </li>
                 }
@@ -91,38 +95,17 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
               </div>
 
               <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-900">
+                <span class="text-lg font-bold text-gray-900">
                   $ {{ total(order) | number: '1.2-2' }}
                 </span>
-                <div class="flex items-center gap-2">
-                  <button
-                    (click)="reject(order)"
-                    [disabled]="busy() === order.id"
-                    class="px-3 py-1.5 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
-                  >
-                    Rechazar
-                  </button>
-                  <button
-                    (click)="confirm(order)"
-                    [disabled]="busy() === order.id || !isPaymentConfirmed(order)"
-                    [title]="
-                      isPaymentConfirmed(order)
-                        ? ''
-                        : 'La orden necesita un pago confirmado antes de enviarse a comanda'
-                    "
-                    class="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-                  >
-                    {{ busy() === order.id ? 'Confirmando...' : 'Confirmar' }}
-                  </button>
-                </div>
+                <button
+                  (click)="reject(order)"
+                  [disabled]="busy() === order.id"
+                  class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+                >
+                  Rechazar
+                </button>
               </div>
-
-              @if (stockError() === order.id) {
-                <p class="text-xs text-red-600 mt-2">
-                  {{ errorMessage() }} El pedido sigue pendiente: repón el insumo y reintenta, o
-                  recházalo.
-                </p>
-              }
             </div>
           }
         </div>
@@ -140,9 +123,6 @@ export class PendingOrdersPanelComponent {
   private readonly promotionService = inject(PromotionService);
 
   readonly busy = signal<string | null>(null);
-  /** Id del pedido cuyo intento de confirmación falló por stock. */
-  readonly stockError = signal<string | null>(null);
-  readonly errorMessage = signal<string>('');
 
   constructor() {
     // El total mostrado aplica los descuentos vigentes; sin esto el panel
@@ -186,35 +166,11 @@ export class PendingOrdersPanelComponent {
     }, 0);
   }
 
-  /** spec 024, FR-017: gate visual — el backend ya lo exige, esto solo evita
-   *  un 409 predecible deshabilitando el botón de antemano. */
-  isPaymentConfirmed(order: DiningOrder): boolean {
-    return order.current_payment_attempt?.status === 'confirmado';
-  }
-
   time(order: DiningOrder): string {
     return new Date(order.created_at).toLocaleTimeString([], {
       hour: '2-digit',
       minute: '2-digit',
     });
-  }
-
-  /** Acepta el pedido: descuenta inventario y lo manda a cocina. */
-  async confirm(order: DiningOrder): Promise<void> {
-    this.busy.set(order.id);
-    this.stockError.set(null);
-    try {
-      await this.api.confirmOrder(order.id);
-      this.toast.success('Pedido confirmado y enviado a cocina');
-      this.refresh.emit();
-    } catch (err) {
-      // Un 400 aquí es falta de stock. El pedido **no** cambia de estado, así
-      // que se puede reintentar tras reponer: no es un fallo terminal.
-      this.errorMessage.set(this.api.extractError(err, 'No se pudo confirmar el pedido.'));
-      this.stockError.set(order.id);
-    } finally {
-      this.busy.set(null);
-    }
   }
 
   async reject(order: DiningOrder): Promise<void> {

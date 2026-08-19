@@ -18,7 +18,7 @@ const bill: SessionBill = {
   dining_table_id: 't1',
   total: '12000',
   order_ids: ['o1'],
-  split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000' }],
+  split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' }],
 };
 
 /** Dos comensales con consumo: habilita el modo dividido. */
@@ -28,8 +28,8 @@ const splitBill: SessionBill = {
   total: '20000',
   order_ids: ['o2'],
   split: [
-    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000' },
-    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000' },
+    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' },
+    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000', items: [], discount: '0' },
   ],
 };
 

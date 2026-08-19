@@ -88,7 +88,7 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
                       : 'border-transparent text-gray-500 hover:text-gray-700'
                   "
                 >
-                  🔔 Por confirmar
+                  🔔 Pagos por confirmar
                   <span
                     class="px-1.5 py-0.5 rounded-full text-xs font-bold"
                     [class]="
