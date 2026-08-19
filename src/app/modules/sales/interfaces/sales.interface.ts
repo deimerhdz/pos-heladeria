@@ -14,6 +14,12 @@ export interface PaymentMethod {
   /** Invariante del backend: `is_cash ⇔ type === 'cash'`. */
   is_cash: boolean;
   active: boolean;
+  /**
+   * Datos de pago que el comensal necesita ver para transferir (cuenta,
+   * titular, teléfono, código…) — spec 024. Sin esquema fijo: cada método
+   * usa las claves que necesite. `null`/ausente en efectivo.
+   */
+  payment_info?: Record<string, string> | null;
 }
 
 /** Body for `POST /sales/payment-methods` (`PaymentMethodCreate`). */
@@ -21,6 +27,14 @@ export interface PaymentMethodCreatePayload {
   name: string;
   type: PaymentMethodType;
   is_cash: boolean;
+  payment_info?: Record<string, string> | null;
+}
+
+/** Body for `PATCH /sales/payment-methods/{id}` (`PaymentMethodUpdate`, spec 024). */
+export interface PaymentMethodUpdatePayload {
+  name?: string;
+  payment_info?: Record<string, string> | null;
+  active?: boolean;
 }
 
 // ── Checkout (`POST /sales`) ───────────────────────────────────────────────

@@ -8,6 +8,7 @@ import {
   DiningOrderStatus,
   KitchenStatus,
   OrderItemPayload,
+  PaymentAttempt,
 } from '../interfaces/dining.interface';
 
 /**
@@ -75,6 +76,47 @@ export class DiningSessionService {
    */
   async markOrderReady(orderId: string): Promise<DiningOrder> {
     return firstValueFrom(this.http.post<DiningOrder>(`${this.api}/orders/${orderId}/ready`, {}));
+  }
+
+  // ── Intentos de pago (cajero, spec 024) ──────────────────────────────────
+
+  /** Historial completo de intentos de pago de una orden (incluye rechazados
+   *  con su motivo — vista de cajero/back-office, a diferencia de
+   *  `DiningOrder.current_payment_attempt`). */
+  async listPaymentAttempts(orderId: string): Promise<PaymentAttempt[]> {
+    return firstValueFrom(
+      this.http.get<PaymentAttempt[]>(`${this.api}/orders/${orderId}/payment-attempts`),
+    );
+  }
+
+  /** Aprueba un comprobante de transferencia. */
+  async approvePaymentAttempt(attemptId: string): Promise<PaymentAttempt> {
+    return firstValueFrom(
+      this.http.post<PaymentAttempt>(
+        `${this.api}/orders/payment-attempts/${attemptId}/approve`,
+        {},
+      ),
+    );
+  }
+
+  /** Rechaza un comprobante de transferencia; el motivo es obligatorio. */
+  async rejectPaymentAttempt(attemptId: string, reason: string): Promise<PaymentAttempt> {
+    return firstValueFrom(
+      this.http.post<PaymentAttempt>(
+        `${this.api}/orders/payment-attempts/${attemptId}/reject`,
+        { reason },
+      ),
+    );
+  }
+
+  /** Confirma un pago en efectivo; el backend calcula el cambio. */
+  async confirmCashPaymentAttempt(attemptId: string, amountReceived: number): Promise<PaymentAttempt> {
+    return firstValueFrom(
+      this.http.post<PaymentAttempt>(
+        `${this.api}/orders/payment-attempts/${attemptId}/confirm-cash`,
+        { amount_received: amountReceived },
+      ),
+    );
   }
 
   // ── Cobro / cierre de comedor (Fase 7) ───────────────────────────────────

@@ -81,16 +81,49 @@ describe('DinerService', () => {
     expect(tokens.token()).toBe('tok-123');
   });
 
-  it('envía el carrito con POST /cart/submit', async () => {
-    const promise = service.submitCart();
+  it('envía el carrito con POST /cart/submit, junto con su método de pago (spec 025)', async () => {
+    const promise = service.submitCart('pm-efectivo');
     const req = http.expectOne(`${API}/cart/submit`);
     expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      payment_method_id: 'pm-efectivo',
+      receipt_file_url: null,
+    });
 
     req.flush({ id: 'o1', status: 'recibida', channel: 'qr', created_at: '2026-07-28T10:00:00' });
 
     const order = await promise;
     // Queda pendiente de que el personal lo acepte: aún no descontó inventario.
     expect(order.status).toBe('recibida');
+  });
+
+  it('envía el receipt_file_url cuando el método no es efectivo (spec 025)', async () => {
+    const promise = service.submitCart('pm-nequi', 'https://example.invalid/a.jpg');
+    const req = http.expectOne(`${API}/cart/submit`);
+    expect(req.request.body).toEqual({
+      payment_method_id: 'pm-nequi',
+      receipt_file_url: 'https://example.invalid/a.jpg',
+    });
+
+    req.flush({ id: 'o1', status: 'recibida', channel: 'qr', created_at: '2026-07-28T10:00:00' });
+    await promise;
+  });
+
+  it('presigna el comprobante antes de enviar el pedido, sin ningún attempt_id (spec 025)', async () => {
+    const promise = service.presignPaymentReceipt('image/jpeg');
+    const req = http.expectOne(`${API}/cart/payment-receipt/presign`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ content_type: 'image/jpeg' });
+
+    req.flush({
+      upload_url: 'https://r2.example/upload',
+      key: 'k1',
+      public_url: 'https://r2.example/k1.jpg',
+      expires_in: 300,
+    });
+
+    const res = await promise;
+    expect(res.public_url).toBe('https://r2.example/k1.jpg');
   });
 
   /**

@@ -124,6 +124,51 @@ export interface VoidItemPayload {
   motivo: string;
 }
 
+// ── Pagos (spec 024) ────────────────────────────────────────────────────────
+
+export type PaymentAttemptStatus = 'pendiente' | 'confirmado' | 'rechazado';
+
+/**
+ * Resumen del intento de pago vigente de la orden (`current_payment_attempt`
+ * en `OrderResponse`). **No** trae `rejection_reason` — eso solo lo expone el
+ * historial completo (`PaymentAttemptResponse`, `GET
+ * /orders/{id}/payment-attempts`), que es la vista de cajero/back-office.
+ */
+export interface CurrentPaymentAttemptSummary {
+  id: string;
+  status: PaymentAttemptStatus;
+  payment_method_name: string;
+  is_cash: boolean;
+  receipt_file_url: string | null;
+}
+
+/** Vista de cajero de un intento de pago (`PaymentAttemptResponse`). */
+export interface PaymentAttempt {
+  id: string;
+  order_id: string;
+  payment_method_id: string;
+  payment_method_name: string;
+  is_cash: boolean;
+  status: PaymentAttemptStatus;
+  amount_received: string | null;
+  change_amount: string | null;
+  receipt_file_url: string | null;
+  rejection_reason: string | null;
+  resolved_by_user_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** Body de `POST /orders/payment-attempts/{id}/reject` (`PaymentAttemptRejectIn`). */
+export interface PaymentAttemptRejectPayload {
+  reason: string;
+}
+
+/** Body de `POST /orders/payment-attempts/{id}/confirm-cash` (`PaymentAttemptConfirmCashIn`). */
+export interface PaymentAttemptConfirmCashPayload {
+  amount_received: number;
+}
+
 /** Response of `POST /orders` and `GET /orders` (`OrderResponse`). */
 export interface DiningOrder {
   id: string;
@@ -139,6 +184,8 @@ export interface DiningOrder {
   notes?: string | null;
   created_at: string;
   items?: DiningOrderItem[];
+  /** `null` si nunca se inició ningún intento de pago (spec 024). */
+  current_payment_attempt?: CurrentPaymentAttemptSummary | null;
 }
 
 // ── Sesión de mesa (`/table-sessions`) ─────────────────────────────────────
