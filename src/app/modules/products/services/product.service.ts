@@ -61,6 +61,7 @@ interface ProductResponse {
   image_url: string | null;
   active: boolean;
   available: boolean;
+  tracks_inventory: boolean;
   created_at: string;
   updated_at?: string | null;
 }
@@ -407,6 +408,7 @@ export class ProductService {
       image_url: product.image_url ?? '',
       active: product.active,
       hasSizes: variantDrafts.length > 1,
+      tracks_inventory: product.tracks_inventory,
       variants: variantDrafts,
       deactivated: variants
         .filter((v) => !v.active)
@@ -523,6 +525,7 @@ export class ProductService {
       description: draft.description.trim() || null,
       preparation_type: draft.preparation_type,
       image_url: draft.image_url || null,
+      tracks_inventory: draft.tracks_inventory,
     };
   }
 
@@ -651,6 +654,7 @@ export class ProductService {
       image_url: p.image_url,
       active: p.active,
       available: p.available ?? true,
+      tracks_inventory: p.tracks_inventory ?? false,
       created_at: p.created_at,
       updated_at: p.updated_at,
     };

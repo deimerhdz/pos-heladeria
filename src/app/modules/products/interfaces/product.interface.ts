@@ -22,6 +22,8 @@ export interface Product {
   active: boolean;
   /** Disponibilidad operativa ('agotado temporal'), distinta de `active` (RF-006). */
   available: boolean;
+  /** Si el producto exige y aplica descuento de inventario en sus presentaciones. */
+  tracks_inventory: boolean;
   created_at: string;
   updated_at?: string | null;
 }
@@ -42,6 +44,7 @@ export interface ProductCreatePayload {
   description?: string | null;
   preparation_type: PreparationType;
   image_url?: string | null;
+  tracks_inventory?: boolean;
 }
 
 /** `PATCH /products/{id}` (`ProductUpdate`) — all optional. */
@@ -53,6 +56,7 @@ export interface ProductUpdatePayload {
   image_url?: string | null;
   active?: boolean;
   available?: boolean;
+  tracks_inventory?: boolean;
 }
 
 // --- Variants ---
@@ -274,6 +278,13 @@ export interface ProductDraft {
   image_url: string;
   active: boolean;
   hasSizes: boolean;
+  /**
+   * Si el producto maneja inventario. Apagado por defecto en un producto nuevo. Habilita
+   * la sección de insumos (receta fija y grupos de opciones) de cada presentación cuando
+   * está activado; apagarlo NO borra los insumos ya guardados, solo deja de exigirlos y
+   * de aplicarlos al vender.
+   */
+  tracks_inventory: boolean;
   /** Las presentaciones vivas: las únicas editables y las únicas que se guardan. */
   variants: VariantDraft[];
   /** Las desactivadas del producto. Vacío en un producto nuevo. */
