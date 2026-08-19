@@ -56,27 +56,27 @@ interface AssignRow {
           <h2 class="text-base font-bold text-gray-900">
             Dividir la cuenta @if (tableLabel) { <span class="text-gray-400 font-normal">· {{ tableLabel }}</span> }
           </h2>
-          <p class="text-xs text-gray-400">Asigna cada producto a quien lo va a pagar.</p>
+          <p class="text-sm text-gray-400">Asigna cada producto a quien lo va a pagar.</p>
         </div>
-        <button (click)="close.emit()" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+        <button (click)="close.emit()" class="min-h-11 min-w-11 text-gray-400 hover:text-gray-600 text-xl">✕</button>
       </div>
 
       <div class="flex-1 overflow-y-auto p-5 space-y-5">
         <!-- Personas -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Personas</h3>
+            <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Personas</h3>
           </div>
 
           <div class="space-y-1.5 mb-2">
             @for (p of people(); track p.id) {
               <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-gray-200">
-                <span class="text-sm font-medium text-gray-800 truncate">{{ p.display_label || p.display_name }}</span>
+                <span class="text-base font-medium text-gray-800 truncate">{{ p.display_label || p.display_name }}</span>
                 <span class="flex items-center gap-2 shrink-0">
-                  <span class="text-xs text-gray-400">{{ countFor(p.id) }} producto(s)</span>
-                  <span class="text-sm font-semibold text-gray-900">$ {{ totalFor(p.id) | number: '1.2-2' }}</span>
+                  <span class="text-sm text-gray-400">{{ countFor(p.id) }} producto(s)</span>
+                  <span class="text-base font-semibold text-gray-900">$ {{ totalFor(p.id) | number: '1.2-2' }}</span>
                   <button (click)="removePerson(p)" [disabled]="busy()"
-                    class="text-gray-300 hover:text-red-500 disabled:opacity-40 transition-colors"
+                    class="min-h-11 min-w-11 text-gray-300 hover:text-red-500 disabled:opacity-40 transition-colors"
                     title="Quitar">✕</button>
                 </span>
               </div>
@@ -91,10 +91,10 @@ interface AssignRow {
               (keyup.enter)="addPerson()"
               placeholder="Nombre de la persona"
               maxlength="255"
-              class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              class="flex-1 min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
             <button (click)="addPerson()" [disabled]="!newName().trim() || busy()"
-              class="px-3 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+              class="min-h-11 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors">
               Agregar
             </button>
           </div>
@@ -105,10 +105,10 @@ interface AssignRow {
         @if (pending() > 0) {
           <div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-amber-900 uppercase tracking-wide">Todavía sin repartir</span>
-              <span class="text-sm font-semibold text-amber-900">$ {{ totalFor(null) | number: '1.2-2' }}</span>
+              <span class="text-sm font-semibold text-amber-900 uppercase tracking-wide">Todavía sin repartir</span>
+              <span class="text-base font-semibold text-amber-900">$ {{ totalFor(null) | number: '1.2-2' }}</span>
             </div>
-            <p class="text-xs text-amber-700 mt-0.5">
+            <p class="text-sm text-amber-700 mt-0.5">
               {{ pending() }} producto(s). Elige abajo quién paga cada uno.
             </p>
           </div>
@@ -116,29 +116,29 @@ interface AssignRow {
 
         <!-- Productos -->
         <div>
-          <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Productos de la mesa</h3>
+          <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Productos de la mesa</h3>
           @if (rows().length === 0) {
-            <p class="text-sm text-gray-400 py-4 text-center">Esta mesa no tiene productos que cobrar.</p>
+            <p class="text-base text-gray-400 py-4 text-center">Esta mesa no tiene productos que cobrar.</p>
           }
           <div class="space-y-1.5">
             @for (row of rows(); track row.itemId) {
               <div class="px-3 py-2 rounded-lg border border-gray-100">
                 <div class="flex items-center gap-2">
                   <span class="flex-1 min-w-0">
-                    <span class="text-sm text-gray-800">{{ row.quantity }}× {{ row.label }}</span>
-                    <span class="block text-xs text-gray-400">$ {{ row.quantity * row.unitPrice | number: '1.2-2' }}</span>
+                    <span class="text-base text-gray-800">{{ row.quantity }}× {{ row.label }}</span>
+                    <span class="block text-sm text-gray-400">$ {{ row.quantity * row.unitPrice | number: '1.2-2' }}</span>
                   </span>
 
                   @if (row.expanded) {
                     <button (click)="toggleExpand(row.itemId)"
-                      class="shrink-0 text-xs font-medium text-gray-500 hover:text-gray-700">
+                      class="shrink-0 min-h-11 px-2 text-sm font-medium text-gray-500 hover:text-gray-700">
                       Volver a unir
                     </button>
                   } @else {
                     <select
                       [value]="ownerOf(row) ?? ''"
                       (change)="assignAll(row.itemId, $any($event.target).value)"
-                      class="shrink-0 w-36 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      class="shrink-0 w-36 min-h-11 px-2 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     >
                       <option value="">— ¿Quién paga? —</option>
                       @for (p of people(); track p.id) {
@@ -151,7 +151,7 @@ interface AssignRow {
                 <!-- Solo tiene sentido en líneas de más de una unidad. -->
                 @if (row.quantity > 1 && !row.expanded) {
                   <button (click)="toggleExpand(row.itemId)"
-                    class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                    class="mt-1 min-h-11 text-sm font-medium text-indigo-600 hover:text-indigo-800">
                     Repartir entre varias personas →
                   </button>
                 }
@@ -161,13 +161,13 @@ interface AssignRow {
                     @for (unit of row.units; track $index) {
                       <div class="flex items-center gap-2">
                         <span class="flex-1 min-w-0">
-                          <span class="text-xs text-gray-600">Unidad {{ $index + 1 }} de {{ row.quantity }}</span>
-                          <span class="block text-xs text-gray-400">$ {{ row.unitPrice | number: '1.2-2' }}</span>
+                          <span class="text-sm text-gray-600">Unidad {{ $index + 1 }} de {{ row.quantity }}</span>
+                          <span class="block text-sm text-gray-400">$ {{ row.unitPrice | number: '1.2-2' }}</span>
                         </span>
                         <select
                           [value]="unit ?? ''"
                           (change)="assignUnit(row.itemId, $index, $any($event.target).value)"
-                          class="shrink-0 w-36 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          class="shrink-0 w-36 min-h-11 px-2 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         >
                           <option value="">— ¿Quién paga? —</option>
                           @for (p of people(); track p.id) {
@@ -184,13 +184,13 @@ interface AssignRow {
         </div>
 
         @if (error(); as e) {
-          <p class="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{{ e }}</p>
+          <p class="text-base text-red-600 bg-red-50 rounded-lg px-3 py-2">{{ e }}</p>
         }
       </div>
 
       <div class="px-5 py-4 border-t border-gray-100 shrink-0">
         <button (click)="save()" [disabled]="busy() || !!blocker()"
-          class="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          class="w-full min-h-11 py-2.5 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
           {{ busy() ? 'Guardando…' : (blocker() ?? 'Guardar reparto') }}
         </button>
       </div>
