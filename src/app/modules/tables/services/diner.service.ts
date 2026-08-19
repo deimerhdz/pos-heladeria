@@ -8,9 +8,13 @@ import {
   CartItemPayload,
   CartItemUpdatePayload,
   CartResponse,
+  DinerPaymentAttempt,
+  DinerPaymentMethod,
   DinerTable,
+  ReceiptPresignResponse,
   SessionOpenResponse,
   StockConflictDetail,
+  SubmitCartPayload,
 } from '../interfaces/diner.interface';
 import { DinerTokenStore } from './diner-token.store';
 
@@ -120,14 +124,88 @@ export class DinerService {
     return this.call(() => this.http.delete<CartResponse>(`${this.api}/cart/items/${itemId}`));
   }
 
+  // ── Pagos (spec 024) ─────────────────────────────────────────────────────
+
+  /** Métodos de pago activos del tenant — nunca incluye uno desactivado. */
+  getPaymentMethods(): Promise<DinerPaymentMethod[]> {
+    return this.call(() =>
+      this.http.get<DinerPaymentMethod[]>(`${this.api}/cart/payment-methods`),
+    );
+  }
+
+  /** Inicia un intento de pago para una orden propia. `409` si ya hay uno
+   *  pendiente de revisión (FR-015a). */
+  createPaymentAttempt(orderId: string, paymentMethodId: string): Promise<DinerPaymentAttempt> {
+    return this.call(() =>
+      this.http.post<DinerPaymentAttempt>(`${this.api}/cart/orders/${orderId}/payment-attempts`, {
+        payment_method_id: paymentMethodId,
+      }),
+    );
+  }
+
+  /** Pide la URL firmada para subir el comprobante directo a R2. */
+  presignReceipt(attemptId: string, contentType: string): Promise<ReceiptPresignResponse> {
+    return this.call(() =>
+      this.http.post<ReceiptPresignResponse>(
+        `${this.api}/cart/payment-attempts/${attemptId}/receipt/presign`,
+        { content_type: contentType },
+      ),
+    );
+  }
+
+  /** Asocia el archivo ya subido a R2 con el intento. */
+  attachReceipt(attemptId: string, fileUrl: string): Promise<DinerPaymentAttempt> {
+    return this.call(() =>
+      this.http.post<DinerPaymentAttempt>(
+        `${this.api}/cart/payment-attempts/${attemptId}/receipt`,
+        { file_url: fileUrl },
+      ),
+    );
+  }
+
+  /**
+   * Presign genérico para el comprobante (spec 025): a diferencia de
+   * `presignReceipt`, no exige ningún intento de pago previo — se usa
+   * *antes* de enviar el pedido, cuando todavía no existe ninguna orden ni
+   * intento al que asociar el archivo.
+   */
+  presignPaymentReceipt(contentType: string): Promise<ReceiptPresignResponse> {
+    return this.call(() =>
+      this.http.post<ReceiptPresignResponse>(`${this.api}/cart/payment-receipt/presign`, {
+        content_type: contentType,
+      }),
+    );
+  }
+
+  /**
+   * Sube el archivo directo a R2 con la URL firmada (fuera de la API misma:
+   * es un `PUT` plano al bucket, sin `x-session-token` ni JSON).
+   */
+  async uploadReceiptFile(uploadUrl: string, file: File): Promise<void> {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
+    }
+  }
+
   // ── Pedidos propios ──────────────────────────────────────────────────────
 
   /**
-   * Envía el carrito como pedido. Queda en `recibida`: **no descuenta
-   * inventario** hasta que el personal lo confirme.
+   * Envía el carrito como pedido, junto con su método de pago (spec 025): el
+   * pedido nace con su primer intento de pago adjunto — `receiptFileUrl` es
+   * obligatorio salvo que el método sea efectivo. Queda en `recibida`: **no
+   * descuenta inventario** hasta que el personal lo confirme.
    */
-  submitCart(): Promise<DiningOrder> {
-    return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, {}));
+  submitCart(paymentMethodId: string, receiptFileUrl?: string | null): Promise<DiningOrder> {
+    const body: SubmitCartPayload = {
+      payment_method_id: paymentMethodId,
+      receipt_file_url: receiptFileUrl ?? null,
+    };
+    return this.call(() => this.http.post<DiningOrder>(`${this.api}/cart/submit`, body));
   }
 
   /** Pedidos de este comensal. Única fuente del progreso (por polling). */

@@ -15,6 +15,7 @@ import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
+import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-panel.component';
 
 /**
  * Pedidos que el comensal envió y esperan que el personal los acepte.
@@ -26,7 +27,7 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
 @Component({
   selector: 'app-pending-orders-panel',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, PaymentAttemptReviewPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div>
@@ -76,6 +77,19 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
                 }
               </ul>
 
+              <!--
+                spec 024: la orden solo avanza a comanda con un intento de
+                pago confirmado — este panel es el paso de revisión del
+                cajero que produce ese "confirmado" (aprobar comprobante o
+                confirmar efectivo).
+              -->
+              <div class="mb-2">
+                <app-payment-attempt-review-panel
+                  [order]="order"
+                  (resolved)="refresh.emit()"
+                />
+              </div>
+
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-gray-900">
                   $ {{ total(order) | number: '1.2-2' }}
@@ -90,7 +104,12 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
                   </button>
                   <button
                     (click)="confirm(order)"
-                    [disabled]="busy() === order.id"
+                    [disabled]="busy() === order.id || !isPaymentConfirmed(order)"
+                    [title]="
+                      isPaymentConfirmed(order)
+                        ? ''
+                        : 'La orden necesita un pago confirmado antes de enviarse a comanda'
+                    "
                     class="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
                   >
                     {{ busy() === order.id ? 'Confirmando...' : 'Confirmar' }}
@@ -165,6 +184,12 @@ export class PendingOrdersPanelComponent {
       );
       return s + unitPrice * i.quantity;
     }, 0);
+  }
+
+  /** spec 024, FR-017: gate visual — el backend ya lo exige, esto solo evita
+   *  un 409 predecible deshabilitando el botón de antemano. */
+  isPaymentConfirmed(order: DiningOrder): boolean {
+    return order.current_payment_attempt?.status === 'confirmado';
   }
 
   time(order: DiningOrder): string {

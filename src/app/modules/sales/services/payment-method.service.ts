@@ -2,7 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { PaymentMethod, PaymentMethodType } from '../interfaces/sales.interface';
+import {
+  PaymentMethod,
+  PaymentMethodType,
+  PaymentMethodUpdatePayload,
+} from '../interfaces/sales.interface';
 
 /** Transport for payment methods (`/api/v1/sales/payment-methods`). */
 @Injectable({ providedIn: 'root' })
@@ -35,7 +39,11 @@ export class PaymentMethodService {
    * junto a `is_cash` para respetar la invariante del modelo:
    * `is_cash ⇔ type === 'cash'`.
    */
-  async create(name: string, type: PaymentMethodType): Promise<boolean> {
+  async create(
+    name: string,
+    type: PaymentMethodType,
+    paymentInfo?: Record<string, string> | null,
+  ): Promise<boolean> {
     this.isSubmitting.set(true);
     this.error.set(null);
     try {
@@ -44,6 +52,7 @@ export class PaymentMethodService {
           name,
           type,
           is_cash: type === 'cash',
+          payment_info: type === 'cash' ? null : (paymentInfo ?? null),
         }),
       );
       await this.load();
@@ -54,6 +63,31 @@ export class PaymentMethodService {
     } finally {
       this.isSubmitting.set(false);
     }
+  }
+
+  /**
+   * Edita nombre/datos de pago/estado (spec 024, US1). Al desactivar el
+   * último método activo, el backend responde `409` — el mensaje ya viene
+   * listo para mostrar (`extractError`).
+   */
+  async update(id: string, patch: PaymentMethodUpdatePayload): Promise<boolean> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    try {
+      await firstValueFrom(this.http.patch<PaymentMethod>(`${this.baseUrl}/${id}`, patch));
+      await this.load();
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err, 'No se pudo actualizar el método de pago.'));
+      return false;
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /** Atajo de `update()` para el botón activar/desactivar de la lista. */
+  async toggleActive(method: PaymentMethod): Promise<boolean> {
+    return this.update(method.id, { active: !method.active });
   }
 
   private extractError(err: unknown, fallback: string): string {
