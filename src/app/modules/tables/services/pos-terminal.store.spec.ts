@@ -1,7 +1,17 @@
-import { currentNow, deriveTableStatus, newPendingIds } from './pos-terminal.store';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { environment } from '../../../../environments/environment';
+import { PosTerminalStore, currentNow, deriveTableStatus, newPendingIds } from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
+import { PromotionService } from '../../promotions/services/promotion.service';
+import { ToastService } from '../../../shared/feedback/toast.service';
+import { Sale } from '../../sales/interfaces/sales.interface';
+
+const API = environment.apiBaseUrl;
 
 function order(
   id: string,
@@ -59,6 +69,36 @@ describe('deriveTableStatus', () => {
     expect(deriveTableStatus([order('o1', 'recibida', ['pendiente'])], 'ocupada')).toBe(
       'por_confirmar',
     );
+  });
+
+  // ── feature 028, T010/T037/T039: el badge "Por confirmar" es solo de QR ──
+  describe('badge "Por confirmar" — solo canal qr (T010/T037/T039)', () => {
+    function counterOrder(id: string, status: DiningOrder['status']): DiningOrder {
+      return { ...order(id, status), channel: 'counter' };
+    }
+
+    it('NO marca por confirmar un pedido de mostrador en espera de armarse (hold_for_payment)', () => {
+      // Un pedido `counter` también vive en `recibida` mientras el cajero lo
+      // arma (feature 028), pero no tiene ningún pago que revisar: mostrarlo
+      // como "Por confirmar" sería una falsa alarma para el resto del staff.
+      expect(deriveTableStatus([counterOrder('o1', 'recibida')], 'ocupada')).not.toBe(
+        'por_confirmar',
+      );
+    });
+
+    it('caso mixto: un comensal ya confirmado y otro QR todavía pendiente → sigue "Por confirmar"', () => {
+      const confirmado = order('o1', 'abierta', ['pendiente']);
+      const pendiente = order('o2', 'recibida', ['pendiente']);
+
+      expect(deriveTableStatus([confirmado, pendiente], 'ocupada')).toBe('por_confirmar');
+    });
+
+    it('caso mixto: un pedido de mostrador armándose junto a uno QR pendiente → sigue "Por confirmar"', () => {
+      const mostrador = counterOrder('o1', 'recibida');
+      const qrPendiente = order('o2', 'recibida', ['pendiente']);
+
+      expect(deriveTableStatus([mostrador, qrPendiente], 'ocupada')).toBe('por_confirmar');
+    });
   });
 
   it('ocupa la mesa aunque no haya pedidos si el backend la da por ocupada', () => {
@@ -194,5 +234,107 @@ describe('discountedUnitPrice guardado por currentNow — A-09, patrón usado po
     const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
 
     expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(8000);
+  });
+});
+
+// ── feature 028, T010: `pendingOrders` (bloque de validación de pagos) ──────
+describe('PosTerminalStore.pendingOrders — solo canal qr', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('incluye los pedidos qr en recibida y excluye los de mostrador (hold_for_payment)', () => {
+    store.orders.set([
+      order('qr1', 'recibida'),
+      { ...order('counter1', 'recibida'), channel: 'counter' },
+      order('qr2', 'abierta'),
+    ]);
+
+    expect(store.pendingOrders().map((o) => o.id)).toEqual(['qr1']);
+  });
+});
+
+/**
+ * T033 (FR-012): resolver la venta de un pedido ya facturado, sea QR o de
+ * mostrador, cobrado en esta pestaña o en otra (o tras recargar la página).
+ * Se prueba directamente sobre el store —sin componente ni click— porque
+ * `printOrderInvoice` termina en `printReceiptHtml` (iframe + `window.print`),
+ * que esta suite no ejercita de punta a punta (ver nota en
+ * `pos-checkout-panel.component.spec.ts`); `resolveSaleForOrder` es la parte
+ * de caché/red/errores, separada a propósito para poder probarla sola.
+ */
+describe('PosTerminalStore.resolveSaleForOrder', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+  let toast: ToastService;
+
+  const sale = (): Sale =>
+    ({ id: 's1', total: '10000', status: 'paid', sold_at: '2026-08-20', items: [], payments: [] }) as unknown as Sale;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    toast = TestBed.inject(ToastService);
+  });
+
+  afterEach(() => http.verify());
+
+  it('si la venta ya está en caché (recién cobrada en esta pestaña), no pega a la red', async () => {
+    store.checkoutSaleByOrderId.set({ o1: sale() });
+
+    const found = await store.resolveSaleForOrder('o1');
+
+    expect(found?.id).toBe('s1');
+    http.expectNone(`${API}/invoices?order_id=o1`);
+  });
+
+  it('si no está en caché, la busca por order_id → factura → venta completa', async () => {
+    const promise = store.resolveSaleForOrder('o1');
+
+    const invoiceReq = http.expectOne((r) => r.url === `${API}/invoices` && r.params.get('order_id') === 'o1');
+    invoiceReq.flush([{ id: 'inv1', sale_id: 's1' }]);
+    // La segunda petición sale de un `await` dentro de `findSaleForOrder`:
+    // hace falta ceder el microtask antes de que `expectOne` la vea.
+    await Promise.resolve();
+    const saleReq = http.expectOne(`${API}/sales/s1`);
+    saleReq.flush(sale());
+
+    const found = await promise;
+    expect(found?.id).toBe('s1');
+    // Queda en caché para la próxima vez (p. ej. reimprimir dos veces seguidas).
+    expect(store.checkoutSaleByOrderId()['o1']?.id).toBe('s1');
+  });
+
+  it('si el pedido no tiene ninguna factura emitida, avisa por toast y no revienta', async () => {
+    const promise = store.resolveSaleForOrder('o1');
+
+    const invoiceReq = http.expectOne((r) => r.url === `${API}/invoices` && r.params.get('order_id') === 'o1');
+    invoiceReq.flush([]);
+
+    const found = await promise;
+    expect(found).toBeNull();
+    expect(toast.toasts().some((t) => t.kind === 'error' && t.text.includes('factura'))).toBe(true);
   });
 });

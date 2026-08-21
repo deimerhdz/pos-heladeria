@@ -119,6 +119,31 @@ describe('SessionBillPanelComponent', () => {
     expect(chargeButton().disabled).toBe(true);
   });
 
+  // ── feature 028, T004/T009: modo `resumen` (pedido de canal `qr`) ────────
+  describe('readOnly (T009 — el bug de origen)', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('readOnly', true);
+      fixture.detectChanges();
+    });
+
+    it('no muestra el botón "Cobrar y cerrar mesa"', () => {
+      const buttons = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      );
+      expect(buttons.some((b) => b.textContent?.includes('Cobrar'))).toBe(false);
+    });
+
+    it('no muestra el selector de método de pago', () => {
+      expect(fixture.nativeElement.querySelectorAll('select').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('input[type="number"]').length).toBe(0);
+    });
+
+    it('sigue mostrando el desglose de la cuenta (no se pierde información)', () => {
+      expect(fixture.nativeElement.textContent).toContain('Ana');
+      expect(fixture.nativeElement.textContent).toContain('12,000.00');
+    });
+  });
+
   it('habilita el cobro al elegir método en la cuenta única', async () => {
     await chooseMethod('pm2');
 

@@ -89,4 +89,42 @@ describe('DiningSessionService', () => {
 
     expect(service.extractError(await promise)).toBe('Hay ítems sin terminar en cocina');
   });
+
+  // ── feature 028: terminal híbrida por origen ─────────────────────────────
+
+  it('crea un pedido de mostrador con hold_for_payment (T023)', async () => {
+    const promise = service.createManualOrder({
+      channel: 'counter',
+      dining_table_id: 't1',
+      customer_name: null,
+      items: [{ product_variant_id: 'v1', quantity: 1 }],
+      hold_for_payment: true,
+    });
+    const req = http.expectOne(`${API}/orders`);
+
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.hold_for_payment).toBe(true);
+    expect(req.request.body.channel).toBe('counter');
+    req.flush({ id: 'o1', channel: 'counter', status: 'recibida', created_at: '2026-08-20' });
+
+    const order = await promise;
+    expect(order.id).toBe('o1');
+  });
+
+  it('cobra, factura y envía a cocina un pedido de mostrador (T025)', async () => {
+    const promise = service.checkoutAndSend('o1', {
+      version: 3,
+      cash_shift_id: 'shift-1',
+      payments: [{ payment_method_id: 'pm1', amount: 10000 }],
+      billing_customer_name: 'Consumidor Final',
+    });
+    const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
+
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.version).toBe(3);
+    req.flush({ id: 's1', total: '10000', status: 'paid', sold_at: '2026-08-20T12:00:00' });
+
+    const sale = await promise;
+    expect(sale.id).toBe('s1');
+  });
 });

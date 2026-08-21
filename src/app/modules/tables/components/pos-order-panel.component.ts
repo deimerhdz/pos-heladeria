@@ -31,25 +31,6 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">← Volver</button>
           </div>
 
-          @if (store.pendingOfSelectedTable().length; as pendientes) {
-            <!--
-              Sin esto la pantalla se contradice: la tarjeta de la mesa avisa de
-              un pedido por confirmar y aquí pone "Pedido nuevo sin guardar".
-            -->
-            <div class="flex items-center justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
-              <p class="text-xs text-violet-800">
-                Esta mesa tiene {{ pendientes }}
-                {{ pendientes === 1 ? 'pedido' : 'pedidos' }} por confirmar.
-              </p>
-              <button
-                (click)="store.centerTab.set('pendientes')"
-                class="text-xs font-semibold text-violet-700 hover:text-violet-900 shrink-0"
-              >
-                Ver
-              </button>
-            </div>
-          }
-
           <div>
             <label class="block text-[11px] font-medium text-gray-500 mb-1">Cliente</label>
             <input
@@ -145,7 +126,15 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
           <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
           <div class="flex gap-2 pt-1">
-            @if (store.hasDraft()) {
+            @if (store.hasDraft() && store.manualOrderBuilding()) {
+              <!-- Pedido de mostrador nuevo (feature 028, T023): una sola
+                   llamada con hold_for_payment, no toca cocina/inventario
+                   hasta cobrarlo desde el panel de la derecha. -->
+              <button (click)="store.createManualOrderFromDraft()" [disabled]="store.submitting()"
+                class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                {{ store.submitting() ? 'Creando…' : 'Crear pedido' }}
+              </button>
+            } @else if (store.hasDraft()) {
               <button (click)="store.saveOrder()" [disabled]="store.submitting()"
                 class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
                 {{ store.submitting() ? 'Guardando…' : 'Guardar pedido' }}

@@ -51,6 +51,13 @@ export interface OrderCreatePayload {
   customer_name?: string | null;
   notes?: string | null;
   items: OrderItemPayload[];
+  /**
+   * Solo válido con `channel: 'counter' | 'waiter'` (feature 028). El pedido se
+   * crea **sin** descontar inventario ni ser visible en cocina — eso solo pasa
+   * al llamar `POST /orders/{id}/checkout-and-send`. Así una orden de mostrador
+   * que el cajero está armando no golpea cocina antes de estar pagada.
+   */
+  hold_for_payment?: boolean;
 }
 
 /** Selected option on an order item (`OrderItemOptionResponse`). */
@@ -186,6 +193,41 @@ export interface DiningOrder {
   items?: DiningOrderItem[];
   /** `null` si nunca se inició ningún intento de pago (spec 024). */
   current_payment_attempt?: CurrentPaymentAttemptSummary | null;
+}
+
+// ── Terminal híbrida por origen (feature 028) ──────────────────────────────
+
+/**
+ * Qué panel muestra la barra lateral de cobro: `'resumen'` (solo lectura, para
+ * pedidos `qr` — el comensal ya pagó a distancia y el cajero solo valida el
+ * comprobante) o `'terminal-pos'` (editable, para pedidos creados/pagados en
+ * el mostrador por el cajero, o una mesa libre donde todavía no hay pedido).
+ */
+export type SidebarMode = 'resumen' | 'terminal-pos';
+
+/**
+ * Decide el modo de la barra lateral a partir del pedido activo de la mesa.
+ *
+ * `null`/`undefined` (mesa libre, sin pedido seleccionado todavía) cae en
+ * `'terminal-pos'`: es justo donde se arma un pedido manual nuevo.
+ */
+export function getSidebarMode(order: DiningOrder | null | undefined): SidebarMode {
+  return order?.channel === 'qr' ? 'resumen' : 'terminal-pos';
+}
+
+/** Body de `POST /orders/{id}/checkout-and-send` (feature 028). Paga un pedido
+ *  de mostrador, emite su venta/factura y lo envía a cocina en una sola
+ *  llamada atómica. */
+export interface CheckoutAndSendPayload {
+  /** Backstop de doble clic: el backend rechaza con `409` si ya no coincide. */
+  version: number;
+  cash_shift_id: string;
+  payments: PaymentLine[];
+  discount?: number;
+  tax?: number;
+  tip?: number;
+  /** A nombre de quién se factura; por defecto "Consumidor Final". */
+  billing_customer_name?: string;
 }
 
 // ── Sesión de mesa (`/table-sessions`) ─────────────────────────────────────
