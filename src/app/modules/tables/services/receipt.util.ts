@@ -9,6 +9,7 @@
  */
 import { Sale } from '../../sales/interfaces/sales.interface';
 import { formatMoney } from '../../../shared/money';
+import { SessionBill } from '../interfaces/dining.interface';
 
 // El formato de moneda se movió a `shared/` (lo necesita el menú QR, que no debe
 // arrastrar este generador de tickets). Se reexporta para no tocar a quien ya lo
@@ -103,6 +104,53 @@ export function saleToReceipt(sale: Sale, ctx: ReceiptContext): ReceiptData {
 function tableLabel(table: Sale['dining_table']): string {
   if (!table) return '';
   return table.name ? `Mesa ${table.number} · ${table.name}` : `Mesa ${table.number}`;
+}
+
+/**
+ * Convierte la cuenta de una sesión de mesa (antes de cobrar) en un ticket de
+ * "pre-cuenta" — feature 028, T031.
+ *
+ * Se necesita un generador aparte de `saleToReceipt` porque antes de pagar no
+ * existe ninguna `Sale`: la pre-cuenta se imprime desde `SessionBill`
+ * (`GET /table-sessions/{id}/bill`), que no trae pagos ni consecutivo fiscal.
+ * Reutiliza `printReceiptHtml`/`buildReceiptHtml` sin tocarlos.
+ */
+export function sessionBillToReceipt(
+  bill: SessionBill,
+  ctx: ReceiptContext & { tableLabel?: string },
+): ReceiptData {
+  const lines: ReceiptLine[] = bill.split.flatMap((line) =>
+    line.items.map((it) => ({
+      quantity: Number(it.quantity),
+      description: it.description,
+      lineTotal: Number(it.line_total),
+    })),
+  );
+  const discount = bill.split.reduce((s, l) => s + Number(l.discount), 0);
+  const total = Number(bill.total);
+
+  return {
+    businessName: ctx.businessName,
+    logoUrl: ctx.logoUrl,
+    tableLabel: ctx.tableLabel ?? '',
+    soldAt: new Date().toISOString(),
+    cashier: null,
+    // Sin comensal único: la pre-cuenta es de toda la mesa, no de una persona.
+    customerName: null,
+    saleId: bill.table_session_id,
+    // Sin factura todavía: `documentRow` cae a "Ticket #…", que es correcto.
+    invoice: null,
+    lines,
+    subtotal: total + discount,
+    discount,
+    tax: 0,
+    tip: 0,
+    total,
+    // Sin pagos: es previa al cobro.
+    payments: [],
+    change: null,
+    message: `PRE-CUENTA · Este documento no es una factura. ${ctx.message}`.trim(),
+  };
 }
 
 

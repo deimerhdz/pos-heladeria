@@ -99,6 +99,19 @@ interface SplitDraft {
           </div>
         </div>
 
+        @if (readOnly) {
+          <!--
+            Feature 028, T004/T009: pedido de canal qr — el comensal ya pagó a
+            distancia y el cajero solo valida el comprobante (en el bloque de
+            validación de pagos, no aquí). Mostrar el selector de método y el
+            botón "Cobrar y cerrar mesa" en este modo era justo el bug de
+            origen: cobrar de nuevo una mesa ya pagada por QR fallaba con un
+            error que el cajero no sabía interpretar.
+          -->
+          <p class="text-sm text-gray-400 py-2">
+            Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
+          </p>
+        } @else {
         <!-- Modo de cobro -->
         <div class="flex gap-2 mb-3">
           <button
@@ -173,6 +186,7 @@ interface SplitDraft {
         >
           {{ submitting() ? 'Cobrando...' : 'Cobrar y cerrar mesa' }}
         </button>
+        }
       }
     </div>
   `,
@@ -185,6 +199,12 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() customerName = '';
   /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
   @Input() orphan = false;
+  /**
+   * Feature 028 (T004/T009): `true` cuando el pedido activo es de canal `qr`
+   * — el comensal ya pagó a distancia. Oculta el selector de método y el
+   * botón "Cobrar y cerrar mesa"; solo queda el desglose de lectura.
+   */
+  @Input() readOnly = false;
   /**
    * Gancho que corre justo antes de cerrar: si devuelve `false` no se cobra.
    *

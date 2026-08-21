@@ -5,12 +5,9 @@ import {
   Input,
   Output,
   inject,
-  signal,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
-import { DiningSessionService } from '../services/dining-session.service';
-import { ToastService } from '../../../shared/feedback/toast.service';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
@@ -18,30 +15,35 @@ import { discountedUnitPrice } from '../../promotions/services/promotion-pricing
 import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-panel.component';
 
 /**
- * Pedidos que el comensal envió y cuyo pago todavía no está confirmado.
+ * Bloque de validación de pagos QR (feature 028, T005): reemplaza el
+ * contenido combinado de las antiguas pestañas "Pedido de la mesa" /
+ * "Pagos por confirmar" — una tarjeta **independiente** por pedido/comensal,
+ * cada una con su propio `app-payment-attempt-review-panel` embebido.
  *
- * spec 026, FR-001: aprobar el comprobante o confirmar el efectivo (panel
- * `app-payment-attempt-review-panel` embebido) descuenta el inventario y
- * envía el pedido a cocina en la misma acción — ya no existe un botón
- * "Confirmar" separado. "Rechazar" sigue siendo la forma de cancelar el
- * pedido (p. ej. si el pago no puede resolverse). Por eso estos pedidos no
- * salen en el KDS todavía y hay que pedirlos aparte con
- * `GET /orders?status=recibida`.
+ * "Independiente" es literal: confirmar o rechazar el pago de una tarjeta no
+ * debe tocar el estado de ninguna otra — cada `payment-attempt-review-panel`
+ * carga y resuelve su propio intento de pago sin compartir estado con sus
+ * hermanas (spec 026/024).
+ *
+ * A diferencia del extinto `pending-orders-panel`, **no** hay ningún botón
+ * "Rechazar" a nivel de pedido completo: la única forma de rechazar es la del
+ * intento de pago (con motivo obligatorio), que ya vive dentro del panel
+ * embebido — T007 retira `cancelOrder` de este flujo.
  */
 @Component({
-  selector: 'app-pending-orders-panel',
+  selector: 'app-payment-validation-block',
   standalone: true,
   imports: [DecimalPipe, PaymentAttemptReviewPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div>
       <div class="flex items-center justify-between gap-3 mb-3">
-        <p class="text-xs text-gray-500">
+        <p class="text-sm text-gray-500">
           Aprobar el comprobante o confirmar el efectivo envía el pedido a cocina de inmediato.
         </p>
         <button
           (click)="refresh.emit()"
-          class="text-xs font-medium text-gray-400 hover:text-indigo-600 transition-colors shrink-0"
+          class="text-sm font-medium text-gray-400 hover:text-indigo-600 transition-colors shrink-0"
         >
           Actualizar
         </button>
@@ -51,8 +53,7 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
         <div class="flex flex-col items-center justify-center text-center text-gray-400 py-16 gap-3">
           <div class="text-5xl">🔔</div>
           <p class="text-sm max-w-xs">
-            No hay pagos esperando revisión. Los comprobantes o efectivos que registren los
-            comensales desde el QR aparecerán aquí.
+            No hay pagos esperando revisión en esta mesa.
           </p>
         </div>
       } @else {
@@ -85,26 +86,21 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
                 spec 024: la orden solo avanza a comanda con un intento de
                 pago confirmado — este panel es el paso de revisión del
                 cajero que produce ese "confirmado" (aprobar comprobante o
-                confirmar efectivo).
+                confirmar efectivo). Cada tarjeta es independiente: solo lee
+                el pedido que le toca, no el estado de las demás.
               -->
               <div class="mb-2">
                 <app-payment-attempt-review-panel
                   [order]="order"
+                  [cashShiftId]="cashShiftId"
                   (resolved)="refresh.emit()"
                 />
               </div>
 
-              <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center justify-end gap-2">
                 <span class="text-lg font-bold text-gray-900">
                   $ {{ total(order) | number: '1.2-2' }}
                 </span>
-                <button
-                  (click)="reject(order)"
-                  [disabled]="busy() === order.id"
-                  class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
-                >
-                  Rechazar
-                </button>
               </div>
             </div>
           }
@@ -113,16 +109,17 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
     </div>
   `,
 })
-export class PendingOrdersPanelComponent {
+export class PaymentValidationBlockComponent {
+  /** Pedidos `qr` en `recibida` de la mesa seleccionada — ya filtrados por el
+   *  store (`pendingOfSelectedTable`, feature 028 T010: solo canal `qr`). */
   @Input() orders: DiningOrder[] = [];
   @Input() categories: MenuCategory[] = [];
+  /** Turno de caja abierto (feature 028) — ver
+   *  `PaymentAttemptReviewPanelComponent.cashShiftId`. */
+  @Input() cashShiftId: string | null = null;
   @Output() refresh = new EventEmitter<void>();
 
-  private readonly api = inject(DiningSessionService);
-  private readonly toast = inject(ToastService);
   private readonly promotionService = inject(PromotionService);
-
-  readonly busy = signal<string | null>(null);
 
   constructor() {
     // El total mostrado aplica los descuentos vigentes; sin esto el panel
@@ -134,12 +131,6 @@ export class PendingOrdersPanelComponent {
     return buildMenuLookup(this.categories).variantLabel(variantId);
   }
 
-  /**
-   * Sabores elegidos por el comensal. Confirmar es lo que descuenta el inventario, y
-   * la cantidad depende de qué opción se eligió, así que el mesero tiene que verlo
-   * antes de aceptar. Devuelve `null` (no cadena vacía) para que el `@if` no pinte
-   * una línea en blanco.
-   */
   optionLabels(item: DiningOrderItem): string | null {
     const lookup = buildMenuLookup(this.categories);
     const names = (item.options ?? [])
@@ -171,18 +162,5 @@ export class PendingOrdersPanelComponent {
       hour: '2-digit',
       minute: '2-digit',
     });
-  }
-
-  async reject(order: DiningOrder): Promise<void> {
-    this.busy.set(order.id);
-    try {
-      await this.api.cancelOrder(order.id, 'Rechazado por el personal');
-      this.toast.info('Pedido rechazado');
-      this.refresh.emit();
-    } catch (err) {
-      this.toast.error(this.api.extractError(err, 'No se pudo rechazar el pedido.'));
-    } finally {
-      this.busy.set(null);
-    }
   }
 }

@@ -16,10 +16,10 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 /**
  * Revisión de pagos del cajero para una orden (spec 024): aprobar/rechazar el
  * comprobante de transferencia vigente, o confirmar el efectivo calculando el
- * cambio. Vive dentro de `pending-orders-panel`, una instancia por orden —
+ * cambio. Vive dentro de `payment-validation-block` (feature 028), una
+ * instancia por orden, completamente independiente de sus hermanas —
  * `confirm_order` (backend) exige un intento `confirmado` antes de dejar
- * avanzar la orden a comanda, así que este panel es el paso previo obligado
- * al botón "Confirmar" de esa tarjeta.
+ * avanzar la orden a comanda, así que este panel es el paso previo obligado.
  */
 @Component({
   selector: 'app-payment-attempt-review-panel',
@@ -53,26 +53,42 @@ import { ToastService } from '../../../shared/feedback/toast.service';
             />
             <button
               (click)="confirmCash(attempt)"
-              [disabled]="busy() || !amountReceived || amountReceived <= 0"
+              [disabled]="busy() || !amountReceived || amountReceived <= 0 || !cashShiftId"
               class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
             </button>
           </div>
+          @if (!cashShiftId) {
+            <p class="text-sm text-red-600">Abre un turno de caja para poder confirmar el pago.</p>
+          }
+          @if (cashChangePreview(); as cambio) {
+            <!--
+              Vista previa mientras el cajero escribe, antes de confirmar
+              (feature 028): antes solo se veía el cambio DESPUÉS de
+              confirmar (bloque lastResolved() más abajo), a diferencia del
+              cobro de mostrador (payment-input.component.ts), que ya lo
+              muestra en vivo — mismo criterio de visibilidad (> 0) para
+              ser consistentes.
+            -->
+            <div class="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
+              <span class="text-sm font-medium text-emerald-800">Cambio</span>
+              <span class="text-lg font-bold text-emerald-700">$ {{ money(cambio.toString()) }}</span>
+            </div>
+          }
         } @else if (attempt.receipt_file_url) {
           <!-- Transferencia con comprobante ya subido: aprobar o rechazar. -->
           <div class="flex items-center gap-2 flex-wrap">
-            <a
-              [href]="attempt.receipt_file_url"
-              target="_blank"
-              rel="noopener"
+            <button
+              type="button"
+              (click)="receiptPreviewOpen.set(true)"
               class="text-sm font-medium text-indigo-600 hover:underline"
             >
-              Ver comprobante ↗
-            </a>
+              Ver comprobante
+            </button>
             <button
               (click)="approve(attempt)"
-              [disabled]="busy()"
+              [disabled]="busy() || !cashShiftId"
               class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               Aprobar
@@ -85,6 +101,9 @@ import { ToastService } from '../../../shared/feedback/toast.service';
               Rechazar
             </button>
           </div>
+          @if (!cashShiftId) {
+            <p class="text-sm text-red-600">Abre un turno de caja para poder aprobar el pago.</p>
+          }
 
           @if (showReject()) {
             <div class="flex items-center gap-2 pt-1 flex-wrap">
@@ -121,10 +140,41 @@ import { ToastService } from '../../../shared/feedback/toast.service';
     } @else {
       <p class="text-sm text-gray-400">El comensal aún no inició el pago.</p>
     }
+
+    <!--
+      Vista previa del comprobante sin salir de la terminal (feature 028,
+      T008): antes target="_blank" abría otra pestaña, lo que le hacía
+      perder de vista la mesa al cajero. Overlay simple a propósito — no hay
+      un modal genérico reutilizable en el codebase, y esto no lo necesita.
+    -->
+    @if (receiptPreviewOpen() && current()?.receipt_file_url; as url) {
+      <div
+        class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+        (click)="receiptPreviewOpen.set(false)"
+      >
+        <div class="max-w-2xl max-h-[90vh] flex flex-col items-center gap-3" (click)="$event.stopPropagation()">
+          <img [src]="url" alt="Comprobante de pago" class="max-w-full max-h-[80vh] rounded-lg shadow-xl object-contain" />
+          <button
+            type="button"
+            (click)="receiptPreviewOpen.set(false)"
+            class="min-h-11 px-5 py-2 bg-white text-gray-800 text-sm font-semibold rounded-xl hover:bg-gray-100"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    }
   `,
 })
 export class PaymentAttemptReviewPanelComponent implements OnChanges {
   @Input({ required: true }) order!: DiningOrder;
+  /**
+   * Turno de caja abierto (feature 028): aprobar/confirmar ya genera la
+   * venta/factura en la misma llamada, así que la necesita — igual que el
+   * cobro de mostrador. `null` si no hay turno abierto; en ese caso las
+   * acciones quedan deshabilitadas.
+   */
+  @Input() cashShiftId: string | null = null;
   /** Se emite tras aprobar/rechazar/confirmar — el padre recarga la orden. */
   @Output() resolved = new EventEmitter<void>();
 
@@ -135,10 +185,12 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly showReject = signal(false);
+  readonly receiptPreviewOpen = signal(false);
   rejectReason = '';
   amountReceived: number | null = null;
 
   ngOnChanges(): void {
+    this.receiptPreviewOpen.set(false);
     if (this.order) this.load();
   }
 
@@ -162,6 +214,25 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
     return Number(value ?? 0).toFixed(2);
   }
 
+  /** Total cobrable de la orden — mismo criterio que el backend
+   *  (`_order_total`): suma `unit_price * quantity` sobre ítems no
+   *  anulados. Ya viene en `order.items`, sin IO adicional. */
+  private orderTotal(): number {
+    return (this.order.items ?? [])
+      .filter((it) => it.estado_cocina !== 'anulado')
+      .reduce((sum, it) => sum + Number(it.unit_price) * it.quantity, 0);
+  }
+
+  /** Vista previa del cambio mientras el cajero escribe el monto recibido,
+   *  antes de confirmar (feature 028; spec 026 FR-004 reutilizado). `null`
+   *  si todavía no hay un monto válido que alcance el total — nada que
+   *  mostrar aún. */
+  cashChangePreview(): number | null {
+    const amount = this.amountReceived;
+    if (!amount || amount < this.orderTotal()) return null;
+    return amount - this.orderTotal();
+  }
+
   async load(): Promise<void> {
     this.loading.set(true);
     try {
@@ -174,9 +245,13 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   }
 
   async approve(attempt: PaymentAttempt): Promise<void> {
+    if (!this.cashShiftId) {
+      this.toast.error('No hay un turno de caja abierto.');
+      return;
+    }
     this.busy.set(true);
     try {
-      await this.api.approvePaymentAttempt(attempt.id);
+      await this.api.approvePaymentAttempt(attempt.id, this.cashShiftId);
       this.toast.success('Comprobante aprobado');
       await this.load();
       this.resolved.emit();
@@ -206,9 +281,17 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
 
   async confirmCash(attempt: PaymentAttempt): Promise<void> {
     if (!this.amountReceived || this.amountReceived <= 0) return;
+    if (!this.cashShiftId) {
+      this.toast.error('No hay un turno de caja abierto.');
+      return;
+    }
     this.busy.set(true);
     try {
-      const result = await this.api.confirmCashPaymentAttempt(attempt.id, this.amountReceived);
+      const result = await this.api.confirmCashPaymentAttempt(
+        attempt.id,
+        this.amountReceived,
+        this.cashShiftId,
+      );
       const cambio = Number(result.change_amount ?? 0);
       this.toast.success(
         cambio > 0 ? `Pago confirmado — cambio: $${cambio.toFixed(2)}` : 'Pago confirmado',
