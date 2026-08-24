@@ -4,6 +4,8 @@ import { injectQuery } from '@tanstack/angular-query-experimental';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { businessToday } from '../../../shared/date-format.util';
 import {
   CashierReportRow,
   CategoryReportRow,
@@ -14,6 +16,9 @@ import {
   SalesSummary,
   TopProduct,
 } from '../interfaces/reports.interface';
+
+/** Zona horaria de respaldo mientras `TenantInfoService.info()` aún no cargó. */
+const DEFAULT_TIMEZONE = 'America/Bogota';
 
 // ── Formas crudas del backend (`/api/v1/reports/*`) ──────────────────────────
 interface SalesReportRes {
@@ -49,6 +54,7 @@ export type ReportGroupBy = 'day' | 'month';
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
   private readonly http = inject(HttpClient);
+  private readonly tenantInfo = inject(TenantInfoService);
   private readonly base = `${environment.apiBaseUrl}/reports`;
 
   readonly period = signal<ReportPeriod>('today');
@@ -247,11 +253,19 @@ export class ReportsService {
     return 'No se pudieron cargar los informes.';
   }
 
-  /** Rango [from, to] en `YYYY-MM-DD` (los endpoints filtran por `sold_at`). */
+  /**
+   * Rango [from, to] en `YYYY-MM-DD` (los endpoints filtran por `sold_at`).
+   *
+   * "Hoy" se calcula con `businessToday(tz)` (spec 030, FR-004) — el día de
+   * negocio en la zona horaria del tenant, no el del calendario del
+   * navegador. `'specific-date'` es la única excepción: usa tal cual el
+   * string que el propio usuario eligió, sin pasar por el reloj (FR-006).
+   */
   private getDateRange(period: ReportPeriod): { from: string; to: string } {
     const fmt = (d: Date) => d.toLocaleDateString('en-CA');
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tz = this.tenantInfo.info()?.timezone ?? DEFAULT_TIMEZONE;
+    const [ty, tm, td] = businessToday(tz).split('-').map(Number);
+    const today = new Date(ty, tm - 1, td);
     let from = today;
     let to = today;
     switch (period) {
@@ -271,8 +285,8 @@ export class ReportsService {
         break;
       }
       case 'year':
-        from = new Date(now.getFullYear(), 0, 1);
-        to = new Date(now.getFullYear(), 11, 31);
+        from = new Date(ty, 0, 1);
+        to = new Date(ty, 11, 31);
         break;
     }
     return { from: fmt(from), to: fmt(to) };

@@ -25,30 +25,11 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
             <div>
               <h3 class="text-lg font-bold text-gray-900">Mesa {{ store.selectedTable()?.number }}</h3>
               <p class="text-xs text-gray-400 mt-0.5">
-                {{ store.selectedOrder() ? ('Pedido · ' + (store.kitchenReady() ? 'listo para cobrar' : 'en preparación')) : 'Pedido nuevo sin guardar' }}
+                {{ store.selectedOrder() ? ('Pedido · ' + headerStatusText()) : 'Pedido nuevo sin guardar' }}
               </p>
             </div>
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">← Volver</button>
           </div>
-
-          @if (store.pendingOfSelectedTable().length; as pendientes) {
-            <!--
-              Sin esto la pantalla se contradice: la tarjeta de la mesa avisa de
-              un pedido por confirmar y aquí pone "Pedido nuevo sin guardar".
-            -->
-            <div class="flex items-center justify-between gap-3 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
-              <p class="text-xs text-violet-800">
-                Esta mesa tiene {{ pendientes }}
-                {{ pendientes === 1 ? 'pedido' : 'pedidos' }} por confirmar.
-              </p>
-              <button
-                (click)="store.centerTab.set('pendientes')"
-                class="text-xs font-semibold text-violet-700 hover:text-violet-900 shrink-0"
-              >
-                Ver
-              </button>
-            </div>
-          }
 
           <div>
             <label class="block text-[11px] font-medium text-gray-500 mb-1">Cliente</label>
@@ -115,10 +96,14 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
                         class="text-xs font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
                       >✓ Listo</button>
                     }
-                    <button
-                      (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
-                      class="text-xs font-medium text-red-600 hover:text-red-700"
-                    >Anular</button>
+                    <!-- Un pedido ya pagado se asume entregado: no se anula
+                         (spec 029, FR-007). -->
+                    @if (!store.selectedOrder()?.paid) {
+                      <button
+                        (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
+                        class="text-xs font-medium text-red-600 hover:text-red-700"
+                      >Anular</button>
+                    }
                   </div>
                 }
               </div>
@@ -138,14 +123,24 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
           @let tot = store.totals();
           <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(tot.subtotal) }}</span></div>
           <div class="flex justify-between text-sm">
-            <button (click)="store.toggleDiscountPanel()" class="text-indigo-600 hover:text-indigo-700 font-medium">Aplicar descuento (F4)</button>
+            <!-- Spec 029, Historia 2: sin control de descuento manual — el
+                 único descuento posible es el automático por promoción. -->
+            <span>Descuento</span>
             <span>{{ tot.discount > 0 ? '- ' + store.fmt(tot.discount) : store.fmt(0) }}</span>
           </div>
           <div class="border-t border-gray-200 my-1"></div>
           <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
           <div class="flex gap-2 pt-1">
-            @if (store.hasDraft()) {
+            @if (store.hasDraft() && store.manualOrderBuilding()) {
+              <!-- Pedido de mostrador nuevo (feature 028, T023): una sola
+                   llamada con hold_for_payment, no toca cocina/inventario
+                   hasta cobrarlo desde el panel de la derecha. -->
+              <button (click)="store.createManualOrderFromDraft()" [disabled]="store.submitting()"
+                class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                {{ store.submitting() ? 'Creando…' : 'Crear pedido' }}
+              </button>
+            } @else if (store.hasDraft()) {
               <button (click)="store.saveOrder()" [disabled]="store.submitting()"
                 class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
                 {{ store.submitting() ? 'Guardando…' : 'Guardar pedido' }}
@@ -158,26 +153,6 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
               </button>
             }
           </div>
-
-          <!-- Popover de descuento -->
-          @if (store.discountPanelOpen()) {
-            <div class="absolute left-4 right-4 bottom-full mb-2 bg-white rounded-xl border border-gray-100 shadow-xl p-4 space-y-3 z-10">
-              <div class="font-bold text-gray-900 text-sm">Aplicar descuento</div>
-              <div class="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-                <button (click)="store.setDiscountType('percent')" class="flex-1 py-1.5" [class]="store.discountType() === 'percent' ? 'bg-indigo-600 text-white' : 'text-gray-600'">Porcentaje</button>
-                <button (click)="store.setDiscountType('fixed')" class="flex-1 py-1.5 border-l border-gray-200" [class]="store.discountType() === 'fixed' ? 'bg-indigo-600 text-white' : 'text-gray-600'">Valor fijo</button>
-              </div>
-              <input type="number" min="0" [value]="store.discountValue()" (input)="store.discountValue.set($any($event.target).value)"
-                [placeholder]="store.discountType() === 'percent' ? '% descuento' : '$ descuento'"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-              <input type="text" [value]="store.discountReason()" (input)="store.discountReason.set($any($event.target).value)" placeholder="Motivo"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-              <div class="flex justify-end gap-2">
-                <button (click)="store.cancelDiscount()" class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
-                <button (click)="store.applyDiscount()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700">Aplicar</button>
-              </div>
-            </div>
-          }
         </div>
       </div>
     }
@@ -185,6 +160,17 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
 })
 export class PosOrderPanelComponent {
   readonly store = inject(PosTerminalStore);
+
+  /**
+   * Spec 029, Historia 3: "listo para cobrar" exige pago Y cocina, las dos a
+   * la vez — antes solo miraba `kitchenReady()`. `kitchenReady()` en sí no
+   * cambia: sigue controlando, sin relación con el pago, cuándo se oculta
+   * el botón "Marcar pedido listo".
+   */
+  headerStatusText(): string {
+    if (!this.store.kitchenReady()) return 'en preparación';
+    return this.store.selectedOrder()?.paid ? 'listo para cobrar' : 'pago pendiente';
+  }
 
   /** Las mismas etiquetas que ve el comensal en el menú del QR. */
   statusLabel(status: KitchenStatus): string {

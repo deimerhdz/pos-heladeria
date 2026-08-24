@@ -12,17 +12,25 @@ import { PosTablesPanelComponent } from '../components/pos-tables-panel.componen
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
 import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.component';
-import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.component';
+import { PaymentValidationBlockComponent } from '../components/payment-validation-block.component';
+import { ManualOrderPanelComponent } from '../components/manual-order-panel.component';
 
 /**
  * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
- * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F4/ESC/Ctrl+P).
+ * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F3/ESC/Ctrl+P).
+ * `F4` (descuento manual) se retiró en spec 029, Historia 2 — prohibición
+ * absoluta, sin excepción de rol.
  *
- * La columna central tiene dos pestañas: el pedido de la mesa y los pedidos que
- * los comensales enviaron por QR y esperan confirmación. Antes eso era un botón
- * que solo aparecía cuando ya había pedidos, así que nadie se enteraba de que la
- * función existía; ahora el contador está siempre a la vista y suena una campana
- * cuando entra uno nuevo.
+ * Feature 028 ("terminal híbrida por origen"): la columna central ya no tiene
+ * pestañas — antes duplicaban la misma información ("Pedido de la mesa" /
+ * "Pagos por confirmar") y el cajero tenía que acordarse de ir a mirar la
+ * segunda. Ahora se decide sola según lo que tiene la mesa
+ * (`store.centralState()`, ver `pos-terminal.store.ts`):
+ *
+ * - un pedido QR esperando validación de pago → `app-payment-validation-block`
+ * - una mesa libre sin pedido en curso → `app-manual-order-panel` (CTA / F3)
+ * - cualquier otro caso (armando un pedido, o uno ya en cocina) →
+ *   `app-pos-order-panel`, sin cambios de contenido.
  */
 @Component({
   selector: 'app-table-sessions',
@@ -34,7 +42,8 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
     PosCatalogDrawerComponent,
-    PendingOrdersPanelComponent,
+    PaymentValidationBlockComponent,
+    ManualOrderPanelComponent,
   ],
   template: `
     <div class="flex flex-col -m-4 md:-m-6 bg-gray-50 h-[calc(100dvh-57px)]">
@@ -46,7 +55,7 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
         </div>
         <div class="flex items-center gap-3">
           <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
-            <span>F2 Buscar</span><span>F4 Descuento</span><span>ESC Cancelar</span>
+            <span>F2 Buscar</span><span>F3 Orden manual</span><span>ESC Cancelar</span>
           </div>
         </div>
       </div>
@@ -61,47 +70,18 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
           <app-pos-tables-panel />
           <div class="flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white">
             <!--
-              Pestañas de la columna central. Viven aquí y no dentro del panel del
-              pedido porque la cabecera de ese panel solo existe cuando hay una
-              mesa seleccionada, y el aviso de pedidos por confirmar tiene que
-              verse siempre.
+              Sin pestañas (feature 028): la columna central se decide sola
+              según store.centralState(). El botón de silenciar la campana
+              vive aquí porque tiene que verse pase lo que pase en el centro.
             -->
-            <div class="flex items-center justify-between gap-2 px-4 border-b border-gray-200 shrink-0">
-              <nav class="flex gap-1">
-                <button
-                  (click)="store.centerTab.set('pedido')"
-                  class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
-                  [class]="
-                    store.centerTab() === 'pedido'
-                      ? 'border-indigo-600 text-indigo-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  "
-                >
-                  Pedido de la mesa
-                </button>
-                <button
-                  (click)="store.centerTab.set('pendientes')"
-                  class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5"
-                  [class]="
-                    store.centerTab() === 'pendientes'
-                      ? 'border-indigo-600 text-indigo-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  "
-                >
-                  🔔 Pagos por confirmar
-                  <span
-                    class="px-1.5 py-0.5 rounded-full text-xs font-bold"
-                    [class]="
-                      store.pendingOrders().length > 0
-                        ? 'bg-violet-600 text-white animate-pulse'
-                        : 'bg-gray-100 text-gray-500'
-                    "
-                  >
-                    {{ store.pendingOrders().length }}
-                  </span>
-                </button>
-              </nav>
-
+            <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 shrink-0">
+              <span class="text-sm font-semibold text-gray-500">
+                @switch (store.centralState()) {
+                  @case ('validar-pago') { 🔔 Pagos por confirmar }
+                  @case ('mesa-libre') { Mesa libre }
+                  @default { Pedido de la mesa }
+                }
+              </span>
               <button
                 (click)="store.sound.toggleMute()"
                 [title]="
@@ -115,16 +95,23 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
               </button>
             </div>
 
-            @if (store.centerTab() === 'pedido') {
-              <app-pos-order-panel />
-            } @else {
-              <div class="flex-1 overflow-y-auto p-4">
-                <app-pending-orders-panel
-                  [orders]="store.pendingOrders()"
-                  [categories]="store.categories()"
-                  (refresh)="store.reload()"
-                />
-              </div>
+            @switch (store.centralState()) {
+              @case ('validar-pago') {
+                <div class="flex-1 overflow-y-auto p-4">
+                  <app-payment-validation-block
+                    [orders]="store.pendingOfSelectedTable()"
+                    [categories]="store.categories()"
+                    [cashShiftId]="store.cashShiftId()"
+                    (refresh)="store.reload()"
+                  />
+                </div>
+              }
+              @case ('mesa-libre') {
+                <app-manual-order-panel />
+              }
+              @default {
+                <app-pos-order-panel />
+              }
             }
           </div>
           <app-pos-checkout-panel />
@@ -179,13 +166,19 @@ import { PendingOrdersPanelComponent } from '../components/pending-orders-panel.
           }
 
           <div class="flex gap-2 justify-center pt-1">
-            <button
-              (click)="store.printReceipt()"
-              [disabled]="store.lastReceipts().length === 0"
-              class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {{ store.lastReceipts().length > 1 ? '🧾 Imprimir todos' : '🧾 Imprimir factura' }}
-            </button>
+            @if (store.lastReceipts().length > 1) {
+              <!-- Spec 029, Historia 4: el caso de un solo comprobante ya no
+                   imprime desde aquí — duplicaba "Imprimir Factura" de la
+                   barra lateral (D1 de research.md). El de cuenta dividida
+                   sí se conserva: no hay equivalente en la barra lateral
+                   para imprimir el ticket de cada comensal de una vez. -->
+              <button
+                (click)="store.printReceipt()"
+                class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                🧾 Imprimir todos
+              </button>
+            }
             <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
           </div>
         </div>
@@ -212,15 +205,20 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     if (e.key === 'F2') {
       e.preventDefault();
       this.tablesPanel()?.focusSearch();
-    } else if (e.key === 'F4') {
+    } else if (e.key === 'F3') {
       e.preventDefault();
-      if (this.store.hasActiveOrder()) this.store.toggleDiscountPanel();
+      // Mismo gatillo que el CTA "+ Crear Orden Manual" (feature 028, T022):
+      // solo hace algo si hay una mesa libre seleccionada — `startManualOrder`
+      // ya se cuida de eso.
+      this.store.startManualOrder();
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
-      else if (this.store.discountPanelOpen()) this.store.toggleDiscountPanel();
       else this.store.cancelSelection();
     } else if (!typing && e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey)) {
-      if (this.store.successOpen() && this.store.lastReceipts().length > 0) {
+      // Spec 029, Historia 4: solo el caso de cuenta dividida imprime desde
+      // el diálogo de éxito — el de un solo comprobante ya no tiene acción
+      // de impresión aquí (usa "Imprimir Factura" de la barra lateral).
+      if (this.store.successOpen() && this.store.lastReceipts().length > 1) {
         e.preventDefault();
         this.store.printReceipt();
       }

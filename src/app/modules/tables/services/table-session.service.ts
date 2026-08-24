@@ -89,6 +89,18 @@ export class TableSessionService {
     );
   }
 
+  /**
+   * Libera una mesa ya cobrada por completo, sin cobrar nada (feature 028).
+   *
+   * `409` si queda algo sin pagar o cocina no ha terminado algún ítem —
+   * `extractError` ya sabe leer ese mensaje.
+   */
+  release(tableSessionId: string): Promise<void> {
+    return firstValueFrom(
+      this.http.post<void>(`${this.api}/table-sessions/${tableSessionId}/release`, {}),
+    );
+  }
+
   /** Pedidos sin confirmar / comida en curso que impiden cerrar (`409`). */
   closeBlocked(err: unknown): CloseBlockedDetail | null {
     if (!(err instanceof HttpErrorResponse) || err.status !== 409) return null;
