@@ -15,7 +15,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { CashShift } from '../../cash-register/interfaces/cash.interface';
-import { PaymentMethod, Sale } from '../../sales/interfaces/sales.interface';
+import { PaymentMethod, PaymentMethodCheckoutOption, Sale } from '../../sales/interfaces/sales.interface';
 
 const API = environment.apiBaseUrl;
 
@@ -35,9 +35,15 @@ function manualOrder(): DiningOrder {
 }
 
 const methods: PaymentMethod[] = [
-  { id: 'pm-cash', name: 'Efectivo', type: 'cash', is_cash: true, active: true },
-  { id: 'pm-transfer', name: 'Datáfono', type: 'card', is_cash: false, active: true },
+  { id: 'pm-cash', catalog_id: null, name: 'Efectivo', type: 'cash', is_cash: true, active: true, is_complete: true },
+  { id: 'pm-transfer', catalog_id: null, name: 'Datáfono', type: 'card', is_cash: false, active: true, is_complete: true },
 ];
+
+/** Spec 032: lo que ve el checkout es el listado ya filtrado y sin
+ * `payment_info` — mismo `id`/`name`/`is_cash` que `methods`, forma reducida. */
+const checkoutOptions: PaymentMethodCheckoutOption[] = methods.map(
+  ({ id, name, is_cash }) => ({ id, name, is_cash }),
+);
 
 /** Feature 028, T024/T026/T032/T033/T035: panel de cobro editable de un
  *  pedido de mostrador (modo `terminal-pos`, canal `counter`/`waiter`). */
@@ -74,6 +80,7 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       status: 'open',
     } as CashShift);
     TestBed.inject(PaymentMethodService).methods.set(methods);
+    TestBed.inject(PaymentMethodService).checkoutOptions.set(checkoutOptions);
 
     store.orders.set([manualOrder()]);
     store.selectedTableId.set('t1');
@@ -286,6 +293,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
       status: 'open',
     } as CashShift);
     TestBed.inject(PaymentMethodService).methods.set(methods);
+    TestBed.inject(PaymentMethodService).checkoutOptions.set(checkoutOptions);
 
     store.orders.set([abiertaOrder()]);
     store.selectedTableId.set('t1');

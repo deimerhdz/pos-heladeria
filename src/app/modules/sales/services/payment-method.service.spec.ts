@@ -36,17 +36,31 @@ describe('PaymentMethodService', () => {
     expect(service.methods()[0].name).toBe('Efectivo');
   });
 
-  it('creates a payment method with its type then reloads', async () => {
-    const p = service.create('Nequi', 'transfer');
+  it('activates a payment method from the catalog then reloads (spec 032)', async () => {
+    const p = service.create('cat-nequi', { celular: '3001234567' });
     const req = http.expectOne(base);
     expect(req.request.method).toBe('POST');
-    // El `type` es lo que agrupa el arqueo; `is_cash` se deriva de él para
-    // respetar la invariante del backend.
-    expect(req.request.body).toEqual({ name: 'Nequi', type: 'transfer', is_cash: false });
-    req.flush({ id: 'pm2', name: 'Nequi', type: 'transfer', is_cash: false, active: true });
+    // Ya no se manda `name`/`type` libres — solo `catalog_id` (FR-007/FR-011).
+    expect(req.request.body).toEqual({
+      catalog_id: 'cat-nequi',
+      payment_info: { celular: '3001234567' },
+    });
+    req.flush({
+      id: 'pm2', catalog_id: 'cat-nequi', name: 'Nequi', type: 'transfer',
+      is_cash: false, active: true, is_complete: true,
+    });
     await tick();
     http.expectOne(base).flush([]);
     expect(await p).toBe(true);
+  });
+
+  it('loads only the methods available for checkout (spec 032, FR-012)', async () => {
+    const p = service.loadAvailableForCheckout();
+    const req = http.expectOne((r) => r.url === base && r.params.get('available') === 'true');
+    expect(req.request.method).toBe('GET');
+    req.flush([{ id: 'pm1', name: 'Efectivo', is_cash: true }]);
+    await p;
+    expect(service.checkoutOptions()).toEqual([{ id: 'pm1', name: 'Efectivo', is_cash: true }]);
   });
 
   it('maps an error', async () => {

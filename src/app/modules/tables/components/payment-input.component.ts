@@ -9,7 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { PaymentMethod } from '../../sales/interfaces/sales.interface';
+import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import {
   PaymentDraft,
   changeDue,
@@ -107,7 +107,7 @@ import { formatMoney } from '../services/receipt.util';
 export class PaymentInputComponent implements OnChanges {
   /** Lo que hay que cubrir con este cobro. */
   @Input() total = 0;
-  @Input() methods: PaymentMethod[] = [];
+  @Input() methods: PaymentMethodCheckoutOption[] = [];
   /** Estado del pago cada vez que cambia; el padre lo usa para validar y cobrar. */
   @Output() changed = new EventEmitter<PaymentDraft>();
 
