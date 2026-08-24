@@ -53,41 +53,70 @@ interface SplitDraft {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-full">
-      <h2 class="text-sm font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
+      <h2 class="text-base font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
 
       @if (!bill) {
         @if (orphan) {
           <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-1">
-            <p class="text-xs font-semibold text-amber-900">No se puede cobrar esta mesa</p>
-            <p class="text-xs text-amber-800">
+            <p class="text-base font-semibold text-amber-900">No se puede cobrar esta mesa</p>
+            <p class="text-sm text-amber-800">
               Tiene pedidos sin cobrar, pero su sesión está cerrada. Avisa al administrador.
             </p>
           </div>
         } @else {
-          <p class="text-xs text-gray-400 py-6 text-center">Selecciona una mesa con consumo.</p>
+          <p class="text-base text-gray-400 py-6 text-center">Selecciona una mesa con consumo.</p>
         }
       } @else {
-        <!-- Desglose -->
-        <div class="space-y-1.5 mb-4">
+        <!-- Desglose: ítems, descuento y subtotal por comensal (spec 026, FR-006) -->
+        <div class="space-y-3 mb-4">
           @for (line of bill.split; track line.participant_id) {
-            <div class="flex items-center justify-between text-sm">
-              <span class="text-gray-700 truncate">{{ lineLabel(line.display_label) }}</span>
-              <span class="font-medium text-gray-900">$ {{ +line.subtotal | number: '1.2-2' }}</span>
+            <div class="space-y-0.5">
+              <div class="flex items-center justify-between text-base">
+                <span class="text-gray-700 font-medium truncate">{{ lineLabel(line.display_label) }}</span>
+                <span class="font-medium text-gray-900">$ {{ +line.subtotal | number: '1.2-2' }}</span>
+              </div>
+              <ul class="pl-3 space-y-0.5">
+                @for (item of line.items; track $index) {
+                  <li class="flex items-center justify-between text-sm text-gray-500">
+                    <span class="truncate">{{ +item.quantity }}× {{ item.description }}</span>
+                    <span>$ {{ +item.line_total | number: '1.2-2' }}</span>
+                  </li>
+                }
+              </ul>
+              @if (+line.discount > 0) {
+                <div class="flex items-center justify-between text-sm text-emerald-700 pl-3">
+                  <span>Descuento aplicado</span>
+                  <span>- $ {{ +line.discount | number: '1.2-2' }}</span>
+                </div>
+              }
             </div>
           }
           <div class="flex items-center justify-between pt-2 border-t border-gray-100">
-            <span class="text-sm font-semibold text-gray-800">Total</span>
-            <span class="text-base font-bold text-gray-900">
+            <span class="text-base font-semibold text-gray-800">Total</span>
+            <span class="text-lg font-bold text-gray-900">
               $ {{ +bill.total | number: '1.2-2' }}
             </span>
           </div>
         </div>
 
+        @if (readOnly) {
+          <!--
+            Feature 028, T004/T009: pedido de canal qr — el comensal ya pagó a
+            distancia y el cajero solo valida el comprobante (en el bloque de
+            validación de pagos, no aquí). Mostrar el selector de método y el
+            botón "Cobrar y cerrar mesa" en este modo era justo el bug de
+            origen: cobrar de nuevo una mesa ya pagada por QR fallaba con un
+            error que el cajero no sabía interpretar.
+          -->
+          <p class="text-sm text-gray-400 py-2">
+            Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
+          </p>
+        } @else {
         <!-- Modo de cobro -->
         <div class="flex gap-2 mb-3">
           <button
             (click)="mode.set('unified')"
-            class="flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors"
+            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors"
             [class]="
               mode() === 'unified'
                 ? 'bg-indigo-600 text-white border-indigo-600'
@@ -99,7 +128,7 @@ interface SplitDraft {
           <button
             (click)="mode.set('split')"
             [disabled]="!canSplit()"
-            class="flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-40"
+            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40"
             [class]="
               mode() === 'split'
                 ? 'bg-indigo-600 text-white border-indigo-600'
@@ -111,7 +140,7 @@ interface SplitDraft {
         </div>
 
         @if (!canSplit()) {
-          <p class="text-[11px] text-gray-400 mb-3">
+          <p class="text-sm text-gray-400 mb-3">
             Dividir requiere consumo asignado a más de un comensal.
           </p>
         }
@@ -125,12 +154,12 @@ interface SplitDraft {
               (changed)="unifiedPayment.set($event)"
             />
           } @else {
-            <p class="text-xs text-gray-500">Cómo paga cada comensal con consumo:</p>
+            <p class="text-sm text-gray-500">Cómo paga cada comensal con consumo:</p>
             @for (d of splits(); track d.participantId) {
               <div class="border border-gray-200 rounded-lg p-2">
                 <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-xs font-semibold text-gray-700 truncate">{{ d.label }}</span>
-                  <span class="text-sm font-medium text-gray-900">
+                  <span class="text-base font-semibold text-gray-700 truncate">{{ d.label }}</span>
+                  <span class="text-base font-medium text-gray-900">
                     $ {{ d.subtotal | number: '1.2-2' }}
                   </span>
                 </div>
@@ -146,17 +175,18 @@ interface SplitDraft {
 
         @if (error()) {
           <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-            <p class="text-xs text-red-700">{{ error() }}</p>
+            <p class="text-sm text-red-700">{{ error() }}</p>
           </div>
         }
 
         <button
           (click)="charge()"
           [disabled]="submitting() || !ready()"
-          class="w-full py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="w-full min-h-11 py-2.5 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {{ submitting() ? 'Cobrando...' : 'Cobrar y cerrar mesa' }}
         </button>
+        }
       }
     </div>
   `,
@@ -169,6 +199,12 @@ export class SessionBillPanelComponent implements OnChanges {
   @Input() customerName = '';
   /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
   @Input() orphan = false;
+  /**
+   * Feature 028 (T004/T009): `true` cuando el pedido activo es de canal `qr`
+   * — el comensal ya pagó a distancia. Oculta el selector de método y el
+   * botón "Cobrar y cerrar mesa"; solo queda el desglose de lectura.
+   */
+  @Input() readOnly = false;
   /**
    * Gancho que corre justo antes de cerrar: si devuelve `false` no se cobra.
    *

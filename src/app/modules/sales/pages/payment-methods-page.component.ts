@@ -1,6 +1,13 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { PaymentMethodService } from '../services/payment-method.service';
-import { PaymentMethodType } from '../interfaces/sales.interface';
+import { PaymentMethod, PaymentMethodType } from '../interfaces/sales.interface';
+
+/** Una fila del formulario de `payment_info` (sin esquema fijo — spec 024). */
+interface InfoRow {
+  key: string;
+  value: string;
+}
 
 /** Clasificaciones que entiende el arqueo de caja. */
 const TYPES: { value: PaymentMethodType; label: string; icon: string }[] = [
@@ -13,6 +20,7 @@ const TYPES: { value: PaymentMethodType; label: string; icon: string }[] = [
 @Component({
   selector: 'app-payment-methods-page',
   standalone: true,
+  imports: [FormsModule],
   template: `
     <div class="space-y-6 max-w-2xl">
       <div class="flex items-center justify-between">
@@ -55,11 +63,19 @@ const TYPES: { value: PaymentMethodType; label: string; icon: string }[] = [
                       <p class="text-xs text-gray-400">{{ label(m.type) }}</p>
                     </div>
                   </div>
-                  @if (m.active) {
-                    <span class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-green-100 text-green-700">Activo</span>
-                  } @else {
-                    <span class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">Inactivo</span>
-                  }
+                  <button
+                    (click)="toggleActive(m)"
+                    [disabled]="svc.isSubmitting()"
+                    [title]="m.active ? 'Desactivar' : 'Activar'"
+                    class="text-xs px-2.5 py-0.5 rounded-full font-medium transition-colors disabled:opacity-40"
+                    [class]="
+                      m.active
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    "
+                  >
+                    {{ m.active ? 'Activo' : 'Inactivo' }}
+                  </button>
                 </li>
               }
             </ul>
@@ -110,6 +126,48 @@ const TYPES: { value: PaymentMethodType; label: string; icon: string }[] = [
                 al dinero esperado en el cajón.
               </p>
             </div>
+            @if (type() !== 'cash') {
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  Datos de pago
+                </label>
+                <p class="text-xs text-gray-400 mb-2">
+                  Lo que el comensal necesita ver para transferir (cuenta, titular, teléfono…).
+                </p>
+                <div class="space-y-1.5">
+                  @for (row of infoRows(); track $index) {
+                    <div class="flex gap-1.5">
+                      <input
+                        type="text"
+                        [(ngModel)]="row.key"
+                        placeholder="Campo (ej: cuenta)"
+                        class="w-1/3 px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                      <input
+                        type="text"
+                        [(ngModel)]="row.value"
+                        placeholder="Valor"
+                        class="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                      <button
+                        type="button"
+                        (click)="removeInfoRow($index)"
+                        class="px-2 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  }
+                </div>
+                <button
+                  type="button"
+                  (click)="addInfoRow()"
+                  class="text-xs font-medium text-indigo-600 hover:text-indigo-700 mt-1.5"
+                >
+                  + Agregar campo
+                </button>
+              </div>
+            }
             @if (svc.error()) {
               <p class="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{{ svc.error() }}</p>
             }
@@ -139,9 +197,22 @@ export class PaymentMethodsPageComponent implements OnInit {
   readonly showForm = signal(false);
   readonly name = signal('');
   readonly type = signal<PaymentMethodType>('cash');
+  readonly infoRows = signal<InfoRow[]>([]);
 
   ngOnInit(): void {
     this.svc.load();
+  }
+
+  addInfoRow(): void {
+    this.infoRows.update((rows) => [...rows, { key: '', value: '' }]);
+  }
+
+  removeInfoRow(index: number): void {
+    this.infoRows.update((rows) => rows.filter((_, i) => i !== index));
+  }
+
+  async toggleActive(method: PaymentMethod): Promise<void> {
+    await this.svc.toggleActive(method);
   }
 
   label(type: PaymentMethodType): string {
@@ -156,12 +227,20 @@ export class PaymentMethodsPageComponent implements OnInit {
     this.showForm.set(false);
     this.name.set('');
     this.type.set('cash');
+    this.infoRows.set([]);
     this.svc.error.set(null);
   }
 
   async submit(): Promise<void> {
     if (!this.name().trim()) return;
-    const ok = await this.svc.create(this.name().trim(), this.type());
+    const paymentInfo = this.infoRows()
+      .filter((r) => r.key.trim() && r.value.trim())
+      .reduce<Record<string, string>>((acc, r) => ({ ...acc, [r.key.trim()]: r.value.trim() }), {});
+    const ok = await this.svc.create(
+      this.name().trim(),
+      this.type(),
+      Object.keys(paymentInfo).length ? paymentInfo : null,
+    );
     if (ok) this.closeForm();
   }
 }

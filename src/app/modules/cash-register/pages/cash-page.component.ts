@@ -7,6 +7,7 @@ import { CashHistoryComponent } from '../components/cash-history.component';
 import { CashOverviewComponent } from '../components/cash-overview.component';
 import { CashReportComponent } from '../components/cash-report.component';
 import { CashSessionStore } from '../services/cash-session.store';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 /**
  * Contenedor del Módulo de Caja (rediseño SkeiloPOS, backend real).
@@ -20,7 +21,7 @@ import { CashSessionStore } from '../services/cash-session.store';
   selector: 'app-cash-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [CashSessionStore],
+  providers: [CashSessionStore, TenantDatePipe],
   imports: [
     CashOverviewComponent,
     CashHistoryComponent,

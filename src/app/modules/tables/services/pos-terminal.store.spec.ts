@@ -1,16 +1,31 @@
-import { deriveTableStatus, newPendingIds } from './pos-terminal.store';
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { environment } from '../../../../environments/environment';
+import { PosTerminalStore, currentNow, deriveTableStatus, newPendingIds } from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { Promotion } from '../../promotions/interfaces/promotion.interface';
+import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
+import { PromotionService } from '../../promotions/services/promotion.service';
+import { ToastService } from '../../../shared/feedback/toast.service';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { Sale } from '../../sales/interfaces/sales.interface';
+
+const API = environment.apiBaseUrl;
 
 function order(
   id: string,
   status: DiningOrder['status'],
   cocina: DiningOrderItem['estado_cocina'][] = [],
+  paid?: boolean,
 ): DiningOrder {
   return {
     id,
     channel: 'qr',
     status,
     created_at: '2026-07-29T12:00:00',
+    paid,
     items: cocina.map((estado_cocina, i) => ({
       id: `${id}-i${i}`,
       product_variant_id: 'v1',
@@ -59,6 +74,36 @@ describe('deriveTableStatus', () => {
     );
   });
 
+  // ── feature 028, T010/T037/T039: el badge "Por confirmar" es solo de QR ──
+  describe('badge "Por confirmar" — solo canal qr (T010/T037/T039)', () => {
+    function counterOrder(id: string, status: DiningOrder['status']): DiningOrder {
+      return { ...order(id, status), channel: 'counter' };
+    }
+
+    it('NO marca por confirmar un pedido de mostrador en espera de armarse (hold_for_payment)', () => {
+      // Un pedido `counter` también vive en `recibida` mientras el cajero lo
+      // arma (feature 028), pero no tiene ningún pago que revisar: mostrarlo
+      // como "Por confirmar" sería una falsa alarma para el resto del staff.
+      expect(deriveTableStatus([counterOrder('o1', 'recibida')], 'ocupada')).not.toBe(
+        'por_confirmar',
+      );
+    });
+
+    it('caso mixto: un comensal ya confirmado y otro QR todavía pendiente → sigue "Por confirmar"', () => {
+      const confirmado = order('o1', 'abierta', ['pendiente']);
+      const pendiente = order('o2', 'recibida', ['pendiente']);
+
+      expect(deriveTableStatus([confirmado, pendiente], 'ocupada')).toBe('por_confirmar');
+    });
+
+    it('caso mixto: un pedido de mostrador armándose junto a uno QR pendiente → sigue "Por confirmar"', () => {
+      const mostrador = counterOrder('o1', 'recibida');
+      const qrPendiente = order('o2', 'recibida', ['pendiente']);
+
+      expect(deriveTableStatus([mostrador, qrPendiente], 'ocupada')).toBe('por_confirmar');
+    });
+  });
+
   it('ocupa la mesa aunque no haya pedidos si el backend la da por ocupada', () => {
     // Comensal que escaneó el QR y todavía no pidió nada.
     expect(deriveTableStatus([], 'ocupada')).toBe('ocupada');
@@ -82,13 +127,43 @@ describe('deriveTableStatus', () => {
     expect(deriveTableStatus([order('o1', 'abierta', ['pendiente', 'listo'])], 'ocupada')).toBe(
       'en_preparacion',
     );
-    expect(deriveTableStatus([order('o1', 'abierta', ['listo', 'listo'])], 'ocupada')).toBe(
+    // Spec 029: "listo" exige además el pago — sin él, `paid` (`o1`, tercer
+    // arg de cocina omitido, cuarto `true`) es lo que hace la diferencia.
+    expect(deriveTableStatus([order('o1', 'abierta', ['listo', 'listo'], true)], 'ocupada')).toBe(
       'listo',
     );
   });
 
   it('ignora los ítems anulados al mirar la preparación', () => {
     expect(deriveTableStatus([order('o1', 'abierta', ['anulado'])], 'ocupada')).toBe('ocupada');
+  });
+
+  // ── spec 029, Historia 3: "Listo" exige pago Y cocina, las dos a la vez ──
+  describe('"Listo" exige pago (spec 029)', () => {
+    it('cocina lista pero sin pagar → "Pago pendiente", no "Listo"', () => {
+      // El caso real que motivó la spec: pedido de mesero ('abierta'),
+      // cocina ya terminó, pero `paid` sigue `false` — nunca pasó por
+      // `checkout_and_send`/`pay_order` todavía.
+      expect(deriveTableStatus([order('o1', 'abierta', ['listo'], false)], 'ocupada')).toBe(
+        'pago_pendiente',
+      );
+    });
+
+    it('cocina lista y ya pagado → "Listo"', () => {
+      expect(deriveTableStatus([order('o1', 'abierta', ['listo'], true)], 'ocupada')).toBe('listo');
+    });
+
+    it('pagado pero cocina todavía en curso → no muestra "Listo"', () => {
+      expect(
+        deriveTableStatus([order('o1', 'abierta', ['en_preparacion'], true)], 'ocupada'),
+      ).toBe('en_preparacion');
+    });
+
+    it('varios pedidos: uno pagado y listo, otro listo pero sin pagar → sigue "Pago pendiente"', () => {
+      const pagado = order('o1', 'abierta', ['listo'], true);
+      const sinPagar = order('o2', 'abierta', ['listo'], false);
+      expect(deriveTableStatus([pagado, sinPagar], 'ocupada')).toBe('pago_pendiente');
+    });
   });
 });
 
@@ -121,5 +196,488 @@ describe('newPendingIds tras una reconexión', () => {
     // Es el motivo de comparar ids y no cantidades: el contador vuelve a su
     // sitio, pero el aviso debió sonar cuando entró.
     expect(newPendingIds(new Set(['o1']), [order('o1', 'abierta')])).toEqual([]);
+  });
+});
+
+describe('currentNow — A-09, guarda usada por combos/productDiscountBadges/cartView/orderSubtotal', () => {
+  it('antes del primer sync (ready() false), devuelve null en vez del reloj del dispositivo', () => {
+    const promotionService = { ready: () => false, now: () => new Date('2026-01-01T00:00:00Z') };
+
+    expect(currentNow(promotionService)).toBeNull();
+  });
+
+  it('tras el sync, devuelve promotionService.now(), no el reloj del sistema de pruebas', () => {
+    // Reloj real del entorno de pruebas: 2026-08-18T22:30 UTC. `now()` del
+    // doble de PromotionService dice otra cosa — la única forma de que el
+    // resultado coincida con el doble es que currentNow no use Date.now().
+    const serverInstant = new Date('2026-08-15T17:30:00Z');
+    const promotionService = { ready: () => true, now: () => serverInstant };
+
+    expect(currentNow(promotionService)).toBe(serverInstant);
+  });
+});
+
+describe('discountedUnitPrice guardado por currentNow — A-09, patrón usado por cartView/orderSubtotal', () => {
+  function promo(overrides: Partial<Promotion> = {}): Promotion {
+    return {
+      id: overrides.id ?? 'p1',
+      name: overrides.name ?? 'Promo',
+      description: null,
+      type: 'percent',
+      value: '20',
+      status: 'active',
+      priority: 0,
+      starts_at: null,
+      ends_at: null,
+      days_of_week: null,
+      start_time: '17:00',
+      end_time: '19:00',
+      min_qty: 1,
+      targets: [],
+      combo_items: [],
+      ...overrides,
+    };
+  }
+
+  /** El mismo patrón que aplican cartView/orderSubtotal tras la corrección:
+   *  sin hora sincronizada, ningún descuento de previsualización. */
+  function unitPriceComoEnElStore(
+    promotionService: { ready(): boolean; now(): Date },
+    promos: Promotion[],
+    price: number,
+  ): number {
+    const now = currentNow(promotionService);
+    if (now === null) return price;
+    return discountedUnitPrice(promos, now, 'p1', 'c1', price, 1);
+  }
+
+  it('sin sync (ready() false), el carrito no aplica descuento de previsualización (FR-004)', () => {
+    // El reloj del dispositivo diría "dentro de ventana" si se usara, pero no
+    // hay sync todavía: no se llama a discountedUnitPrice en absoluto.
+    const promotionService = { ready: () => false, now: () => new Date('2026-08-15T17:30:00Z') };
+    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
+
+    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(10000);
+  });
+
+  it('tras sync, el precio refleja el descuento con la hora del servidor, no el reloj local (FR-002, CA2)', () => {
+    // Reloj "local" simulado fuera de ventana (22:30); servidor (mock) dice
+    // que son las 17:30 — dentro de la ventana 17:00-19:00 de la promo.
+    const promotionService = { ready: () => true, now: () => new Date('2026-08-15T17:30:00') };
+    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
+
+    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(8000);
+  });
+});
+
+// ── feature 028, T010: `pendingOrders` (bloque de validación de pagos) ──────
+describe('PosTerminalStore.pendingOrders — solo canal qr', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('incluye los pedidos qr en recibida y excluye los de mostrador (hold_for_payment)', () => {
+    store.orders.set([
+      order('qr1', 'recibida'),
+      { ...order('counter1', 'recibida'), channel: 'counter' },
+      order('qr2', 'abierta'),
+    ]);
+
+    expect(store.pendingOrders().map((o) => o.id)).toEqual(['qr1']);
+  });
+});
+
+/**
+ * T033 (FR-012): resolver la venta de un pedido ya facturado, sea QR o de
+ * mostrador, cobrado en esta pestaña o en otra (o tras recargar la página).
+ * Se prueba directamente sobre el store —sin componente ni click— porque
+ * `printOrderInvoice` termina en `printReceiptHtml` (iframe + `window.print`),
+ * que esta suite no ejercita de punta a punta (ver nota en
+ * `pos-checkout-panel.component.spec.ts`); `resolveSaleForOrder` es la parte
+ * de caché/red/errores, separada a propósito para poder probarla sola.
+ */
+describe('PosTerminalStore.resolveSaleForOrder', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+  let toast: ToastService;
+
+  const sale = (): Sale =>
+    ({ id: 's1', total: '10000', status: 'paid', sold_at: '2026-08-20', items: [], payments: [] }) as unknown as Sale;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    toast = TestBed.inject(ToastService);
+  });
+
+  afterEach(() => http.verify());
+
+  it('si la venta ya está en caché (recién cobrada en esta pestaña), no pega a la red', async () => {
+    store.checkoutSaleByOrderId.set({ o1: sale() });
+
+    const found = await store.resolveSaleForOrder('o1');
+
+    expect(found?.id).toBe('s1');
+    http.expectNone(`${API}/invoices?order_id=o1`);
+  });
+
+  it('si no está en caché, la busca por order_id → factura → venta completa', async () => {
+    const promise = store.resolveSaleForOrder('o1');
+
+    const invoiceReq = http.expectOne((r) => r.url === `${API}/invoices` && r.params.get('order_id') === 'o1');
+    invoiceReq.flush([{ id: 'inv1', sale_id: 's1' }]);
+    // La segunda petición sale de un `await` dentro de `findSaleForOrder`:
+    // hace falta ceder el microtask antes de que `expectOne` la vea.
+    await Promise.resolve();
+    const saleReq = http.expectOne(`${API}/sales/s1`);
+    saleReq.flush(sale());
+
+    const found = await promise;
+    expect(found?.id).toBe('s1');
+    // Queda en caché para la próxima vez (p. ej. reimprimir dos veces seguidas).
+    expect(store.checkoutSaleByOrderId()['o1']?.id).toBe('s1');
+  });
+
+  it('si el pedido no tiene ninguna factura emitida, avisa por toast y no revienta', async () => {
+    const promise = store.resolveSaleForOrder('o1');
+
+    const invoiceReq = http.expectOne((r) => r.url === `${API}/invoices` && r.params.get('order_id') === 'o1');
+    invoiceReq.flush([]);
+
+    const found = await promise;
+    expect(found).toBeNull();
+    expect(toast.toasts().some((t) => t.kind === 'error' && t.text.includes('factura'))).toBe(true);
+  });
+});
+
+/**
+ * Hotfix de spec 029: `billOrphan` (el aviso "No se puede cobrar esta mesa
+ * — su sesión está cerrada") contaba cualquier pedido no terminal como
+ * "sin cobrar", sin mirar `paid` — un pedido ya pagado (que nunca llega a
+ * `status === 'pagada'` en el camino QR/mostrador) disparaba el aviso
+ * aunque ya estuviera resuelto.
+ */
+describe('PosTerminalStore.loadSessionBill — billOrphan (hotfix spec 029)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('sin sesión pero con un pedido ya pagado → NO marca huérfano', async () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['listo'], true), dining_table_id: 't1' }]);
+
+    const promise = store.loadSessionBill('t1');
+    const req = http.expectOne(`${API}/table-sessions`);
+    req.flush([]); // sin sesiones activas para esta mesa
+    await promise;
+
+    expect(store.billOrphan()).toBe(false);
+  });
+
+  it('sin sesión y con un pedido genuinamente sin pagar → sí marca huérfano', async () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['listo'], false), dining_table_id: 't1' }]);
+
+    const promise = store.loadSessionBill('t1');
+    const req = http.expectOne(`${API}/table-sessions`);
+    req.flush([]);
+    await promise;
+
+    expect(store.billOrphan()).toBe(true);
+  });
+});
+
+/**
+ * Reporte del usuario: crear un pedido de mostrador, recargar la página y
+ * volver a seleccionar la mesa dejaba el panel central como "Pedido nuevo
+ * sin guardar" aunque el pedido ya existía con productos. Causa raíz:
+ * `activeOrders` (de la que depende `selectTable()` para auto-seleccionar)
+ * excluía TODO pedido `'recibida'` sin mirar el canal — un pedido de
+ * mostrador `hold_for_payment` vive en `'recibida'` mientras se arma, pero sí
+ * es editable/seleccionable, a diferencia de uno del QR sin confirmar.
+ */
+describe('PosTerminalStore.selectTable', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('un pedido de mostrador "recibida" (hold_for_payment) SÍ se auto-selecciona', () => {
+    store.orders.set([
+      { ...order('o1', 'recibida', ['pendiente']), channel: 'counter', dining_table_id: 't1' },
+    ]);
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    expect(store.selectedOrder()?.id).toBe('o1');
+  });
+
+  it('un pedido QR "recibida" (por confirmar) NO se auto-selecciona', () => {
+    store.orders.set([
+      { ...order('o1', 'recibida', ['pendiente']), channel: 'qr', dining_table_id: 't1' },
+    ]);
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    expect(store.selectedOrder()).toBeNull();
+  });
+
+  it('una mesa sin pedidos no selecciona ninguno', () => {
+    store.orders.set([]);
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    expect(store.selectedOrder()).toBeNull();
+  });
+});
+
+describe('PosTerminalStore.voidPersistedItem — spec 029, Historia 1', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+  let toast: ToastService;
+  let confirm: ConfirmService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    toast = TestBed.inject(ToastService);
+    confirm = TestBed.inject(ConfirmService);
+  });
+
+  afterEach(() => http.verify());
+
+  it('el 409 de un pedido ya pagado se muestra con el mensaje del backend, sin excepción no controlada', async () => {
+    const promise = store.voidPersistedItem('i1');
+    confirm.respond(true);
+    await Promise.resolve();
+
+    const req = http.expectOne(`${API}/orders/items/i1/void`);
+    req.flush(
+      { detail: 'El pedido ya fue pagado y no puede anularse' },
+      { status: 409, statusText: 'Conflict' },
+    );
+
+    await expect(promise).resolves.toBeUndefined(); // no relanza — el error ya quedó en el toast
+    expect(
+      toast.toasts().some((t) => t.kind === 'error' && t.text === 'El pedido ya fue pagado y no puede anularse'),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Spec 029, hotfix #4: `cancel_order` ya existía en el backend (sin venta ni
+ * movimiento de caja) pero no tenía ningún botón en la Terminal de Mesas —
+ * la única acción sobre un pedido al confirmar el pago era cobrarlo.
+ */
+describe('PosTerminalStore.rejectOrder', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+  let toast: ToastService;
+  let confirm: ConfirmService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    toast = TestBed.inject(ToastService);
+    confirm = TestBed.inject(ConfirmService);
+    store.orders.set([{ ...order('o1', 'abierta', ['pendiente']), dining_table_id: 't1' }]);
+    store.selectedOrderId.set('o1');
+  });
+
+  afterEach(() => http.verify());
+
+  it('sin pedido seleccionado, no hace nada', async () => {
+    store.selectedOrderId.set(null);
+    await store.rejectOrder();
+  });
+
+  it('si el cajero cancela el aviso, no llama al backend ni pierde la selección', async () => {
+    const promise = store.rejectOrder();
+    confirm.respond(false);
+
+    await promise;
+    expect(store.selectedOrderId()).toBe('o1');
+  });
+
+  it('con confirmación, cancela el pedido con un motivo fijo (T: wiring)', async () => {
+    const promise = store.rejectOrder();
+    confirm.respond(true);
+    await Promise.resolve();
+
+    // Mismo patrón que "Liberar Mesa" (T035): al probar solo la forma del
+    // pedido y su conexión, se responde con un error en vez de perseguir
+    // toda la cascada de `reload()` (mesas + pedidos + cuenta de sesión).
+    const req = http.expectOne(`${API}/orders/o1/cancel`);
+    expect(req.request.body).toEqual({ motivo: 'Rechazado desde terminal' });
+    req.flush({ detail: 'boom' }, { status: 409, statusText: 'Conflict' });
+
+    await promise;
+  });
+
+  it('si el backend rechaza (pedido ya pagado), lo muestra con el mensaje del backend', async () => {
+    const promise = store.rejectOrder();
+    confirm.respond(true);
+    await Promise.resolve();
+
+    const req = http.expectOne(`${API}/orders/o1/cancel`);
+    req.flush(
+      { detail: 'El pedido ya fue pagado y no puede rechazarse' },
+      { status: 409, statusText: 'Conflict' },
+    );
+
+    await promise;
+    expect(
+      toast
+        .toasts()
+        .some((t) => t.kind === 'error' && t.text === 'El pedido ya fue pagado y no puede rechazarse'),
+    ).toBe(true);
+  });
+});
+
+/**
+ * Spec 029, hotfix #3: `ensureReadyToCharge` existía sin ningún test — nadie
+ * la llamaba (huérfana, ver `pos-checkout-panel.component.ts`, ahora
+ * conectada como `beforeCharge` de `app-session-bill-panel` para el cobro
+ * por sesión de mesa). Resuelve de una vez, con un solo aviso, los productos
+ * que sigan sin marcar como listos antes de cobrar — la alternativa era que
+ * `close_session` rechazara con 409 y el cajero tuviera que ir a otra
+ * pantalla a marcarlos uno a uno.
+ */
+describe('PosTerminalStore.ensureReadyToCharge', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+  let confirm: ConfirmService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    confirm = TestBed.inject(ConfirmService);
+  });
+
+  afterEach(() => http.verify());
+
+  it('con todos los ítems ya listos, resuelve true de inmediato sin preguntar ni pegar a la red', async () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['listo']), dining_table_id: 't1' }]);
+    store.sessionBill.set({
+      table_session_id: 'ts1', dining_table_id: 't1', total: '4000', order_ids: ['o1'], split: [],
+    });
+
+    await expect(store.ensureReadyToCharge()).resolves.toBe(true);
+  });
+
+  it('con ítems sin marcar, pregunta y —si el cajero confirma— los marca listos y recarga', async () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['pendiente']), dining_table_id: 't1' }]);
+    store.sessionBill.set({
+      table_session_id: 'ts1', dining_table_id: 't1', total: '4000', order_ids: ['o1'], split: [],
+    });
+
+    const promise = store.ensureReadyToCharge();
+    confirm.respond(true);
+    await Promise.resolve();
+
+    const readyReq = http.expectOne(`${API}/orders/o1/ready`);
+    readyReq.flush({ ...order('o1', 'abierta', ['listo']), dining_table_id: 't1' });
+    await new Promise((resolve) => setTimeout(resolve));
+
+    const reloadReq = http.expectOne((r) => r.url === `${API}/orders` && r.params.get('active_sessions_only') === 'true');
+    reloadReq.flush([]);
+
+    await expect(promise).resolves.toBe(true);
+  });
+
+  it('si el cajero cancela el aviso, resuelve false sin marcar nada', async () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['pendiente']), dining_table_id: 't1' }]);
+    store.sessionBill.set({
+      table_session_id: 'ts1', dining_table_id: 't1', total: '4000', order_ids: ['o1'], split: [],
+    });
+
+    const promise = store.ensureReadyToCharge();
+    confirm.respond(false);
+
+    await expect(promise).resolves.toBe(false);
   });
 });

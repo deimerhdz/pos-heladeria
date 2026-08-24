@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DiningOrder, DiningOrderItem } from '../../tables/interfaces/dining.interface';
@@ -6,12 +5,13 @@ import { DiningSessionService } from '../../tables/services/dining-session.servi
 import { TableService } from '../../tables/services/table.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../../tables/services/menu-lookup';
-import { orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 @Component({
   selector: 'app-order-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, TenantDatePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center gap-3">
@@ -49,8 +49,8 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
               <p class="text-base font-bold text-gray-900 truncate">{{ tableLabel() }}</p>
               <p class="text-xs text-gray-400 mt-0.5">Canal: {{ order()!.channel }}</p>
             </div>
-            <span class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0" [class]="statusClass(order()!.status)">
-              {{ statusLabel(order()!.status) }}
+            <span class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0" [class]="statusClass(displayStatus(order()!))">
+              {{ statusLabel(displayStatus(order()!)) }}
             </span>
           </div>
 
@@ -61,7 +61,7 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
             </div>
             <div>
               <p class="text-xs text-gray-400">Creada</p>
-              <p class="font-medium text-gray-700">{{ order()!.created_at | date: 'dd/MM/yyyy HH:mm' }}</p>
+              <p class="font-medium text-gray-700">{{ order()!.created_at | tenantDate: 'dd/MM/yyyy HH:mm' }}</p>
             </div>
           </div>
 
@@ -146,4 +146,5 @@ export class OrderDetailComponent implements OnInit {
 
   statusLabel = orderStatusLabel;
   statusClass = orderStatusClass;
+  displayStatus = displayOrderStatus;
 }

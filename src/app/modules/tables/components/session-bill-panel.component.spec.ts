@@ -18,7 +18,7 @@ const bill: SessionBill = {
   dining_table_id: 't1',
   total: '12000',
   order_ids: ['o1'],
-  split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000' }],
+  split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' }],
 };
 
 /** Dos comensales con consumo: habilita el modo dividido. */
@@ -28,8 +28,8 @@ const splitBill: SessionBill = {
   total: '20000',
   order_ids: ['o2'],
   split: [
-    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000' },
-    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000' },
+    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' },
+    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000', items: [], discount: '0' },
   ],
 };
 
@@ -117,6 +117,31 @@ describe('SessionBillPanelComponent', () => {
   it('no deja cobrar mientras no se elige método de pago', () => {
     expect(panel.ready()).toBe(false);
     expect(chargeButton().disabled).toBe(true);
+  });
+
+  // ── feature 028, T004/T009: modo `resumen` (pedido de canal `qr`) ────────
+  describe('readOnly (T009 — el bug de origen)', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('readOnly', true);
+      fixture.detectChanges();
+    });
+
+    it('no muestra el botón "Cobrar y cerrar mesa"', () => {
+      const buttons = Array.from<HTMLButtonElement>(
+        fixture.nativeElement.querySelectorAll('button'),
+      );
+      expect(buttons.some((b) => b.textContent?.includes('Cobrar'))).toBe(false);
+    });
+
+    it('no muestra el selector de método de pago', () => {
+      expect(fixture.nativeElement.querySelectorAll('select').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('input[type="number"]').length).toBe(0);
+    });
+
+    it('sigue mostrando el desglose de la cuenta (no se pierde información)', () => {
+      expect(fixture.nativeElement.textContent).toContain('Ana');
+      expect(fixture.nativeElement.textContent).toContain('12,000.00');
+    });
   });
 
   it('habilita el cobro al elegir método en la cuenta única', async () => {

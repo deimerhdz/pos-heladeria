@@ -51,6 +51,13 @@ export interface OrderCreatePayload {
   customer_name?: string | null;
   notes?: string | null;
   items: OrderItemPayload[];
+  /**
+   * Solo válido con `channel: 'counter' | 'waiter'` (feature 028). El pedido se
+   * crea **sin** descontar inventario ni ser visible en cocina — eso solo pasa
+   * al llamar `POST /orders/{id}/checkout-and-send`. Así una orden de mostrador
+   * que el cajero está armando no golpea cocina antes de estar pagada.
+   */
+  hold_for_payment?: boolean;
 }
 
 /** Selected option on an order item (`OrderItemOptionResponse`). */
@@ -124,6 +131,51 @@ export interface VoidItemPayload {
   motivo: string;
 }
 
+// ── Pagos (spec 024) ────────────────────────────────────────────────────────
+
+export type PaymentAttemptStatus = 'pendiente' | 'confirmado' | 'rechazado';
+
+/**
+ * Resumen del intento de pago vigente de la orden (`current_payment_attempt`
+ * en `OrderResponse`). **No** trae `rejection_reason` — eso solo lo expone el
+ * historial completo (`PaymentAttemptResponse`, `GET
+ * /orders/{id}/payment-attempts`), que es la vista de cajero/back-office.
+ */
+export interface CurrentPaymentAttemptSummary {
+  id: string;
+  status: PaymentAttemptStatus;
+  payment_method_name: string;
+  is_cash: boolean;
+  receipt_file_url: string | null;
+}
+
+/** Vista de cajero de un intento de pago (`PaymentAttemptResponse`). */
+export interface PaymentAttempt {
+  id: string;
+  order_id: string;
+  payment_method_id: string;
+  payment_method_name: string;
+  is_cash: boolean;
+  status: PaymentAttemptStatus;
+  amount_received: string | null;
+  change_amount: string | null;
+  receipt_file_url: string | null;
+  rejection_reason: string | null;
+  resolved_by_user_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** Body de `POST /orders/payment-attempts/{id}/reject` (`PaymentAttemptRejectIn`). */
+export interface PaymentAttemptRejectPayload {
+  reason: string;
+}
+
+/** Body de `POST /orders/payment-attempts/{id}/confirm-cash` (`PaymentAttemptConfirmCashIn`). */
+export interface PaymentAttemptConfirmCashPayload {
+  amount_received: number;
+}
+
 /** Response of `POST /orders` and `GET /orders` (`OrderResponse`). */
 export interface DiningOrder {
   id: string;
@@ -139,6 +191,55 @@ export interface DiningOrder {
   notes?: string | null;
   created_at: string;
   items?: DiningOrderItem[];
+  /** `null` si nunca se inició ningún intento de pago (spec 024). */
+  current_payment_attempt?: CurrentPaymentAttemptSummary | null;
+  /**
+   * Computado (spec 029): `true` si ya existe una `Sale` para este pedido —
+   * la señal real de "ya está pagado", distinta de `status` (que nunca llega
+   * a `'pagada'` en los caminos QR/mostrador vigentes, ver `deriveTableStatus`).
+   */
+  paid?: boolean;
+}
+
+// ── Terminal híbrida por origen (feature 028) ──────────────────────────────
+
+/**
+ * Qué panel muestra la barra lateral de cobro: `'resumen'` (solo lectura, para
+ * pedidos `qr` — el comensal ya pagó a distancia y el cajero solo valida el
+ * comprobante) o `'terminal-pos'` (editable, para pedidos creados/pagados en
+ * el mostrador por el cajero, o una mesa libre donde todavía no hay pedido).
+ */
+export type SidebarMode = 'resumen' | 'terminal-pos';
+
+/**
+ * Decide el modo de la barra lateral a partir del pedido activo de la mesa.
+ *
+ * `null`/`undefined` (mesa libre, sin pedido seleccionado todavía) cae en
+ * `'terminal-pos'`: es justo donde se arma un pedido manual nuevo. Un pedido
+ * YA PAGADO (`paid`, spec 029) va siempre a `'resumen'` —solo lectura—, sea
+ * cual sea su canal: `status` nunca llega a `'pagada'` en los caminos QR ni
+ * mostrador (research.md D2), así que sin este chequeo un pedido de
+ * mostrador cobrado se quedaba editable para siempre (dividir cuenta,
+ * selector de método de pago, "Rechazar pedido" sobre algo ya cobrado).
+ */
+export function getSidebarMode(order: DiningOrder | null | undefined): SidebarMode {
+  if (order?.paid) return 'resumen';
+  return order?.channel === 'qr' ? 'resumen' : 'terminal-pos';
+}
+
+/** Body de `POST /orders/{id}/checkout-and-send` (feature 028). Paga un pedido
+ *  de mostrador, emite su venta/factura y lo envía a cocina en una sola
+ *  llamada atómica. */
+export interface CheckoutAndSendPayload {
+  /** Backstop de doble clic: el backend rechaza con `409` si ya no coincide. */
+  version: number;
+  cash_shift_id: string;
+  payments: PaymentLine[];
+  discount?: number;
+  tax?: number;
+  tip?: number;
+  /** A nombre de quién se factura; por defecto "Consumidor Final". */
+  billing_customer_name?: string;
 }
 
 // ── Sesión de mesa (`/table-sessions`) ─────────────────────────────────────
@@ -192,11 +293,22 @@ export interface AssignmentsPayload {
   assignments: ItemAssignment[];
 }
 
+/** Ítem consumido, para el detalle de la cuenta (spec 026, FR-006). */
+export interface SessionBillItem {
+  description: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+}
+
 export interface SessionBillLine {
   /** `null` = ítems añadidos por el mesero, sin comensal asignado. */
   participant_id: string | null;
   display_label: string | null;
   subtotal: string;
+  /** spec 026, FR-006: detalle de ítems y descuento ya aplicado. */
+  items: SessionBillItem[];
+  discount: string;
 }
 
 /** Cuenta de la sesión (`SessionBillResponse`). */

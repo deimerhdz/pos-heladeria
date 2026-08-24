@@ -107,6 +107,63 @@ export interface MyOrderCancelPayload {
   motivo: string;
 }
 
+// ── Pagos del comensal (spec 024) ──────────────────────────────────────────
+
+/** Método de pago activo del tenant, tal como lo ve el comensal (`DinerPaymentMethod`). */
+export interface DinerPaymentMethod {
+  id: string;
+  name: string;
+  type: string;
+  is_cash: boolean;
+  payment_info: Record<string, string> | null;
+}
+
+/** Body de `POST /cart/orders/{id}/payment-attempts` (`PaymentAttemptCreateIn`). */
+export interface PaymentAttemptCreatePayload {
+  payment_method_id: string;
+}
+
+/** Intento de pago tal como lo ve el comensal — **nunca** trae el motivo de
+ *  un rechazo (`DinerPaymentAttempt`). */
+export interface DinerPaymentAttempt {
+  id: string;
+  order_id: string;
+  payment_method_id: string;
+  status: 'pendiente' | 'confirmado' | 'rechazado';
+  receipt_file_url: string | null;
+  created_at: string;
+}
+
+/** Body de `POST /cart/payment-attempts/{id}/receipt/presign` (`ReceiptPresignIn`). */
+export interface ReceiptPresignPayload {
+  content_type: string;
+}
+
+/** Response del presign (`ReceiptPresignOut`). */
+export interface ReceiptPresignResponse {
+  upload_url: string;
+  key: string;
+  public_url: string;
+  expires_in: number;
+}
+
+/** Body de `POST /cart/payment-attempts/{id}/receipt` (`ReceiptAttachIn`). */
+export interface ReceiptAttachPayload {
+  file_url: string;
+}
+
+// ── Revisión y pago antes de enviar (spec 025) ─────────────────────────────
+
+/**
+ * Body de `POST /cart/submit` (`SubmitCartIn`). El pedido nace junto con su
+ * primer intento de pago: `receipt_file_url` es obligatorio salvo que el
+ * método sea efectivo (`is_cash`).
+ */
+export interface SubmitCartPayload {
+  payment_method_id: string;
+  receipt_file_url?: string | null;
+}
+
 // ── Errores tipados que la UI debe distinguir ──────────────────────────────
 
 /**
