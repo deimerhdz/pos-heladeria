@@ -25,6 +25,8 @@ describe('AuthService.login', () => {
     logout: ReturnType<typeof vi.fn>;
     refreshToken: ReturnType<typeof vi.fn>;
     changePassword: ReturnType<typeof vi.fn>;
+    forgotPassword: ReturnType<typeof vi.fn>;
+    resetPassword: ReturnType<typeof vi.fn>;
   };
   let tokenStorage: {
     getAccessToken: ReturnType<typeof vi.fn>;
@@ -34,7 +36,14 @@ describe('AuthService.login', () => {
   };
 
   beforeEach(() => {
-    authApi = { login: vi.fn(), logout: vi.fn(), refreshToken: vi.fn(), changePassword: vi.fn() };
+    authApi = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      refreshToken: vi.fn(),
+      changePassword: vi.fn(),
+      forgotPassword: vi.fn(),
+      resetPassword: vi.fn(),
+    };
     tokenStorage = {
       // No stored session: constructor's restoreSession() short-circuits to clear.
       getAccessToken: vi.fn().mockReturnValue(null),
@@ -170,5 +179,78 @@ describe('AuthService.login', () => {
       new_password: 'newsecret',
     });
     expect(service.currentUser()!.mustChangePassword).toBe(false);
+  });
+});
+
+describe('AuthService.forgotPassword/resetPassword', () => {
+  let service: AuthService;
+  let authApi: { forgotPassword: ReturnType<typeof vi.fn>; resetPassword: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    authApi = { forgotPassword: vi.fn(), resetPassword: vi.fn() };
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        { provide: AuthApiService, useValue: authApi },
+        {
+          provide: TokenStorageService,
+          useValue: {
+            getAccessToken: vi.fn().mockReturnValue(null),
+            getRefreshToken: vi.fn().mockReturnValue(null),
+            setTokens: vi.fn(),
+            clear: vi.fn(),
+          },
+        },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+      ],
+    });
+
+    service = TestBed.inject(AuthService);
+  });
+
+  it('forgotPassword forwards the email and resolves without error on success', async () => {
+    authApi.forgotPassword.mockReturnValue(of({ message: 'ok' }));
+
+    const { error } = await service.forgotPassword('user@tienda.com');
+
+    expect(error).toBeNull();
+    expect(authApi.forgotPassword).toHaveBeenCalledWith({ email: 'user@tienda.com' });
+  });
+
+  it('forgotPassword surfaces a fallback message on failure', async () => {
+    authApi.forgotPassword.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 429 })));
+
+    const { error } = await service.forgotPassword('user@tienda.com');
+
+    expect(error).toBe('No se pudo procesar la solicitud. Intenta de nuevo.');
+  });
+
+  it('resetPassword forwards the token and new password on success', async () => {
+    authApi.resetPassword.mockReturnValue(of({ message: 'ok' }));
+
+    const { error } = await service.resetPassword('tok123', 'claveNueva1');
+
+    expect(error).toBeNull();
+    expect(authApi.resetPassword).toHaveBeenCalledWith({
+      token: 'tok123',
+      new_password: 'claveNueva1',
+    });
+  });
+
+  it('resetPassword surfaces the backend detail on failure', async () => {
+    authApi.resetPassword.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { detail: { valid: false, reason: 'used' } },
+          }),
+      ),
+    );
+
+    const { error } = await service.resetPassword('tok123', 'claveNueva1');
+
+    expect(error).toBe('No se pudo restablecer la contraseña. Intenta de nuevo.');
   });
 });
