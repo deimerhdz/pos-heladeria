@@ -1,10 +1,10 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DiningOrder, DiningOrderStatus } from '../../tables/interfaces/dining.interface';
 import { DiningSessionService } from '../../tables/services/dining-session.service';
 import { TableService } from '../../tables/services/table.service';
 import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 type FilterOption = DiningOrderStatus | 'all';
 
@@ -16,7 +16,7 @@ interface FilterButton {
 @Component({
   selector: 'app-orders-page',
   standalone: true,
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, TenantDatePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -89,7 +89,7 @@ interface FilterButton {
                   <div class="min-w-0">
                     <p class="text-sm font-semibold text-gray-800 truncate">{{ tableLabel(order) }}</p>
                     <p class="text-xs text-gray-400">
-                      {{ order.created_at | date: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
+                      {{ order.created_at | tenantDate: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
                     </p>
                     @if (order.customer_name) {
                       <p class="text-xs text-indigo-500 font-medium mt-0.5">👤 {{ order.customer_name }}</p>

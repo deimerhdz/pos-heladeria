@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ProductService } from '../../products/services/product.service';
@@ -8,6 +8,7 @@ import { DiningSessionService } from '../../tables/services/dining-session.servi
 import { TableService } from '../../tables/services/table.service';
 import { DiningOrder } from '../../tables/interfaces/dining.interface';
 import { orderStatusClass, orderStatusLabel } from '../../orders/order-status.util';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 interface QuickAction {
   label: string;
@@ -19,7 +20,7 @@ interface QuickAction {
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [RouterLink, DatePipe, DecimalPipe],
+  imports: [RouterLink, DecimalPipe, TenantDatePipe],
   template: `
     <div class="space-y-6">
       <div>
@@ -120,7 +121,7 @@ interface QuickAction {
                   <div>
                     <p class="text-sm font-medium text-gray-800">{{ tableLabel(order) }}</p>
                     <p class="text-xs text-gray-400">
-                      {{ order.created_at | date: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
+                      {{ order.created_at | tenantDate: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
                     </p>
                   </div>
                 </div>

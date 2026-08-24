@@ -24,6 +24,7 @@ import {
   VentaPorMetodo,
 } from '../interfaces/cash-session.interface';
 import { CashService } from './cash.service';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 const REGISTER_STORAGE_KEY = 'cash.register';
 
@@ -56,6 +57,7 @@ export function mapVentasPorMetodo(recon: Reconciliation | null): VentaPorMetodo
 export class CashSessionStore {
   private readonly api = inject(CashService);
   private readonly auth = inject(AuthService);
+  private readonly tenantDate = inject(TenantDatePipe);
 
   /** Categorías sugeridas por tipo de movimiento manual. */
   readonly CATS: Record<MovementKind, string[]> = {
@@ -601,18 +603,12 @@ export class CashSessionStore {
 
   private fmtTime(iso: string | null): string {
     if (!iso) return '—';
-    return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    return this.tenantDate.transform(iso, 'HH:mm') ?? '—';
   }
 
   private fmtDate(iso: string | null): string {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString('es-CO', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return this.tenantDate.transform(iso, 'dd/MM/yyyy HH:mm') ?? '—';
   }
 
   private fmtDuration(iso: string | null): string {

@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DiningOrder, DiningOrderItem } from '../../tables/interfaces/dining.interface';
@@ -7,11 +6,12 @@ import { TableService } from '../../tables/services/table.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../../tables/services/menu-lookup';
 import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 @Component({
   selector: 'app-order-detail',
   standalone: true,
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, TenantDatePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center gap-3">
@@ -61,7 +61,7 @@ import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order
             </div>
             <div>
               <p class="text-xs text-gray-400">Creada</p>
-              <p class="font-medium text-gray-700">{{ order()!.created_at | date: 'dd/MM/yyyy HH:mm' }}</p>
+              <p class="font-medium text-gray-700">{{ order()!.created_at | tenantDate: 'dd/MM/yyyy HH:mm' }}</p>
             </div>
           </div>
 

@@ -3,9 +3,16 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { businessToday } from '../../../shared/date-format.util';
 import { ReportsService } from './reports.service';
 
 const api = environment.apiBaseUrl;
+
+/** Zona horaria fija de prueba — spec 030: "hoy" se compara contra
+ * `businessToday(tz)`, no contra el reloj del entorno de ejecución (que
+ * puede no estar en UTC-5, quickstart.md Paso 16). */
+const TEST_TIMEZONE = 'America/Bogota';
 
 /**
  * El spec anterior probaba una versión del servicio que agregaba las ventas en
@@ -27,6 +34,16 @@ describe('ReportsService', () => {
         ),
         ReportsService,
       ],
+    });
+    const tenantInfo = TestBed.inject(TenantInfoService);
+    tenantInfo.info.set({
+      id: 1,
+      name: 'Heladería de prueba',
+      host: 'prueba.skeilopos.com',
+      plan: 'basic',
+      logo_url: null,
+      receipt_message: null,
+      timezone: TEST_TIMEZONE,
     });
     service = TestBed.inject(ReportsService);
     http = TestBed.inject(HttpTestingController);
@@ -67,7 +84,7 @@ describe('ReportsService', () => {
 
   it('acota por fecha todos los informes menos el de inventario', () => {
     const urls = urlsPedidas();
-    const hoy = new Date().toLocaleDateString('en-CA');
+    const hoy = businessToday(TEST_TIMEZONE);
 
     for (const url of urls) {
       if (url.startsWith('inventory')) {
@@ -94,7 +111,7 @@ describe('ReportsService', () => {
 
   it('el rango del año va del 1 de enero al 31 de diciembre', () => {
     service.setPeriod('year');
-    const año = new Date().getFullYear();
+    const año = Number(businessToday(TEST_TIMEZONE).split('-')[0]);
 
     expect(service.range()).toEqual({ from: `${año}-01-01`, to: `${año}-12-31` });
   });

@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { SuppliersService } from '../../suppliers/services/suppliers.service';
@@ -25,6 +25,7 @@ import { StockAdjustModalComponent } from '../components/stock-adjust-modal.comp
 import { PurchaseFormComponent } from '../components/purchase-form.component';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 
 type Tab = 'items' | 'purchases' | 'movements';
 type TypeFilter = '' | InventoryItemType;
@@ -35,7 +36,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
   standalone: true,
   imports: [
     DecimalPipe,
-    DatePipe,
+    TenantDatePipe,
     FormsModule,
     InventoryItemFormComponent,
     StockAdjustModalComponent,
@@ -209,7 +210,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
                     <button type="button" (click)="toggleExpanded(p.id)" class="flex-1 text-left">
                       <p class="font-medium text-gray-900">{{ supplierName(p.supplier_id) }}</p>
                       <p class="text-xs text-gray-500">
-                        {{ p.purchased_at | date:'short' }}
+                        {{ p.purchased_at | tenantDate:'short' }}
                         @if (p.invoice_number) { · Factura {{ p.invoice_number }} }
                         · {{ p.items.length }} ítem(s)
                       </p>
@@ -294,7 +295,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
                 <tbody class="divide-y divide-gray-50">
                   @for (m of movements(); track m.id) {
                     <tr class="hover:bg-gray-50 transition-colors">
-                      <td class="px-4 py-3 text-gray-600">{{ m.moved_at | date:'short' }}</td>
+                      <td class="px-4 py-3 text-gray-600">{{ m.moved_at | tenantDate:'short' }}</td>
                       <td class="px-4 py-3 text-gray-600">{{ m.type }}</td>
                       <td class="px-4 py-3 text-right font-semibold" [class]="m.quantity < 0 ? 'text-red-600' : 'text-green-600'">
                         {{ m.quantity | number:'1.0-3' }}

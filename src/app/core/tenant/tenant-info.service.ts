@@ -13,6 +13,8 @@ export interface TenantInfo {
   logo_url: string | null;
   /** Mensaje que cierra la factura impresa. `null` = usar el texto por defecto. */
   receipt_message: string | null;
+  /** Zona horaria IANA del negocio (spec 030). Solo lectura — `update()` no la persiste. */
+  timezone: string;
 }
 
 /** Cierre de la factura cuando el negocio no ha configurado uno propio. */

@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { SalesService } from '../services/sales.service';
@@ -7,6 +7,7 @@ import { Sale, SaleStatus } from '../interfaces/sales.interface';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { PrinterSettingsStore } from '../../../core/printing/printer-settings.store';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
+import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 import {
   buildReceiptHtml,
   formatInvoice,
@@ -30,7 +31,7 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
 @Component({
   selector: 'app-sales-page',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, FormsModule, PaginationBarComponent],
+  imports: [DecimalPipe, FormsModule, PaginationBarComponent, TenantDatePipe],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -105,7 +106,7 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
               <tbody class="divide-y divide-gray-50">
                 @for (s of svc.sales(); track s.id) {
                   <tr class="hover:bg-gray-50 transition-colors">
-                    <td class="px-4 py-3 text-gray-600">{{ s.sold_at | date: 'dd/MM/yyyy HH:mm' }}</td>
+                    <td class="px-4 py-3 text-gray-600">{{ s.sold_at | tenantDate: 'dd/MM/yyyy HH:mm' }}</td>
                     <td class="px-4 py-3 font-medium text-gray-900">{{ docLabel(s) }}</td>
                     <td class="px-4 py-3 text-gray-600">{{ s.customer_name || '—' }}</td>
                     <td class="px-4 py-3">
@@ -152,7 +153,7 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
             </div>
           </div>
           <div class="px-6 py-4 space-y-3 text-sm">
-            <p class="text-xs text-gray-400">{{ r.sold_at | date: 'dd/MM/yyyy HH:mm' }}{{ r.customer_name ? ' · ' + r.customer_name : '' }}</p>
+            <p class="text-xs text-gray-400">{{ r.sold_at | tenantDate: 'dd/MM/yyyy HH:mm' }}{{ r.customer_name ? ' · ' + r.customer_name : '' }}</p>
             <div class="space-y-1">
               @for (it of r.items ?? []; track it.id) {
                 <div class="flex justify-between">
