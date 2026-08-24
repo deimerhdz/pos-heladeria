@@ -15,6 +15,7 @@ import { InventoryService } from '../../inventory/services/inventory.service';
 import { buildUnitLookup, formatQuantity } from '../../inventory/services/unit-lookup';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import {
   DeactivatedVariant,
   PreparationType,
@@ -150,6 +151,30 @@ interface SlotBreakdown {
             </button>
           </div>
 
+          <!-- ===== Maneja inventario (spec 027) =====
+               Apagado por defecto. Habilita/deshabilita "Insumos fijos" y "Sabores a
+               elegir" de cada tamaño — ambos son las dos fuentes de descuento de
+               inventario que el backend evalúa. Apagarlo NO borra los insumos ya
+               guardados, solo deja de exigirlos y de aplicarlos al vender. -->
+          <div class="flex items-start justify-between gap-4 mt-4 pt-4 border-t border-gray-100">
+            <div>
+              <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Maneja inventario</h4>
+              <p class="text-xs text-gray-500 mt-1">Actívalo para asociar los insumos que este producto descuenta al venderse.</p>
+            </div>
+            <button type="button" (click)="toggleTracksInventory()" role="switch" [attr.aria-checked]="draft().tracks_inventory"
+              class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+              [class]="draft().tracks_inventory ? 'bg-indigo-600' : 'bg-gray-300'"
+              title="Actívalo si este producto descuenta insumos del inventario al venderse">
+              <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" [class]="draft().tracks_inventory ? 'left-[22px]' : 'left-0.5'"></span>
+            </button>
+          </div>
+
+          @if (showsInventoryWarning()) {
+            <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 text-sm text-amber-700">
+              ⚠ Este producto no podrá venderse hasta que se le configure al menos un insumo en alguna presentación.
+            </div>
+          }
+
           @if (draft().hasSizes) {
             <div class="flex flex-wrap gap-2 mt-4">
               @for (v of draft().variants; track v.localId) {
@@ -215,6 +240,7 @@ interface SlotBreakdown {
                 }
               </div>
 
+              @if (draft().tracks_inventory) {
               <!-- Insumos fijos -->
               <div>
                 <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insumos fijos</h4>
@@ -348,6 +374,11 @@ interface SlotBreakdown {
                     class="text-sm font-medium text-amber-600 hover:text-amber-700">+ Agregar sabores a elegir</button>
                 </div>
               </div>
+              } @else {
+              <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                Activa "Maneja inventario" arriba para configurar los insumos que este tamaño descuenta.
+              </div>
+              }
 
               @if (draft().hasSizes && draft().variants.length > 1) {
                 <button type="button" (click)="copyConfigToOthers(av.localId)"
@@ -380,6 +411,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   readonly inventoryService = inject(InventoryService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly unitMeasureService = inject(UnitMeasureService);
+  private readonly confirm = inject(ConfirmService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -624,6 +656,30 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     return this.optionGroupService.groups().find((g) => g.id === groupId)?.options ?? [];
   }
 
+  /** Igual que `group_discounts` del backend: manda la cantidad del tamaño, y si no
+   *  la define, alguna opción activa con insumo propio y cantidad mayor a cero. */
+  private groupHasConsumption(g: VariantOptionGroupDraft): boolean {
+    if (!g.option_group_id) return false;
+    if (Number(g.quantity_per_option) > 0) return true;
+    return this.groupOptions(g.option_group_id).some(
+      (o) => o.active && o.inventory_item_id && Number(o.item_quantity) > 0,
+    );
+  }
+
+  /**
+   * FR-013: con el switch activado, si ninguna presentación tiene receta fija ni
+   * grupo que realmente descuente, el producto no podrá venderse (spec 003,
+   * RN-CAT-34) — se avisa de inmediato en el formulario en vez de esperar a que un
+   * cajero lo descubra al intentar vender.
+   */
+  readonly showsInventoryWarning = computed(() => {
+    const d = this.draft();
+    if (!d.tracks_inventory) return false;
+    return d.variants.every(
+      (v) => v.recipe.length === 0 && v.optionGroups.every((g) => !this.groupHasConsumption(g)),
+    );
+  });
+
   async ngOnInit(): Promise<void> {
     this.loading.set(true);
     // Se esperan los datos de referencia ANTES de armar el draft: los `<select>`
@@ -667,6 +723,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       image_url: '',
       active: true,
       hasSizes: false,
+      tracks_inventory: false,
       variants: [this.newVariant('Único')],
       deactivated: [],
     };
@@ -750,6 +807,38 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       this.activeLocalId.set(only.localId);
       return { ...d, hasSizes: false, variants: [only] };
     });
+  }
+
+  /**
+   * Prende/apaga si el producto maneja inventario (spec 027). Apagar NO borra los
+   * insumos ya guardados en el draft — solo deja de mostrarlos como editables mientras
+   * el switch esté apagado (FR-008); se conservan intactos si se reactiva después.
+   *
+   * Apagarlo cuando el producto ya tiene insumos configurados en alguna presentación
+   * pide confirmación explícita primero (FR-014): es la única dirección arriesgada,
+   * porque detiene el descuento de inventario de un producto que hoy sí lo hace.
+   * Encenderlo, o apagarlo sobre un producto sin insumos, se aplica directo.
+   */
+  async toggleTracksInventory(): Promise<void> {
+    const d = this.draft();
+    if (d.tracks_inventory && this.hasAnyInventoryConfig(d)) {
+      const ok = await this.confirm.ask({
+        title: 'Desactivar "Maneja inventario"',
+        message:
+          'Este producto dejará de descontar inventario en cada venta. Los insumos ya ' +
+          'configurados no se borran — si vuelves a activarlo, seguirán ahí.',
+        confirmText: 'Desactivar',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    this.draft.update((cur) => ({ ...cur, tracks_inventory: !cur.tracks_inventory }));
+  }
+
+  private hasAnyInventoryConfig(d: ProductDraft): boolean {
+    return d.variants.some(
+      (v) => v.recipe.length > 0 || v.optionGroups.some((g) => this.groupHasConsumption(g)),
+    );
   }
 
   addVariant(): void {

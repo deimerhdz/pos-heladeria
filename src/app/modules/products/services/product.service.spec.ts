@@ -53,6 +53,7 @@ function draft(partial: Partial<ProductDraft> = {}): ProductDraft {
     image_url: '',
     active: true,
     hasSizes: false,
+    tracks_inventory: false,
     variants: [],
     deactivated: [],
     ...partial,
