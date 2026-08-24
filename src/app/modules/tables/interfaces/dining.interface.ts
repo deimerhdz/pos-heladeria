@@ -193,6 +193,12 @@ export interface DiningOrder {
   items?: DiningOrderItem[];
   /** `null` si nunca se inició ningún intento de pago (spec 024). */
   current_payment_attempt?: CurrentPaymentAttemptSummary | null;
+  /**
+   * Computado (spec 029): `true` si ya existe una `Sale` para este pedido —
+   * la señal real de "ya está pagado", distinta de `status` (que nunca llega
+   * a `'pagada'` en los caminos QR/mostrador vigentes, ver `deriveTableStatus`).
+   */
+  paid?: boolean;
 }
 
 // ── Terminal híbrida por origen (feature 028) ──────────────────────────────
@@ -209,9 +215,15 @@ export type SidebarMode = 'resumen' | 'terminal-pos';
  * Decide el modo de la barra lateral a partir del pedido activo de la mesa.
  *
  * `null`/`undefined` (mesa libre, sin pedido seleccionado todavía) cae en
- * `'terminal-pos'`: es justo donde se arma un pedido manual nuevo.
+ * `'terminal-pos'`: es justo donde se arma un pedido manual nuevo. Un pedido
+ * YA PAGADO (`paid`, spec 029) va siempre a `'resumen'` —solo lectura—, sea
+ * cual sea su canal: `status` nunca llega a `'pagada'` en los caminos QR ni
+ * mostrador (research.md D2), así que sin este chequeo un pedido de
+ * mostrador cobrado se quedaba editable para siempre (dividir cuenta,
+ * selector de método de pago, "Rechazar pedido" sobre algo ya cobrado).
  */
 export function getSidebarMode(order: DiningOrder | null | undefined): SidebarMode {
+  if (order?.paid) return 'resumen';
   return order?.channel === 'qr' ? 'resumen' : 'terminal-pos';
 }
 

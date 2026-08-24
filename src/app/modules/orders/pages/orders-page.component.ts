@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { DiningOrder, DiningOrderStatus } from '../../tables/interfaces/dining.interface';
 import { DiningSessionService } from '../../tables/services/dining-session.service';
 import { TableService } from '../../tables/services/table.service';
-import { orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
 
 type FilterOption = DiningOrderStatus | 'all';
 
@@ -97,8 +97,8 @@ interface FilterButton {
                   </div>
                 </div>
 
-                <span class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0" [class]="statusClass(order.status)">
-                  {{ statusLabel(order.status) }}
+                <span class="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0" [class]="statusClass(displayStatus(order))">
+                  {{ statusLabel(displayStatus(order)) }}
                 </span>
               </div>
             </a>
@@ -127,7 +127,7 @@ export class OrdersPageComponent implements OnInit {
 
   readonly visibleOrders = computed(() => {
     const f = this.activeFilter();
-    const list = f === 'all' ? this.orders() : this.orders().filter((o) => o.status === f);
+    const list = f === 'all' ? this.orders() : this.orders().filter((o) => displayOrderStatus(o) === f);
     return [...list].sort((a, b) => b.created_at.localeCompare(a.created_at));
   });
 
@@ -170,4 +170,5 @@ export class OrdersPageComponent implements OnInit {
 
   statusLabel = orderStatusLabel;
   statusClass = orderStatusClass;
+  displayStatus = displayOrderStatus;
 }

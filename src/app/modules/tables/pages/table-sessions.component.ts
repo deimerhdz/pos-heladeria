@@ -17,7 +17,9 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
 
 /**
  * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
- * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F3/F4/ESC/Ctrl+P).
+ * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F3/ESC/Ctrl+P).
+ * `F4` (descuento manual) se retiró en spec 029, Historia 2 — prohibición
+ * absoluta, sin excepción de rol.
  *
  * Feature 028 ("terminal híbrida por origen"): la columna central ya no tiene
  * pestañas — antes duplicaban la misma información ("Pedido de la mesa" /
@@ -53,7 +55,7 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
         </div>
         <div class="flex items-center gap-3">
           <div class="hidden lg:flex gap-3 text-[11px] text-gray-400">
-            <span>F2 Buscar</span><span>F3 Orden manual</span><span>F4 Descuento</span><span>ESC Cancelar</span>
+            <span>F2 Buscar</span><span>F3 Orden manual</span><span>ESC Cancelar</span>
           </div>
         </div>
       </div>
@@ -164,13 +166,19 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
           }
 
           <div class="flex gap-2 justify-center pt-1">
-            <button
-              (click)="store.printReceipt()"
-              [disabled]="store.lastReceipts().length === 0"
-              class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {{ store.lastReceipts().length > 1 ? '🧾 Imprimir todos' : '🧾 Imprimir factura' }}
-            </button>
+            @if (store.lastReceipts().length > 1) {
+              <!-- Spec 029, Historia 4: el caso de un solo comprobante ya no
+                   imprime desde aquí — duplicaba "Imprimir Factura" de la
+                   barra lateral (D1 de research.md). El de cuenta dividida
+                   sí se conserva: no hay equivalente en la barra lateral
+                   para imprimir el ticket de cada comensal de una vez. -->
+              <button
+                (click)="store.printReceipt()"
+                class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                🧾 Imprimir todos
+              </button>
+            }
             <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
           </div>
         </div>
@@ -203,15 +211,14 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
       // solo hace algo si hay una mesa libre seleccionada — `startManualOrder`
       // ya se cuida de eso.
       this.store.startManualOrder();
-    } else if (e.key === 'F4') {
-      e.preventDefault();
-      if (this.store.hasActiveOrder()) this.store.toggleDiscountPanel();
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
-      else if (this.store.discountPanelOpen()) this.store.toggleDiscountPanel();
       else this.store.cancelSelection();
     } else if (!typing && e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey)) {
-      if (this.store.successOpen() && this.store.lastReceipts().length > 0) {
+      // Spec 029, Historia 4: solo el caso de cuenta dividida imprime desde
+      // el diálogo de éxito — el de un solo comprobante ya no tiene acción
+      // de impresión aquí (usa "Imprimir Factura" de la barra lateral).
+      if (this.store.successOpen() && this.store.lastReceipts().length > 1) {
         e.preventDefault();
         this.store.printReceipt();
       }

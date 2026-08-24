@@ -157,7 +157,17 @@ export function deriveTableStatus(
 
   const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
   if (items.some((i) => KITCHEN_NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
-  if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo')) return 'listo';
+  if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo')) {
+    // Spec 029, Historia 3: "Listo" exige pago Y cocina, las dos a la vez —
+    // no basta con que cocina termine. Los caminos QR/mostrador vigentes
+    // nunca llegan a `status === 'pagada'` (dejan la orden en 'abierta' con
+    // la Sale ya emitida), así que la señal real es `order.paid` (D2 de
+    // research.md), no `status`. Mientras falte el pago, se muestra
+    // "Pago pendiente" — el mismo estado que ya usa la rama 'bloqueada' de
+    // arriba, para no inventar una insignia nueva casi idéntica.
+    const conConsumo = orders.filter((o) => (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'));
+    return conConsumo.every((o) => o.paid === true) ? 'listo' : 'pago_pendiente';
+  }
   if (orders.length > 0) return 'ocupada';
 
   if (tableStatus === 'ocupada') return 'ocupada';
@@ -222,13 +232,6 @@ export class PosTerminalStore {
   readonly catalogOpen = signal(false);
   readonly catalogCategoryId = signal<string | null>(null);
   readonly configuringProduct = signal<MenuProduct | null>(null);
-
-  // Descuento
-  readonly discountPanelOpen = signal(false);
-  readonly discountType = signal<'percent' | 'fixed'>('percent');
-  readonly discountValue = signal('');
-  readonly discountReason = signal('');
-  readonly appliedDiscount = signal<{ type: 'percent' | 'fixed'; value: number } | null>(null);
 
   readonly loading = signal(false);
   readonly submitting = signal(false);
@@ -327,10 +330,21 @@ export class PosTerminalStore {
     this.orders().filter((o) => o.status === 'recibida' && o.channel === 'qr'),
   );
 
-  /** Órdenes activas por mesa: ni terminales ni pendientes de confirmar. */
+  /**
+   * Órdenes activas por mesa: ni terminales ni QR sin confirmar. Un pedido de
+   * mostrador `hold_for_payment` también vive en `'recibida'` mientras se arma
+   * (ver `pendingOrders` arriba) pero SÍ es editable/seleccionable — solo el
+   * canal `qr` necesita `confirmOrder()` antes de entrar aquí. Sin esto,
+   * `selectTable()` no auto-seleccionaba un pedido de mostrador recién creado
+   * tras recargar la página (el store se recrea y pierde la selección en
+   * memoria de `createManualOrderFromDraft()`).
+   */
   private readonly activeOrders = computed(() =>
     this.orders().filter(
-      (o) => o.status !== 'pagada' && o.status !== 'cancelada' && o.status !== 'recibida',
+      (o) =>
+        o.status !== 'pagada' &&
+        o.status !== 'cancelada' &&
+        (o.status !== 'recibida' || o.channel !== 'qr'),
     ),
   );
 
@@ -559,12 +573,10 @@ export class PosTerminalStore {
 
   readonly totals = computed(() => {
     const subtotal = this.subtotal();
-    const d = this.appliedDiscount();
-    let discount = 0;
-    if (d) {
-      discount = d.type === 'percent' ? (subtotal * d.value) / 100 : d.value;
-      discount = Math.max(0, Math.min(subtotal, discount));
-    }
+    // Spec 029, Historia 2: sin descuento manual — el único descuento
+    // posible es el de promociones/combos, ya reflejado línea por línea en
+    // `cartView()` (`discountedUnitPrice`), no como un monto aparte aquí.
+    const discount = 0;
     const tax = 0; // Impuestos deprecado: se guarda/calcula siempre en 0.
     const total = Math.max(0, Math.round(subtotal - discount + tax));
     return { subtotal, discount, tax, total };
@@ -708,7 +720,10 @@ export class PosTerminalStore {
   }
 
   private async reloadOrders(): Promise<void> {
-    const orders = await this.api.listOrders();
+    // Spec 029, hotfix: `activeSessionsOnly` evita que un pedido ya cobrado
+    // de una visita anterior (mesa ya liberada y reabierta por QR) vuelva a
+    // mezclarse con la sesión activa de la misma mesa física.
+    const orders = await this.api.listOrders(undefined, true);
     this.orders.set(orders);
     this.announcePending(orders);
   }
@@ -845,8 +860,6 @@ export class PosTerminalStore {
 
   private resetTransient(): void {
     this.draftLines.set([]);
-    this.discountPanelOpen.set(false);
-    this.appliedDiscount.set(null);
     this.catalogOpen.set(false);
     this.configuringProduct.set(null);
     this.error.set(null);
@@ -1177,25 +1190,6 @@ export class PosTerminalStore {
     return tableId ? this.ordersOfTable(tableId) : [];
   }
 
-  // ─── Descuento ────────────────────────────────────────────────────────────────
-  toggleDiscountPanel(): void {
-    this.discountPanelOpen.update((v) => !v);
-  }
-  setDiscountType(t: 'percent' | 'fixed'): void {
-    this.discountType.set(t);
-  }
-  applyDiscount(): void {
-    const value = Number(this.discountValue()) || 0;
-    this.appliedDiscount.set(value > 0 ? { type: this.discountType(), value } : null);
-    this.discountPanelOpen.set(false);
-  }
-  cancelDiscount(): void {
-    this.discountPanelOpen.set(false);
-    this.discountValue.set('');
-    this.discountReason.set('');
-    this.appliedDiscount.set(null);
-  }
-
   // ─── Pago ─────────────────────────────────────────────────────────────────────
 
   // ─── Cuenta y cobro por sesión de mesa ────────────────────────────────────────
@@ -1245,9 +1239,13 @@ export class PosTerminalStore {
       const sessions = await this.tableSessions.list();
       const session = sessions.find((s) => s.dining_table_id === tableId);
       this.sessionBill.set(session ? await this.tableSessions.bill(session.id) : null);
-      // Sin sesión pero con pedidos vivos: la mesa no se puede cobrar y hay que
-      // decirlo, no dejar el panel como si estuviera vacía.
-      this.billOrphan.set(!session && this.tableOrders(tableId).length > 0);
+      // Sin sesión pero con pedidos vivos SIN PAGAR: la mesa no se puede
+      // cobrar y hay que decirlo, no dejar el panel como si estuviera vacía.
+      // Spec 029 hotfix: antes contaba cualquier pedido no terminal, sin
+      // mirar `paid` — un pedido QR/mostrador ya pagado nunca llega a
+      // `status === 'pagada'` (research.md D2), así que se marcaba huérfano
+      // aunque ya estuviera resuelto.
+      this.billOrphan.set(!session && this.tableOrders(tableId).some((o) => !o.paid));
     } catch (err) {
       this.sessionBill.set(null);
       this.billOrphan.set(false);
@@ -1316,15 +1314,12 @@ export class PosTerminalStore {
     this.checkoutSubmitting.set(true);
     this.error.set(null);
     try {
-      const { discount } = this.totals();
+      // Spec 029, Historia 2: sin descuento manual — `discount` ni se envía,
+      // el backend lo exige en 0 (`CheckoutAndSendIn.discount`, `le=0`).
       const sale = await this.api.checkoutAndSend(order.id, {
         version: order.version ?? 0,
         cash_shift_id: shiftId,
         payments,
-        // El descuento del popover F4 (`appliedDiscount`) se aplica localmente
-        // a `totals()` para la vista previa del carrito; hay que mandarlo
-        // también al backend o el pedido se cobraría por el importe lleno.
-        ...(discount > 0 ? { discount } : {}),
         billing_customer_name: this.billingCustomerName().trim() || 'Consumidor Final',
       });
       this.lastSale.set({ total: Number(sale.total), customer: sale.customer_name || 'Mostrador' });
@@ -1341,6 +1336,34 @@ export class PosTerminalStore {
       return false;
     } finally {
       this.checkoutSubmitting.set(false);
+    }
+  }
+
+  /**
+   * Rechaza el pedido seleccionado en vez de cobrarlo (spec 029, hotfix #4):
+   * no genera venta ni movimiento de caja — `checkout.cancel_order` en el
+   * backend, que ya garantiza eso por diseño y ahora además rechaza con 409
+   * si el pedido ya tiene una `Sale` asociada. Mismo patrón de confirmación
+   * con motivo fijo que `voidPersistedItem`/`voidPersistedCombo`.
+   */
+  async rejectOrder(): Promise<void> {
+    const order = this.selectedOrder();
+    if (!order) return;
+    const ok = await this.confirm.ask({
+      title: 'Rechazar pedido',
+      message: '¿Rechazar este pedido? No se registrará venta ni movimiento de caja.',
+      confirmText: 'Rechazar',
+    });
+    if (!ok) return;
+    this.submitting.set(true);
+    try {
+      await this.api.cancelOrder(order.id, 'Rechazado desde terminal');
+      this.selectedOrderId.set(null);
+      await this.reload();
+    } catch (err) {
+      this.toast.error(this.api.extractError(err, 'No se pudo rechazar el pedido.'));
+    } finally {
+      this.submitting.set(false);
     }
   }
 

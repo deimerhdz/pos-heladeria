@@ -28,10 +28,21 @@ export class DiningSessionService {
 
   // ── Orders (`/orders`) ───────────────────────────────────────────────────
 
-  /** List comandas (staff), optionally filtered by status. Returns an array. */
-  async listOrders(status?: DiningOrderStatus): Promise<DiningOrder[]> {
-    const params = status ? { status } : undefined;
-    return firstValueFrom(this.http.get<DiningOrder[]>(`${this.api}/orders`, { params }));
+  /**
+   * List comandas (staff), optionally filtered by status. Returns an array.
+   *
+   * `activeSessionsOnly` (spec 029, hotfix): la Terminal de Mesas lo manda
+   * en `true` para no volver a mezclar pedidos ya cobrados de una visita
+   * anterior con la sesión activa de la misma mesa física — ver
+   * `orders/service.py::list_orders` en el backend.
+   */
+  async listOrders(status?: DiningOrderStatus, activeSessionsOnly?: boolean): Promise<DiningOrder[]> {
+    const params: Record<string, string> = {};
+    if (status) params['status'] = status;
+    if (activeSessionsOnly) params['active_sessions_only'] = 'true';
+    return firstValueFrom(
+      this.http.get<DiningOrder[]>(`${this.api}/orders`, { params }),
+    );
   }
 
   /** Fetch a single comanda by id (staff). Throws `HttpErrorResponse` (e.g. 404). */

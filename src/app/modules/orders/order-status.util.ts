@@ -32,6 +32,21 @@ export function orderStatusClass(status: DiningOrderStatus): string {
   return ORDER_STATUS[status]?.classes ?? 'bg-gray-100 text-gray-500';
 }
 
+/**
+ * Estado a mostrar: si ya existe una `Sale` (`paid`), se ve como "Pagada"
+ * aunque `status` siga en `'abierta'`/`'bloqueada'` — los caminos QR y
+ * mostrador dejan `status` así a propósito (spec 029, research.md D2; ver
+ * `PosTerminalStore.deriveTableStatus`, que aplica el mismo criterio en la
+ * Terminal de Mesas). Una orden cancelada se muestra cancelada aunque
+ * `paid` fuera `true`.
+ */
+export function displayOrderStatus(
+  order: Pick<DiningOrder, 'status' | 'paid'>,
+): DiningOrderStatus {
+  if (order.status === 'cancelada') return 'cancelada';
+  return order.paid ? 'pagada' : order.status;
+}
+
 /** Estados en los que el pedido ya no admite cambios. */
 export const TERMINAL_ORDER_STATUSES: readonly DiningOrderStatus[] = ['pagada', 'cancelada'];
 

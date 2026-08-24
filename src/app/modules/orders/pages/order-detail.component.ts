@@ -6,7 +6,7 @@ import { DiningSessionService } from '../../tables/services/dining-session.servi
 import { TableService } from '../../tables/services/table.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../../tables/services/menu-lookup';
-import { orderStatusClass, orderStatusLabel } from '../order-status.util';
+import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
 
 @Component({
   selector: 'app-order-detail',
@@ -49,8 +49,8 @@ import { orderStatusClass, orderStatusLabel } from '../order-status.util';
               <p class="text-base font-bold text-gray-900 truncate">{{ tableLabel() }}</p>
               <p class="text-xs text-gray-400 mt-0.5">Canal: {{ order()!.channel }}</p>
             </div>
-            <span class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0" [class]="statusClass(order()!.status)">
-              {{ statusLabel(order()!.status) }}
+            <span class="text-sm px-3 py-1.5 rounded-full font-semibold shrink-0" [class]="statusClass(displayStatus(order()!))">
+              {{ statusLabel(displayStatus(order()!)) }}
             </span>
           </div>
 
@@ -146,4 +146,5 @@ export class OrderDetailComponent implements OnInit {
 
   statusLabel = orderStatusLabel;
   statusClass = orderStatusClass;
+  displayStatus = displayOrderStatus;
 }

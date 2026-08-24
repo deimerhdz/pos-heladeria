@@ -12,6 +12,7 @@ import { PromotionService } from '../../promotions/services/promotion.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { CashShift } from '../../cash-register/interfaces/cash.interface';
 import { PaymentMethod, Sale } from '../../sales/interfaces/sales.interface';
@@ -145,10 +146,10 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
   // caché/red/toast (T033) se prueba sin pasar por el DOM ni por
   // `printReceiptHtml`, directamente sobre `PosTerminalStore.resolveSaleForOrder`
   // en `pos-terminal.store.spec.ts`.
-  it('T033: ofrece "Reimprimir Factura POS" para el pedido seleccionado, con cuenta de sesión', () => {
+  it('T033/spec 029: ofrece "Imprimir Factura" para el pedido seleccionado, con cuenta de sesión', () => {
     const reprintButton = (): HTMLButtonElement | undefined =>
       Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-        (b as HTMLButtonElement).textContent?.includes('Reimprimir Factura POS'),
+        (b as HTMLButtonElement).textContent?.includes('Imprimir Factura'),
       ) as HTMLButtonElement | undefined;
 
     expect(reprintButton()).toBeUndefined(); // sin `sessionBill`, todavía no hay dónde anclarlo
@@ -204,5 +205,191 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       (b as HTMLButtonElement).textContent?.includes('Imprimir Pre-cuenta'),
     );
     expect(button).toBeDefined();
+  });
+
+  it('spec 029 hotfix #4: "Rechazar pedido" pide confirmación y cancela sin venta ni movimiento de caja', async () => {
+    const confirm = TestBed.inject(ConfirmService);
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Rechazar pedido'),
+    ) as HTMLButtonElement;
+    expect(button).toBeDefined();
+
+    button.click();
+    confirm.respond(true);
+    await Promise.resolve();
+
+    const req = http.expectOne(`${API}/orders/o1/cancel`);
+    expect(req.request.body).toEqual({ motivo: 'Rechazado desde terminal' });
+    req.flush({ detail: 'boom' }, { status: 409, statusText: 'Conflict' });
+    await fixture.whenStable();
+  });
+});
+
+/**
+ * Spec 029, hotfix #3: un pedido de mesero que ya se envió a cocina
+ * (`status !== 'recibida'`) no se puede cobrar con checkout-and-send — el
+ * backend lo rechaza con 409 ("Solo se cobra y envía pedidos en
+ * 'recibida'"), dejándolo `abierta` para siempre sin factura. Debe cobrarse
+ * cerrando la sesión de mesa (`app-session-bill-panel`, `readOnly=false`),
+ * el mismo mecanismo que el modo `resumen` ya usa en solo lectura.
+ */
+describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión de mesa', () => {
+  let fixture: ComponentFixture<PosCheckoutPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  function abiertaOrder(estado: 'listo' | 'pendiente' = 'listo'): DiningOrder {
+    return {
+      id: 'o1',
+      channel: 'waiter',
+      status: 'abierta',
+      version: 1,
+      dining_table_id: 't1',
+      customer_name: null,
+      created_at: '2026-08-21T10:00:00',
+      items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: estado }],
+    } as DiningOrder;
+  }
+
+  const bill = {
+    table_session_id: 'ts1',
+    dining_table_id: 't1',
+    total: '10000',
+    order_ids: ['o1'],
+    split: [{ participant_id: null, display_label: null, subtotal: '10000', discount: '0', items: [] }],
+  };
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosCheckoutPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosCheckoutPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+
+    TestBed.inject(CashService).shift.set({
+      id: 'shift-1',
+      cash_register_id: 'r1',
+      user_id: 'u1',
+      opening_amount: '0',
+      opened_at: '2026-08-20T08:00:00',
+      status: 'open',
+    } as CashShift);
+    TestBed.inject(PaymentMethodService).methods.set(methods);
+
+    store.orders.set([abiertaOrder()]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    store.sessionBill.set(bill as unknown as ReturnType<PosTerminalStore['sessionBill']>);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  it('muestra el panel de cobro por sesión ("Cobrar y cerrar mesa"), no el de checkout-and-send', () => {
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).toContain('Cobrar y cerrar mesa');
+    expect(texto).not.toContain('Cobrar, Facturar y Enviar a Cocina');
+  });
+
+  it('al cobrar, llama primero a ensureReadyToCharge (beforeCharge conectado) y luego cierra la sesión', async () => {
+    const spy = vi.spyOn(store, 'ensureReadyToCharge').mockResolvedValue(true);
+
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'pm-cash';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector('input[type="number"]') as HTMLInputElement;
+    input.value = '10000';
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Cobrar y cerrar mesa'),
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    await Promise.resolve();
+    expect(spy).toHaveBeenCalled();
+
+    // Se prueba con un 409 (igual que "Liberar Mesa", T035 arriba) para
+    // aislar la conexión beforeCharge → close() sin encadenar todo el
+    // reload posterior a un cierre exitoso (`onCharged`), que no es lo que
+    // este test verifica.
+    const req = http.expectOne(`${API}/table-sessions/ts1/close`);
+    expect(req.request.body.cash_shift_id).toBe('shift-1');
+    req.flush({ detail: { error: 'Quedan ítems sin terminar en cocina' } }, { status: 409, statusText: 'Conflict' });
+    await fixture.whenStable();
+  });
+
+  it('si ensureReadyToCharge devuelve false (cajero canceló), no cierra la sesión', async () => {
+    vi.spyOn(store, 'ensureReadyToCharge').mockResolvedValue(false);
+
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'pm-cash';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('input[type="number"]') as HTMLInputElement;
+    input.value = '10000';
+    input.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Cobrar y cerrar mesa'),
+    ) as HTMLButtonElement;
+    button.click();
+    await fixture.whenStable();
+
+    http.expectNone(`${API}/table-sessions/ts1/close`);
+  });
+
+  it('spec 029 hotfix #4: también ofrece "Rechazar pedido" junto al cobro por sesión de mesa', async () => {
+    const confirm = TestBed.inject(ConfirmService);
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Rechazar pedido'),
+    ) as HTMLButtonElement;
+    expect(button).toBeDefined();
+
+    button.click();
+    confirm.respond(true);
+    await Promise.resolve();
+
+    const req = http.expectOne(`${API}/orders/o1/cancel`);
+    expect(req.request.body).toEqual({ motivo: 'Rechazado desde terminal' });
+    req.flush({ detail: 'boom' }, { status: 409, statusText: 'Conflict' });
+    await fixture.whenStable();
+  });
+
+  it('spec 029 hotfix #7: un pedido ya pagado (paid) pasa a solo lectura, sin dividir cuenta, método de pago ni "Rechazar pedido"', () => {
+    store.orders.set([{ ...abiertaOrder(), paid: true }]);
+    fixture.detectChanges();
+
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).toContain('nada que cobrar aquí');
+    expect(texto).not.toContain('Dividir la cuenta entre varias personas');
+    expect(texto).not.toContain('Cuenta única');
+    expect(texto).not.toContain('Método de pago');
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Rechazar pedido'),
+    );
+    expect(button).toBeUndefined();
   });
 });
