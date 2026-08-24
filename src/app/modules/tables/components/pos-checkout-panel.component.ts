@@ -1,10 +1,22 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { DiningOrder, SessionBill, getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
 import { SplitBillPanelComponent } from './split-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
-import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../services/payment-draft.util';
+import {
+  PaymentDraft,
+  emptyPaymentDraft,
+  paymentIssue,
+  paymentLines,
+} from '../services/payment-draft.util';
 
 /**
  * Columna derecha: cuenta de la mesa y cobro.
@@ -32,7 +44,9 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
   imports: [SessionBillPanelComponent, SplitBillPanelComponent, PaymentInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="w-full sm:w-[320px] shrink-0 flex flex-col border-l border-gray-200 min-h-0 bg-white">
+    <div
+      class="w-full sm:w-[320px] shrink-0 flex flex-col border-l border-gray-200 min-h-0 bg-white"
+    >
       <div class="flex-1 overflow-y-auto p-4">
         <!--
           El aviso va AQUÍ y no dentro de <app-session-bill-panel> a propósito:
@@ -42,7 +56,9 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
           deliberado suyo.
         -->
         @if (store.billStale() && !store.billLoading()) {
-          <div class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <div
+            class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+          >
             <span class="text-sm text-amber-800 flex-1">La cuenta cambió</span>
             <button
               (click)="store.refreshBill()"
@@ -123,13 +139,17 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
                 @for (it of store.cartView(); track it.key) {
                   <div class="flex items-center justify-between text-sm gap-2">
                     <span class="text-gray-700 truncate">{{ it.qty }}× {{ it.name }}</span>
-                    <span class="text-gray-900 font-medium shrink-0">{{ store.fmt(it.subtotal) }}</span>
+                    <span class="text-gray-900 font-medium shrink-0">{{
+                      store.fmt(it.subtotal)
+                    }}</span>
                   </div>
                 }
               </div>
               <div class="flex items-center justify-between pt-2 border-t border-gray-100 mb-3">
                 <span class="text-base font-semibold text-gray-800">Total</span>
-                <span class="text-lg font-bold text-gray-900">{{ store.fmt(store.totals().total) }}</span>
+                <span class="text-lg font-bold text-gray-900">{{
+                  store.fmt(store.totals().total)
+                }}</span>
               </div>
             }
 
@@ -150,7 +170,9 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
               </p>
             } @else {
               <div class="mb-2">
-                <label class="block text-sm font-medium text-gray-600 mb-1">Facturar a nombre de</label>
+                <label class="block text-sm font-medium text-gray-600 mb-1"
+                  >Facturar a nombre de</label
+                >
                 <input
                   type="text"
                   [value]="store.billingCustomerName()"
@@ -177,7 +199,9 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
                 [disabled]="store.checkoutSubmitting() || issue() !== null"
                 class="w-full min-h-11 py-2.5 mt-3 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {{ store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar, Facturar y Enviar a Cocina' }}
+                {{
+                  store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar, Facturar y Enviar a Cocina'
+                }}
               </button>
 
               <!-- Spec 029, hotfix #4: alternativa a cobrar, sin venta ni movimiento de caja. -->
@@ -195,12 +219,6 @@ import { PaymentDraft, emptyPaymentDraft, paymentIssue, paymentLines } from '../
 
       @if (store.sessionBill(); as bill) {
         <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
-          <button
-            (click)="store.printPreBill()"
-            class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            🧾 Imprimir Pre-cuenta
-          </button>
           @if (store.selectedOrder(); as order) {
             <!--
               FR-001/FR-002 (spec 029, Historia 4): única acción de impresión

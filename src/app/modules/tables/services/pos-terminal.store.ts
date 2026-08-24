@@ -165,7 +165,9 @@ export function deriveTableStatus(
     // research.md), no `status`. Mientras falte el pago, se muestra
     // "Pago pendiente" — el mismo estado que ya usa la rama 'bloqueada' de
     // arriba, para no inventar una insignia nueva casi idéntica.
-    const conConsumo = orders.filter((o) => (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'));
+    const conConsumo = orders.filter((o) =>
+      (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'),
+    );
     return conConsumo.every((o) => o.paid === true) ? 'listo' : 'pago_pendiente';
   }
   if (orders.length > 0) return 'ocupada';
@@ -305,14 +307,18 @@ export class PosTerminalStore {
         const match = bestProductDiscount(promos, now, prod.id, c.id, price);
         if (!match) continue;
         const label =
-          match.promo.type === 'percent' ? `-${Number(match.promo.value)}%` : `-${this.fmt(Number(match.promo.value))}`;
+          match.promo.type === 'percent'
+            ? `-${Number(match.promo.value)}%`
+            : `-${this.fmt(Number(match.promo.value))}`;
         result.set(prod.id, label);
       }
     }
     return result;
   });
 
-  private readonly lookup = computed<MenuLookup>(() => buildMenuLookup(this.menuService.categories()));
+  private readonly lookup = computed<MenuLookup>(() =>
+    buildMenuLookup(this.menuService.categories()),
+  );
 
   /**
    * Pedidos QR que el comensal envió y esperan que el cajero valide su pago.
@@ -361,8 +367,7 @@ export class PosTerminalStore {
    */
   private tableOrders(tableId: string): DiningOrder[] {
     return this.orders().filter(
-      (o) =>
-        o.dining_table_id === tableId && o.status !== 'pagada' && o.status !== 'cancelada',
+      (o) => o.dining_table_id === tableId && o.status !== 'pagada' && o.status !== 'cancelada',
     );
   }
 
@@ -386,9 +391,7 @@ export class PosTerminalStore {
    *   carrito existente (`app-pos-order-panel`), que ya distingue internamente
    *   entre un draft sin guardar y un pedido persistido.
    */
-  readonly centralState = computed<
-    'validar-pago' | 'mesa-libre' | 'pedido'
-  >(() => {
+  readonly centralState = computed<'validar-pago' | 'mesa-libre' | 'pedido'>(() => {
     if (this.pendingOfSelectedTable().length > 0) return 'validar-pago';
     const tableId = this.selectedTableId();
     if (!tableId) return 'pedido'; // nada seleccionado: pos-order-panel pinta su placeholder
@@ -437,7 +440,11 @@ export class PosTerminalStore {
         const status = deriveTableStatus(list, t.status);
         const meta = STATUS_META[status];
         const items = list.reduce(
-          (n, o) => n + (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado').reduce((x, i) => x + i.quantity, 0),
+          (n, o) =>
+            n +
+            (o.items ?? [])
+              .filter((i) => i.estado_cocina !== 'anulado')
+              .reduce((x, i) => x + i.quantity, 0),
           0,
         );
         const subtotal = list.reduce((s, o) => s + this.orderSubtotal(o), 0);
@@ -643,13 +650,16 @@ export class PosTerminalStore {
    */
   private startPolling(): void {
     this.stopPolling();
-    this.pollHandle = startVisibleInterval(() => {
-      // Un fallo de red pasajero no debe pintar un error sobre la terminal.
-      void this.reloadOrders().catch(() => undefined);
-      // También las mesas: su `status` es lo que delata a un comensal que
-      // escaneó el QR y todavía no ha pedido nada.
-      void this.tableService.loadTables().catch(() => undefined);
-    }, this.realtime.status() === 'open' ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS);
+    this.pollHandle = startVisibleInterval(
+      () => {
+        // Un fallo de red pasajero no debe pintar un error sobre la terminal.
+        void this.reloadOrders().catch(() => undefined);
+        // También las mesas: su `status` es lo que delata a un comensal que
+        // escaneó el QR y todavía no ha pedido nada.
+        void this.tableService.loadTables().catch(() => undefined);
+      },
+      this.realtime.status() === 'open' ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS,
+    );
   }
 
   private stopPolling(): void {
@@ -736,9 +746,7 @@ export class PosTerminalStore {
    */
   private announcePending(orders: DiningOrder[]): void {
     const nuevos = newPendingIds(this.seenPending, orders);
-    this.seenPending = new Set(
-      orders.filter((o) => o.status === 'recibida').map((o) => o.id),
-    );
+    this.seenPending = new Set(orders.filter((o) => o.status === 'recibida').map((o) => o.id));
     if (nuevos.length > 0 && this.pendingSeeded) this.sound.bell();
     this.pendingSeeded = true;
   }
@@ -867,7 +875,6 @@ export class PosTerminalStore {
     this.billingCustomerName.set('Consumidor Final');
   }
 
-
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
   openCatalog(): void {
     this.catalogOpen.set(true);
@@ -893,11 +900,20 @@ export class PosTerminalStore {
   addDraftFromSelection(sel: ProductSelection): void {
     const unitPrice = sel.variant.price + sel.options.reduce((s, o) => s + o.extra_price, 0);
     const key =
-      sel.variant.id + '|' + sel.options.map((o) => o.id).sort().join(',') + '|' + (sel.notes ?? '');
+      sel.variant.id +
+      '|' +
+      sel.options
+        .map((o) => o.id)
+        .sort()
+        .join(',') +
+      '|' +
+      (sel.notes ?? '');
     this.draftLines.update((lines) => {
       const existing = lines.find((l) => l.key === key);
       if (existing) {
-        return lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + sel.quantity } : l));
+        return lines.map((l) =>
+          l.key === key ? { ...l, quantity: l.quantity + sel.quantity } : l,
+        );
       }
       const line: ProductDraftLine = {
         kind: 'product',
@@ -942,7 +958,9 @@ export class PosTerminalStore {
   private comboBullets(comboId: string): string[] {
     const promo = this.combos().find((p) => p.id === comboId);
     const lk = this.lookup();
-    return (promo?.combo_items ?? []).map((ci) => `${ci.quantity}x ${lk.variantLabel(ci.product_variant_id)}`);
+    return (promo?.combo_items ?? []).map(
+      (ci) => `${ci.quantity}x ${lk.variantLabel(ci.product_variant_id)}`,
+    );
   }
 
   /** Agrupa ítems de pedido por `combo_id`: sus componentes reales comparten uno. */
@@ -968,9 +986,16 @@ export class PosTerminalStore {
     if (recipe.length === 0) return 0;
     const qtyByVariant = new Map<string, number>();
     for (const it of items) {
-      qtyByVariant.set(it.product_variant_id, (qtyByVariant.get(it.product_variant_id) ?? 0) + it.quantity);
+      qtyByVariant.set(
+        it.product_variant_id,
+        (qtyByVariant.get(it.product_variant_id) ?? 0) + it.quantity,
+      );
     }
-    return Math.min(...recipe.map((ci) => Math.floor((qtyByVariant.get(ci.product_variant_id) ?? 0) / ci.quantity)));
+    return Math.min(
+      ...recipe.map((ci) =>
+        Math.floor((qtyByVariant.get(ci.product_variant_id) ?? 0) / ci.quantity),
+      ),
+    );
   }
 
   /**
@@ -980,7 +1005,11 @@ export class PosTerminalStore {
    * precio normal — mismo criterio que `combo_discount_for_lines` del backend,
    * para que el número que ve el cajero coincida con lo que se cobrará.
    */
-  private comboDisplaySubtotal(promo: Promotion | undefined, its: DiningOrderItem[], units: number): number {
+  private comboDisplaySubtotal(
+    promo: Promotion | undefined,
+    its: DiningOrderItem[],
+    units: number,
+  ): number {
     const normalTotal = its.reduce((s, it) => s + Number(it.unit_price) * it.quantity, 0);
     if (units <= 0 || !promo) return normalTotal;
 
@@ -994,11 +1023,15 @@ export class PosTerminalStore {
   }
 
   incDraft(key: string): void {
-    this.draftLines.update((l) => l.map((x) => (x.key === key ? { ...x, quantity: x.quantity + 1 } : x)));
+    this.draftLines.update((l) =>
+      l.map((x) => (x.key === key ? { ...x, quantity: x.quantity + 1 } : x)),
+    );
   }
   decDraft(key: string): void {
     this.draftLines.update((l) =>
-      l.map((x) => (x.key === key ? { ...x, quantity: x.quantity - 1 } : x)).filter((x) => x.quantity > 0),
+      l
+        .map((x) => (x.key === key ? { ...x, quantity: x.quantity - 1 } : x))
+        .filter((x) => x.quantity > 0),
     );
   }
   removeDraft(key: string): void {
@@ -1050,7 +1083,8 @@ export class PosTerminalStore {
     if (ids.length === 0) return;
     const ok = await this.confirm.ask({
       title: 'Anular combo',
-      message: '¿Anular todos los productos de este combo? Se revierte el inventario de lo que aún no se preparó.',
+      message:
+        '¿Anular todos los productos de este combo? Se revierte el inventario de lo que aún no se preparó.',
       confirmText: 'Anular',
     });
     if (!ok) return;
@@ -1397,31 +1431,13 @@ export class PosTerminalStore {
     const todas = this.lastReceipts();
     const receipts = index == null ? todas : todas.slice(index, index + 1);
     if (receipts.length === 0) return;
-    printReceiptHtml(
-      buildReceiptHtml(receipts, { paperWidthMm: this.printer.paperWidthMm() }),
-    );
+    printReceiptHtml(buildReceiptHtml(receipts, { paperWidthMm: this.printer.paperWidthMm() }));
   }
 
   /** "Mesa 4", para el encabezado del ticket de pre-cuenta y de la factura. */
   private tableLabel(): string {
     const t = this.selectedTable();
     return t ? `Mesa ${t.number}${t.name ? ' · ' + t.name : ''}` : '';
-  }
-
-  /**
-   * Imprime la pre-cuenta de la mesa seleccionada (feature 028, T031/T032):
-   * un ticket previo al pago, a partir de `sessionBill()` — todavía no hay
-   * ninguna `Sale` de la que salga.
-   */
-  printPreBill(): void {
-    const bill = this.sessionBill();
-    if (!bill) return;
-    printReceiptHtml(
-      buildReceiptHtml(
-        [sessionBillToReceipt(bill, { ...this.receiptContext(), tableLabel: this.tableLabel() })],
-        { paperWidthMm: this.printer.paperWidthMm() },
-      ),
-    );
   }
 
   /**
