@@ -74,7 +74,7 @@ import {
           <!-- Origen QR: solo lectura (T004/T009). -->
           <app-session-bill-panel
             [bill]="store.sessionBill()"
-            [methods]="store.paymentMethods()"
+            [methods]="store.paymentMethodsAvailable()"
             [cashShiftId]="store.cashShiftId()"
             [customerName]="store.customerName()"
             [orphan]="store.billOrphan()"
@@ -103,7 +103,7 @@ import {
             }
             <app-session-bill-panel
               [bill]="store.sessionBill()"
-              [methods]="store.paymentMethods()"
+              [methods]="store.paymentMethodsAvailable()"
               [cashShiftId]="store.cashShiftId()"
               [customerName]="store.customerName()"
               [orphan]="store.billOrphan()"
@@ -184,7 +184,7 @@ import {
 
               <app-payment-input
                 [total]="store.totals().total"
-                [methods]="store.paymentMethods()"
+                [methods]="store.paymentMethodsAvailable()"
                 (changed)="paymentDraft.set($event)"
               />
 
@@ -282,7 +282,7 @@ export class PosCheckoutPanelComponent {
   readonly paymentDraft = signal<PaymentDraft>(emptyPaymentDraft());
 
   readonly issue = computed(() =>
-    paymentIssue(this.paymentDraft(), this.store.totals().total, this.store.paymentMethods()),
+    paymentIssue(this.paymentDraft(), this.store.totals().total, this.store.paymentMethodsAvailable()),
   );
 
   constructor() {

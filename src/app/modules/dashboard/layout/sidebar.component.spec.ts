@@ -41,7 +41,11 @@ describe('SidebarComponent.visibleItems', () => {
     const sidebar = createComponent();
 
     const routes = sidebar.visibleItems().map((i) => i.route);
-    expect(routes).toEqual(['/super-admin/tenants', '/super-admin/users']);
+    expect(routes).toEqual([
+      '/super-admin/tenants',
+      '/super-admin/users',
+      '/super-admin/payment-methods-catalog',
+    ]);
     expect(sidebar.isSuperAdmin()).toBe(true);
   });
 

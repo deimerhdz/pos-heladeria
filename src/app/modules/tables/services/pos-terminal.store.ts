@@ -276,7 +276,14 @@ export class PosTerminalStore {
 
   // ─── Derivados ───────────────────────────────────────────────────────────────
   readonly tables = this.tableService.tables;
+  /** Listado completo (todos los estados) — usado por `methodName()` para
+   * resolver el nombre de un método ya usado en una venta, aunque ya no esté
+   * disponible para cobros nuevos (Principio VII: el histórico no cambia). */
   readonly paymentMethods = this.paymentMethodService.methods;
+  /** Solo los disponibles para cobrar ahora mismo (activos, completos, con el
+   * catálogo activo) y sin datos de integración — lo que consume el panel de
+   * cobro (spec 032, FR-012/FR-012a). */
+  readonly paymentMethodsAvailable = this.paymentMethodService.checkoutOptions;
   readonly categories = this.menuService.categories;
 
   /** Combos activos y vigentes ahora mismo, disponibles para vender (el staff ya tiene token de sesión). */
@@ -611,6 +618,9 @@ export class PosTerminalStore {
         this.tableService.loadTables(),
         this.reloadOrders(),
         this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
+        this.paymentMethodService.checkoutOptions().length === 0
+          ? this.paymentMethodService.loadAvailableForCheckout()
+          : null,
         this.menuService.categories().length === 0 ? this.menuService.loadMenu() : null,
         this.promotionService.loadActive(),
         this.cash.shift() ? null : this.cash.restoreShift(),

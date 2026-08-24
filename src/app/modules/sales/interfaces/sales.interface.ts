@@ -9,11 +9,15 @@ export type PaymentMethodType = 'cash' | 'card' | 'transfer' | 'other';
 /** `PaymentMethodResponse`. */
 export interface PaymentMethod {
   id: string;
+  /** `null` en filas creadas antes de la migración de la spec 032, hasta que se backfillee. */
+  catalog_id: string | null;
   name: string;
   type: PaymentMethodType;
   /** Invariante del backend: `is_cash ⇔ type === 'cash'`. */
   is_cash: boolean;
   active: boolean;
+  /** Todo lo obligatorio de `catalog.fields` está diligenciado y validado (spec 032, FR-009). */
+  is_complete: boolean;
   /**
    * Datos de pago que el comensal necesita ver para transferir (cuenta,
    * titular, teléfono, código…) — spec 024. Sin esquema fijo: cada método
@@ -22,19 +26,53 @@ export interface PaymentMethod {
   payment_info?: Record<string, string> | null;
 }
 
-/** Body for `POST /sales/payment-methods` (`PaymentMethodCreate`). */
+/**
+ * Body for `POST /sales/payment-methods` (`PaymentMethodCreate`, spec 032).
+ * `name`/`type`/`is_cash` ya no se aceptan — se copian del catálogo elegido
+ * (`catalog_id`); un tenant no puede crear métodos fuera del catálogo (FR-007/FR-011).
+ */
 export interface PaymentMethodCreatePayload {
-  name: string;
-  type: PaymentMethodType;
-  is_cash: boolean;
+  catalog_id: string;
   payment_info?: Record<string, string> | null;
 }
 
-/** Body for `PATCH /sales/payment-methods/{id}` (`PaymentMethodUpdate`, spec 024). */
+/** Body for `PATCH /sales/payment-methods/{id}` (`PaymentMethodUpdate`). `name` ya no aplica
+ * (viene del catálogo) — reactivar (`active: true`) es también el camino para volver a usar un
+ * método desactivado, conservando el `payment_info` si no se manda uno nuevo (spec 032, FR-017). */
 export interface PaymentMethodUpdatePayload {
-  name?: string;
   payment_info?: Record<string, string> | null;
   active?: boolean;
+}
+
+/** Un campo de integración definido por el catálogo (mismo shape que
+ * `PaymentMethodFieldDefinition` del módulo `super-admin`). */
+export interface CatalogPaymentMethodField {
+  key: string;
+  label: string;
+  required: boolean;
+  format: 'text' | 'numeric' | 'image';
+  length?: number | null;
+}
+
+/** `CatalogPaymentMethodOption` (`GET /sales/payment-methods/catalog`, spec 032 FR-005/FR-006). */
+export interface CatalogPaymentMethodOption {
+  id: string;
+  name: string;
+  fields: CatalogPaymentMethodField[];
+  /** Estado del catálogo a nivel plataforma (no el de la activación del tenant). */
+  active: boolean;
+  /** `true` si este tenant ya tiene una fila para este `catalog_id` (activa o no). */
+  already_activated: boolean;
+}
+
+/** `PaymentMethodCheckoutOption` (`GET /sales/payment-methods?available=true`, spec 032 FR-012a):
+ * lo que ve el cajero. Nunca `payment_info` (cuenta, celular, QR — los "datos de integración" que
+ * la clarificación reserva al Tenant Admin). `is_cash` sí viaja: es clasificación operativa, no un
+ * dato de integración — el checkout la necesita para decidir si calcula vuelto. */
+export interface PaymentMethodCheckoutOption {
+  id: string;
+  name: string;
+  is_cash: boolean;
 }
 
 // ── Checkout (`POST /sales`) ───────────────────────────────────────────────

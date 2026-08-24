@@ -19,7 +19,7 @@ import {
   SessionBill,
   SplitPayment,
 } from '../interfaces/dining.interface';
-import { PaymentMethod } from '../../sales/interfaces/sales.interface';
+import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import { TableSessionService } from '../services/table-session.service';
 import { PaymentInputComponent } from './payment-input.component';
 import {
@@ -193,7 +193,7 @@ interface SplitDraft {
 })
 export class SessionBillPanelComponent implements OnChanges {
   @Input() bill: SessionBill | null = null;
-  @Input() methods: PaymentMethod[] = [];
+  @Input() methods: PaymentMethodCheckoutOption[] = [];
   @Input() cashShiftId: string | null = null;
   /** A nombre de quién se factura la cuenta única; vacío lo resuelve el backend. */
   @Input() customerName = '';
