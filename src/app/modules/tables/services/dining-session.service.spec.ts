@@ -38,6 +38,31 @@ describe('DiningSessionService', () => {
   });
 
   /**
+   * Spec 029, hotfix: la Terminal de Mesas manda `active_sessions_only` para
+   * que un pedido ya cobrado de una visita anterior (mesa liberada y
+   * reabierta por QR) no vuelva a mezclarse con la sesión activa de la misma
+   * mesa física — ver `orders/service.py::list_orders` en el backend.
+   */
+  it('lista comandas acotadas a sesiones activas cuando se pide', async () => {
+    const promise = service.listOrders(undefined, true);
+    const req = http.expectOne((r) => r.url === `${API}/orders`);
+
+    expect(req.request.params.get('active_sessions_only')).toBe('true');
+    expect(req.request.params.has('status')).toBe(false);
+    req.flush([]);
+    await promise;
+  });
+
+  it('sin el flag, no manda active_sessions_only (comportamiento actual)', async () => {
+    const promise = service.listOrders();
+    const req = http.expectOne((r) => r.url === `${API}/orders`);
+
+    expect(req.request.params.has('active_sessions_only')).toBe(false);
+    req.flush([]);
+    await promise;
+  });
+
+  /**
    * Confirmar es el único punto que descuenta inventario en el flujo de mesa:
    * ni el carrito, ni el envío del comensal, ni el cobro lo tocan.
    */
