@@ -22,6 +22,23 @@ export interface ChangePasswordRequest {
   new_password: string;
 }
 
+/** Request body for `POST /api/v1/auth/forgot-password`. */
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+/** Request body for `POST /api/v1/auth/reset-password`. */
+export interface ResetPasswordRequest {
+  token: string;
+  new_password: string;
+}
+
+/** Response body of `GET /api/v1/auth/reset-password/validate`. */
+export interface ValidateResetTokenResponse {
+  valid: boolean;
+  reason?: 'expired' | 'used' | 'invalid';
+}
+
 /** Response body of `POST /api/v1/auth/login`. */
 export interface LoginResponse {
   message: string;

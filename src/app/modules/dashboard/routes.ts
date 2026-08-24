@@ -25,6 +25,16 @@ export const dashboardRoutes: Routes = [
           import('../cash-register/pages/cash-page.component').then((m) => m.CashPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
+      {
+        // Ajustes de cuenta personal (spec 031) — a diferencia de 'ajustes'
+        // (configuración del negocio, solo ADMIN), accesible a cualquier
+        // usuario autenticado del dashboard, sin roleGuard.
+        path: 'mi-cuenta',
+        loadComponent: () =>
+          import('../account/pages/account-settings.component').then(
+            (m) => m.AccountSettingsComponent,
+          ),
+      },
       // Mesas salió de Ajustes a Operaciones; va antes del bloque 'ajustes'
       // para que el redirect gane al match de la ruta padre.
       { path: 'ajustes/mesas', pathMatch: 'full', redirectTo: 'mesas' },

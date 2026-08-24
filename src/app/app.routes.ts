@@ -21,6 +21,25 @@ export const routes: Routes = [
       import('./modules/auth/pages/login.component').then(m => m.LoginComponent),
   },
   {
+    // Solicitar el enlace de restablecimiento (Flujo A, no autenticado).
+    path: 'forgot-password',
+    canActivate: [redirectIfAuthGuard],
+    loadComponent: () =>
+      import('./modules/auth/pages/forgot-password.component').then(
+        m => m.ForgotPasswordComponent,
+      ),
+  },
+  {
+    // Definir la contraseña nueva desde el enlace del correo. Pública: el
+    // propio componente limpia cualquier sesión existente (FR-006) en vez de
+    // redirigir — un guard de "no autenticado" la echaría antes de leer el token.
+    path: 'reset-password',
+    loadComponent: () =>
+      import('./modules/auth/pages/reset-password.component').then(
+        m => m.ResetPasswordComponent,
+      ),
+  },
+  {
     // Forces a password change before accessing the app (temporary password).
     path: 'change-password',
     canActivate: [authGuard, changePasswordPageGuard],

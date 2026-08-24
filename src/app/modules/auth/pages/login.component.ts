@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
 import { TenantContextService } from '../../../core/tenant/tenant-context.service';
@@ -15,7 +15,7 @@ const ROLE_HOME: Record<UserRole, string> = {
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, PasswordInputComponent],
+  imports: [ReactiveFormsModule, PasswordInputComponent, RouterLink],
   template: `
     <!-- lg:h-screen (y no solo min-h): fija el alto al viewport para que el panel
          derecho no empuje la página y deje el pie fuera de pantalla. -->
@@ -93,6 +93,12 @@ const ROLE_HOME: Record<UserRole, string> = {
                 @if (passwordInvalid) {
                   <p class="text-red-500 text-xs mt-1">La contraseña es requerida</p>
                 }
+                <a
+                  routerLink="/forgot-password"
+                  class="inline-block mt-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  Restablecer contraseña
+                </a>
               </div>
 
               <button

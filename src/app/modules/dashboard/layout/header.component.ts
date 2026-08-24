@@ -1,5 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
 import { LayoutService } from './layout.service';
@@ -19,7 +19,7 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [],
+  imports: [RouterLink],
   template: `
     <header
       class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center gap-3 justify-between shrink-0 z-10"
@@ -82,6 +82,27 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
               <p class="text-xs text-gray-500 truncate">{{ currentUser()?.email }}</p>
             </div>
             <div class="p-2">
+              <a
+                routerLink="/dashboard/mi-cuenta"
+                (click)="dropdownOpen.set(false)"
+                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 15a3 3 0 100-6 3 3 0 000 6z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"
+                  />
+                </svg>
+                Cambiar contraseña
+              </a>
               <button
                 (click)="logout()"
                 class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors text-sm font-medium"
