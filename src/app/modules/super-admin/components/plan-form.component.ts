@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Plan, PlanCreatePayload } from '../interfaces/plan.interface';
 import { PlanService } from '../services/plan.service';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 interface LimitGroup {
   value: FormControl<number>;
@@ -30,7 +31,7 @@ function buildLimitGroup(value: number | null): FormGroup<LimitGroup> {
 @Component({
   selector: 'app-plan-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -107,24 +108,20 @@ function buildLimitGroup(value: number | null): FormGroup<LimitGroup> {
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Precio mensual</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <app-money-input
                 formControlName="precio_mensual"
+                [decimals]="2"
                 placeholder="Sin precio"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                sizeClass="px-3 py-2 rounded-lg text-sm"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Precio anual</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <app-money-input
                 formControlName="precio_anual"
+                [decimals]="2"
                 placeholder="Sin precio"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                sizeClass="px-3 py-2 rounded-lg text-sm"
               />
             </div>
           </div>

@@ -31,7 +31,7 @@ import {
   PaymentLine,
   SessionBill,
 } from '../interfaces/dining.interface';
-import { KITCHEN_NOT_READY } from '../../orders/order-status.util';
+import { KITCHEN_NOT_READY, hasPendingKitchenWork } from '../../orders/order-status.util';
 import { ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
@@ -159,12 +159,17 @@ export function deriveTableStatus(
   if (items.some((i) => KITCHEN_NOT_READY.includes(i.estado_cocina))) return 'en_preparacion';
   if (items.length > 0 && items.every((i) => i.estado_cocina === 'listo')) {
     // Spec 029, Historia 3: "Listo" exige pago Y cocina, las dos a la vez —
-    // no basta con que cocina termine. Los caminos QR/mostrador vigentes
-    // nunca llegan a `status === 'pagada'` (dejan la orden en 'abierta' con
-    // la Sale ya emitida), así que la señal real es `order.paid` (D2 de
-    // research.md), no `status`. Mientras falte el pago, se muestra
-    // "Pago pendiente" — el mismo estado que ya usa la rama 'bloqueada' de
-    // arriba, para no inventar una insignia nueva casi idéntica.
+    // no basta con que cocina termine. La señal real sigue siendo
+    // `order.paid` (D2 de research.md), no `status`: aunque desde spec 035
+    // (A-52) los caminos QR/mostrador sí llegan a `status === 'pagada'` en
+    // cuanto se cobra, `tableOrders()` ya deja pasar esas órdenes mientras
+    // les quede comida en preparación (`hasPendingKitchenWork`), así que acá
+    // puede haber una orden `'pagada'` con ítems `'listo'` a medio camino de
+    // que el resto del pedido también quede `'listo'` — `paid` es la
+    // comprobación explícita y no depende de en qué momento cambió `status`.
+    // Mientras falte el pago, se muestra "Pago pendiente" — el mismo estado
+    // que ya usa la rama 'bloqueada' de arriba, para no inventar una
+    // insignia nueva casi idéntica.
     const conConsumo = orders.filter((o) =>
       (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'),
     );
@@ -355,8 +360,8 @@ export class PosTerminalStore {
   private readonly activeOrders = computed(() =>
     this.orders().filter(
       (o) =>
-        o.status !== 'pagada' &&
         o.status !== 'cancelada' &&
+        (o.status !== 'pagada' || hasPendingKitchenWork(o)) &&
         (o.status !== 'recibida' || o.channel !== 'qr'),
     ),
   );
@@ -370,11 +375,18 @@ export class PosTerminalStore {
    * Todo lo que la mesa tiene vivo, **incluidos los pedidos por confirmar**.
    *
    * Es lo que alimenta el tablero: una mesa con un pedido del QR esperando
-   * confirmación no está libre, y su consumo tampoco es cero.
+   * confirmación no está libre, y su consumo tampoco es cero. Desde spec 035
+   * (A-52), una orden `'pagada'` con ítems todavía sin terminar de preparar
+   * (se cobró antes de enviarla a cocina, spec 028) también sigue contando
+   * como consumo vivo — de lo contrario la mesa se vería libre con el pedido
+   * aún en preparación (`hasPendingKitchenWork`, `order-status.util.ts`).
    */
   private tableOrders(tableId: string): DiningOrder[] {
     return this.orders().filter(
-      (o) => o.dining_table_id === tableId && o.status !== 'pagada' && o.status !== 'cancelada',
+      (o) =>
+        o.dining_table_id === tableId &&
+        o.status !== 'cancelada' &&
+        (o.status !== 'pagada' || hasPendingKitchenWork(o)),
     );
   }
 

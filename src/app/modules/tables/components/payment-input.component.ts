@@ -18,6 +18,7 @@ import {
   paymentIssue,
 } from '../services/payment-draft.util';
 import { formatMoney } from '../services/receipt.util';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /**
  * Cómo paga el cliente un cobro: un método, o dos combinados.
@@ -28,7 +29,7 @@ import { formatMoney } from '../services/receipt.util';
 @Component({
   selector: 'app-payment-input',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="space-y-2">
@@ -48,13 +49,10 @@ import { formatMoney } from '../services/receipt.util';
         <label class="block text-sm font-medium text-gray-600">
           {{ isCash(draft().methodId) ? 'Con cuánto paga' : 'Importe' }}
         </label>
-        <input
-          type="number"
-          inputmode="numeric"
-          min="0"
+        <app-money-input
           [ngModel]="draft().amount"
-          (ngModelChange)="setAmount($event)"
-          class="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base"
+          (ngModelChange)="setAmount($event ?? 0)"
+          sizeClass="min-h-11 px-3 py-2 rounded-lg text-base"
         />
 
         <label class="flex items-center gap-2 text-sm text-gray-700 pt-1">
@@ -82,13 +80,10 @@ import { formatMoney } from '../services/receipt.util';
               <option [value]="m.id">{{ m.name }}</option>
             }
           </select>
-          <input
-            type="number"
-            inputmode="numeric"
-            min="0"
+          <app-money-input
             [ngModel]="draft().secondAmount"
-            (ngModelChange)="setSecondAmount($event)"
-            class="w-full min-h-11 px-2 py-1.5 border border-gray-200 rounded text-base"
+            (ngModelChange)="setSecondAmount($event ?? 0)"
+            sizeClass="min-h-11 px-2 py-1.5 rounded text-base"
           />
         </div>
       }

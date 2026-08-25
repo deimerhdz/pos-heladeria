@@ -13,13 +13,14 @@ import { FormsModule } from '@angular/forms';
 import { SuppliersService } from '../../suppliers/services/suppliers.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 import { PurchaseForm, PurchaseLineForm } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
 
 @Component({
   selector: 'app-purchase-form',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, SearchableSelectComponent],
+  imports: [FormsModule, DecimalPipe, SearchableSelectComponent, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -81,9 +82,9 @@ import { InventoryService } from '../services/inventory.service';
                   <input type="number" min="0" step="0.001"
                     class="col-span-2 px-2 py-2 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     [ngModel]="row.quantity" (ngModelChange)="updateRow($index, 'quantity', $event)">
-                  <input type="number" min="0" step="0.01"
-                    class="col-span-2 px-2 py-2 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    [ngModel]="row.unit_cost" (ngModelChange)="updateRow($index, 'unit_cost', $event)">
+                  <app-money-input class="col-span-2" [decimals]="2"
+                    sizeClass="px-2 py-2 rounded-lg text-sm text-right"
+                    [ngModel]="row.unit_cost" (ngModelChange)="updateRow($index, 'unit_cost', $event ?? 0)" />
                   <span class="col-span-2 text-right text-sm text-gray-700">
                     {{ (row.quantity * row.unit_cost) | number:'1.2-2' }}
                   </span>
