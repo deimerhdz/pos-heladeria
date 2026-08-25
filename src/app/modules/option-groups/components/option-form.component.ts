@@ -16,11 +16,12 @@ import { UnitMeasureService } from '../../../core/services/unit-measure.service'
 import { Option, OptionForm, OptionGroup } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 @Component({
   selector: 'app-option-form',
   standalone: true,
-  imports: [ReactiveFormsModule, SearchableSelectComponent],
+  imports: [ReactiveFormsModule, SearchableSelectComponent, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -45,8 +46,8 @@ import { SearchableSelectComponent } from '../../../shared/searchable-select/sea
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Precio extra</label>
-            <input formControlName="extra_price" type="number" min="0" step="0.01" placeholder="0"
-              class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <app-money-input formControlName="extra_price" [decimals]="2" placeholder="0"
+              sizeClass="px-3 py-2 rounded-xl text-sm" />
           </div>
 
           <div>

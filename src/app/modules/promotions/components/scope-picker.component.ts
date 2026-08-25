@@ -13,6 +13,7 @@ import { MenuCategory } from '../../products/interfaces/product.interface';
 import { ScopeTarget, hasOwnPricing } from '../interfaces/promotion.interface';
 import { formatMoney } from '../../../shared/money';
 import { normalizeText } from '../../../shared/normalize-text';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 export interface ScopeSelection {
   categories: ScopeTarget[];
@@ -137,7 +138,7 @@ export function selectCategory(
   selector: 'app-scope-picker',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet],
+  imports: [FormsModule, NgTemplateOutlet, MoneyInputComponent],
   template: `
     <div class="border border-gray-200 rounded-xl overflow-hidden bg-white">
       <!-- Cabecera fija: buscador, filtro y contadores -->
@@ -310,13 +311,11 @@ export function selectCategory(
             class="w-12 px-1.5 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
           <span class="text-[11px] text-gray-400">por</span>
-          <input
-            type="number"
-            min="0"
+          <app-money-input
             [ngModel]="targetOf(id, kind)?.value"
             (ngModelChange)="setTerm(id, kind, 'value', $event)"
             placeholder="precio"
-            class="w-20 px-1.5 py-1 border border-gray-200 rounded text-xs text-right focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            sizeClass="w-20 px-1.5 py-1 rounded text-xs text-right"
           />
         </span>
       </ng-template>

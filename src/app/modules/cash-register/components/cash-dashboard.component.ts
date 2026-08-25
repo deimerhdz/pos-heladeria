@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { CashSessionStore } from '../services/cash-session.store';
 import { CashService } from '../services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /**
  * Dashboard del turno en curso: acciones, banner de efectivo esperado, KPIs y la
@@ -16,7 +17,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
   selector: 'app-cash-dashboard',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, MoneyInputComponent],
   template: `
     <div class="flex-1 w-full max-w-[1240px] mx-auto p-6">
       @if (store.error() && !store.modal()) {
@@ -169,8 +170,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
             </p>
             <div>
               <label class="block text-xs font-semibold text-gray-500 mb-1">Efectivo contado</label>
-              <input [(ngModel)]="partialCounted" type="number" min="0"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+              <app-money-input [(ngModel)]="partialCounted" />
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-500 mb-1">Observación (opcional)</label>
@@ -200,7 +200,7 @@ export class CashDashboardComponent {
   private readonly toast = inject(ToastService);
 
   readonly showPartial = signal(false);
-  partialCounted = 0;
+  partialCounted: number | null = 0;
   partialNote = '';
   readonly partialSubmitting = signal(false);
 

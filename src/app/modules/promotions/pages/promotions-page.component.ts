@@ -14,6 +14,7 @@ import { MenuService } from '../../../core/services/menu.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 import { formatMoney } from '../../../shared/money';
 import {
   PROMOTION_TRANSITIONS,
@@ -133,7 +134,7 @@ function vigPhrase(v: VigInput): string {
   selector: 'app-promotions-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet, PaginationBarComponent, ScopePickerComponent],
+  imports: [FormsModule, NgTemplateOutlet, PaginationBarComponent, ScopePickerComponent, MoneyInputComponent],
   template: `
     <div>
       @switch (screen()) {
@@ -457,14 +458,23 @@ function vigPhrase(v: VigInput): string {
                 </button>
               </div>
               <div class="flex items-center gap-2 max-w-[200px]">
-                <input
-                  [(ngModel)]="form.value"
-                  (blur)="touch('value')"
-                  type="number"
-                  min="0"
-                  [max]="form.type === 'percent' ? 100 : null"
-                  class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                />
+                @if (form.type === 'percent') {
+                  <input
+                    [(ngModel)]="form.value"
+                    (blur)="touch('value')"
+                    type="number"
+                    min="0"
+                    max="100"
+                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                } @else {
+                  <app-money-input
+                    [ngModel]="form.value"
+                    (ngModelChange)="form.value = $event ?? 0"
+                    (blurred)="touch('value')"
+                    sizeClass="px-3 py-2.5 rounded-lg text-sm"
+                  />
+                }
                 <span class="text-sm font-semibold text-gray-600">{{
                   form.type === 'percent' ? '%' : 'pesos'
                 }}</span>
@@ -732,11 +742,10 @@ function vigPhrase(v: VigInput): string {
                   >
                   <div class="flex items-center gap-2 max-w-50">
                     <span class="text-sm font-semibold text-gray-500">$</span>
-                    <input
-                      [(ngModel)]="form.value"
-                      type="number"
-                      min="0"
-                      class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    <app-money-input
+                      [ngModel]="form.value"
+                      (ngModelChange)="form.value = $event ?? 0"
+                      sizeClass="px-3 py-2.5 rounded-lg text-sm"
                     />
                   </div>
                   <p class="text-sm text-gray-600 mt-2">
@@ -752,13 +761,21 @@ function vigPhrase(v: VigInput): string {
                     >¿Cuánto descuenta?</label
                   >
                   <div class="flex items-center gap-2 max-w-50">
-                    <input
-                      [(ngModel)]="form.value"
-                      type="number"
-                      min="0"
-                      [max]="form.type === 'percent' ? 100 : null"
-                      class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    />
+                    @if (form.type === 'percent') {
+                      <input
+                        [(ngModel)]="form.value"
+                        type="number"
+                        min="0"
+                        max="100"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                    } @else {
+                      <app-money-input
+                        [ngModel]="form.value"
+                        (ngModelChange)="form.value = $event ?? 0"
+                        sizeClass="px-3 py-2.5 rounded-lg text-sm"
+                      />
+                    }
                     <span class="text-sm font-semibold text-gray-600">{{
                       form.type === 'percent' ? '%' : 'pesos'
                     }}</span>
@@ -977,12 +994,11 @@ function vigPhrase(v: VigInput): string {
                 >
                 <div class="flex items-center gap-2 max-w-[200px]">
                   <span class="text-sm font-semibold text-gray-500">$</span>
-                  <input
-                    [(ngModel)]="form.value"
-                    (blur)="touch('comboPrice')"
-                    type="number"
-                    min="0"
-                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  <app-money-input
+                    [ngModel]="form.value"
+                    (ngModelChange)="form.value = $event ?? 0"
+                    (blurred)="touch('comboPrice')"
+                    sizeClass="px-3 py-2.5 rounded-lg text-sm"
                   />
                 </div>
                 <div class="flex gap-6 mt-3 text-sm">

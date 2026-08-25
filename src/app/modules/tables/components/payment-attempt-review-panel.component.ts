@@ -12,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { DiningOrder, PaymentAttempt } from '../interfaces/dining.interface';
 import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /**
  * Revisión de pagos del cajero para una orden (spec 024): aprobar/rechazar el
@@ -24,7 +25,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 @Component({
   selector: 'app-payment-attempt-review-panel',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (loading()) {
@@ -43,13 +44,10 @@ import { ToastService } from '../../../shared/feedback/toast.service';
         @if (attempt.is_cash) {
           <!-- Efectivo: el cajero registra el monto, el backend calcula el cambio. -->
           <div class="flex items-center gap-2 flex-wrap">
-            <input
-              type="number"
-              min="0"
-              step="100"
+            <app-money-input
               [(ngModel)]="amountReceived"
               placeholder="Monto recibido"
-              class="w-36 min-h-11 px-2 py-1 text-base border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              sizeClass="w-36 min-h-11 px-2 py-1 text-base rounded-lg"
             />
             <button
               (click)="confirmCash(attempt)"

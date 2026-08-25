@@ -34,11 +34,13 @@ export function orderStatusClass(status: DiningOrderStatus): string {
 
 /**
  * Estado a mostrar: si ya existe una `Sale` (`paid`), se ve como "Pagada"
- * aunque `status` siga en `'abierta'`/`'bloqueada'` — los caminos QR y
- * mostrador dejan `status` así a propósito (spec 029, research.md D2; ver
- * `PosTerminalStore.deriveTableStatus`, que aplica el mismo criterio en la
- * Terminal de Mesas). Una orden cancelada se muestra cancelada aunque
- * `paid` fuera `true`.
+ * incluso para pedidos históricos (creados antes de spec 035) cuyo `status`
+ * crudo se haya quedado en `'abierta'`/`'bloqueada'` — spec 029, research.md
+ * D2. Desde spec 035 (A-52) los caminos QR/mostrador vigentes sí dejan
+ * `status = 'pagada'` en cuanto se cobran, así que ambas señales ya
+ * coinciden para pedidos nuevos; esta función sigue prefiriendo `paid` por
+ * si acaso divergen. Una orden cancelada se muestra cancelada aunque `paid`
+ * fuera `true`.
  */
 export function displayOrderStatus(
   order: Pick<DiningOrder, 'status' | 'paid'>,
@@ -97,4 +99,18 @@ export function puedeCancelarComensal(order: Pick<DiningOrder, 'status' | 'items
   if (order.status !== 'abierta') return false;
   const items = order.items ?? [];
   return items.every((it) => it.estado_cocina === 'pendiente' || it.estado_cocina === 'anulado');
+}
+
+/**
+ * ¿Le queda a esta orden algún ítem sin terminar de preparar? (spec 035,
+ * A-52 de `registro-de-anomalias.md`). Desde esa spec, `checkout_and_send`/
+ * `approve_payment_attempt`/`confirm_cash_payment_attempt` dejan la orden en
+ * `'pagada'` en cuanto se cobra — antes de eso, `status` bastaba para saber
+ * si una mesa seguía ocupada; ahora una orden `'pagada'` todavía puede tener
+ * comida en preparación (se cobra antes de enviar a cocina, spec 028), así
+ * que quien necesite saber si la mesa "todavía tiene algo pendiente" debe
+ * mirar esto, no solo `status !== 'pagada'`.
+ */
+export function hasPendingKitchenWork(order: Pick<DiningOrder, 'items'>): boolean {
+  return (order.items ?? []).some((it) => KITCHEN_NOT_READY.includes(it.estado_cocina));
 }
