@@ -164,6 +164,27 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
           <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
           <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />
         }
+        @case ('transfer') {
+          <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+          <path d="M12 18h.01" />
+        }
+        @case ('upload') {
+          <path d="M12 13v8" />
+          <path d="m8 17 4-4 4 4" />
+          <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+        }
+        @case ('close') {
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
+        }
+        @case ('back') {
+          <path d="m12 19-7-7 7-7" />
+          <path d="M19 12H5" />
+        }
+        @case ('check-circle') {
+          <path d="M21.801 10A10 10 0 1 1 17 3.335" />
+          <path d="m9 11 3 3L22 4" />
+        }
         @default {
           <circle cx="12" cy="12" r="9" />
           <circle cx="12" cy="12" r="1" />
