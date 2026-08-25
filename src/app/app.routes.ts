@@ -6,6 +6,7 @@ import {
 } from './core/guards/password-change.guard';
 import { superAdminDomainGuard } from './core/tenant/guards/super-admin-domain.guard';
 import { tenantDomainGuard } from './core/tenant/guards/tenant-domain.guard';
+import { checkoutHydrationGuard } from './modules/tables/pages/checkout/checkout-hydration.guard';
 
 export const routes: Routes = [
   {
@@ -59,6 +60,44 @@ export const routes: Routes = [
     canActivate: [authGuard, tenantDomainGuard, passwordChangeGuard],
     loadChildren: () =>
       import('./modules/dashboard/routes').then(m => m.dashboardRoutes),
+  },
+  {
+    // Vista de pasos de revisión y pago (spec 034) — ruta propia en vez de un
+    // modal, para que la recarga tenga una URL con sentido propio por paso.
+    // Va **antes** de `menu/t/:token` (sin hijos, no puede consumir estos
+    // segmentos de más); `checkoutHydrationGuard` corre una sola vez por
+    // entrada, no en cada paso hermano.
+    path: 'menu/t/:token/checkout',
+    canActivate: [checkoutHydrationGuard],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'review' },
+      {
+        path: 'review',
+        loadComponent: () =>
+          import('./modules/tables/pages/checkout/review-step.component').then(m => m.ReviewStepComponent),
+      },
+      {
+        path: 'method',
+        loadComponent: () =>
+          import('./modules/tables/pages/checkout/payment-method-step.component').then(
+            m => m.PaymentMethodStepComponent,
+          ),
+      },
+      {
+        path: 'transfer',
+        loadComponent: () =>
+          import('./modules/tables/pages/checkout/transfer-details-step.component').then(
+            m => m.TransferDetailsStepComponent,
+          ),
+      },
+      {
+        path: 'confirmation',
+        loadComponent: () =>
+          import('./modules/tables/pages/checkout/confirmation-step.component').then(
+            m => m.ConfirmationStepComponent,
+          ),
+      },
+    ],
   },
   {
     // Entrada del comensal. `token` es el JWT **firmado** de la mesa: lleva el
