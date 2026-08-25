@@ -178,14 +178,6 @@ const ROLE_LABEL: Record<UserRole, string> = {
               <dt class="text-gray-500">Dominio</dt>
               <dd class="font-mono text-gray-700 text-right break-all">{{ host() }}</dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <dt class="text-gray-500">Plan</dt>
-              <dd class="text-right">
-                <span class="text-xs font-medium px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                  {{ plan() }}
-                </span>
-              </dd>
-            </div>
           </dl>
         </div>
 
@@ -234,7 +226,6 @@ export class TenantInfoComponent implements OnInit {
   readonly message = signal('');
 
   readonly host = computed(() => this.tenantInfo.info()?.host ?? '—');
-  readonly plan = computed(() => this.tenantInfo.info()?.plan ?? '—');
 
   readonly email = computed(() => this.auth.currentUser()?.email ?? '');
   readonly roleLabel = computed(() => {

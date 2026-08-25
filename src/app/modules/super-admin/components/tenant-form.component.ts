@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Output, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import {
   AbstractControl,
   FormControl,
@@ -7,8 +7,9 @@ import {
   Validators,
 } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
-import { TenantCreateWithUser } from '../interfaces/tenant.interface';
+import { BillingCycle, TenantCreateWithUser } from '../interfaces/tenant.interface';
 import { TenantService } from '../services/tenant.service';
+import { PlanService } from '../services/plan.service';
 
 /** Normalize a name into a slug usable as schema / host label. */
 function toSlug(value: string): string {
@@ -102,6 +103,45 @@ function toSlug(value: string): string {
             </div>
           </div>
 
+          <!-- Plan (spec 033, FR-004/FR-017: obligatorio, sin default) -->
+          <div class="space-y-4 pt-2 border-t border-gray-100">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Plan</h3>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Plan <span class="text-red-500">*</span>
+              </label>
+              <select
+                formControlName="plan_id"
+                class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                [class.border-red-400]="invalid('plan_id')"
+                [class.border-gray-200]="!invalid('plan_id')"
+              >
+                <option value="" disabled>Selecciona un plan</option>
+                @for (p of planService.plans(); track p.id) {
+                  <option [value]="p.id">{{ p.name }}</option>
+                }
+              </select>
+              @if (invalid('plan_id')) {
+                <p class="text-red-500 text-xs mt-1">Debes elegir un plan</p>
+              }
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Ciclo de facturación <span class="text-red-500">*</span>
+              </label>
+              <select
+                formControlName="ciclo_facturacion"
+                class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="mensual">Mensual</option>
+                <option value="anual">Anual</option>
+                <option [ngValue]="null">Sin vencimiento</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Admin user data -->
           <div class="space-y-4 pt-2 border-t border-gray-100">
             <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">
@@ -172,11 +212,16 @@ function toSlug(value: string): string {
     </div>
   `,
 })
-export class TenantFormComponent {
+export class TenantFormComponent implements OnInit {
   @Output() saved = new EventEmitter<void>();
   @Output() cancelled = new EventEmitter<void>();
 
   readonly tenantService = inject(TenantService);
+  readonly planService = inject(PlanService);
+
+  ngOnInit(): void {
+    this.planService.load();
+  }
 
   /** Tracks whether the user edited schema/host directly (stops auto-suggestion). */
   private schemaTouchedManually = false;
@@ -203,6 +248,8 @@ export class TenantFormComponent {
       nonNullable: true,
       validators: [Validators.required, Validators.email, Validators.minLength(5)],
     }),
+    plan_id: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+    ciclo_facturacion: new FormControl<BillingCycle>('mensual', { nonNullable: true }),
   });
 
   invalid(name: keyof typeof this.form.controls): boolean {
@@ -237,6 +284,8 @@ export class TenantFormComponent {
       host: raw.host.trim(),
       name: raw.name.trim(),
       email: raw.email.trim(),
+      plan_id: raw.plan_id,
+      ciclo_facturacion: raw.ciclo_facturacion,
     };
 
     await this.tenantService.createTenant(payload);

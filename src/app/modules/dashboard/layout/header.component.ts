@@ -82,6 +82,35 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
               <p class="text-xs text-gray-500 truncate">{{ currentUser()?.email }}</p>
             </div>
             <div class="p-2">
+              @if (!currentUser()?.isSuperAdmin) {
+                <a
+                  routerLink="/dashboard/mi-plan"
+                  (click)="dropdownOpen.set(false)"
+                  class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"
+                    />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"
+                    />
+                  </svg>
+                  Mi plan
+                </a>
+              }
               <a
                 routerLink="/dashboard/mi-cuenta"
                 (click)="dropdownOpen.set(false)"

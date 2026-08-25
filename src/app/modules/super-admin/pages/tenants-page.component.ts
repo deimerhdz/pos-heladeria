@@ -1,12 +1,14 @@
+import { DatePipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Tenant } from '../interfaces/tenant.interface';
 import { TenantService } from '../services/tenant.service';
 import { TenantFormComponent } from '../components/tenant-form.component';
+import { TenantPlanFormComponent } from '../components/tenant-plan-form.component';
 
 @Component({
   selector: 'app-tenants-page',
   standalone: true,
-  imports: [TenantFormComponent],
+  imports: [TenantFormComponent, TenantPlanFormComponent, DatePipe],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -75,6 +77,12 @@ import { TenantFormComponent } from '../components/tenant-form.component';
                   >
                     Plan
                   </th>
+                  <th
+                    class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell"
+                  >
+                    Vence
+                  </th>
+                  <th class="px-5 py-3"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-50">
@@ -97,7 +105,20 @@ import { TenantFormComponent } from '../components/tenant-form.component';
                       <span class="text-sm text-gray-500 font-mono">{{ t.host }}</span>
                     </td>
                     <td class="px-5 py-4">
-                      <span class="text-sm text-gray-600">{{ t.plan }}</span>
+                      <span class="text-sm text-gray-600">{{ t.plan_name ?? '—' }}</span>
+                    </td>
+                    <td class="px-5 py-4 hidden md:table-cell">
+                      <span class="text-sm text-gray-500">
+                        {{ t.plan_vence_en ? (t.plan_vence_en | date: 'mediumDate') : 'Sin vencimiento' }}
+                      </span>
+                    </td>
+                    <td class="px-5 py-4 text-right">
+                      <button
+                        (click)="openChangePlan(t)"
+                        class="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                      >
+                        Cambiar / renovar plan
+                      </button>
                     </td>
                   </tr>
                 }
@@ -112,6 +133,9 @@ import { TenantFormComponent } from '../components/tenant-form.component';
     @if (showForm()) {
       <app-tenant-form (saved)="onSaved()" (cancelled)="onCancelled()" />
     }
+    @if (changingPlanFor(); as tenant) {
+      <app-tenant-plan-form [tenant]="tenant" (saved)="onPlanChanged()" (cancelled)="onPlanChangeCancelled()" />
+    }
   `,
 })
 export class TenantsPageComponent implements OnInit {
@@ -119,6 +143,7 @@ export class TenantsPageComponent implements OnInit {
   readonly tenants = signal<Tenant[]>([]);
   readonly loading = signal(false);
   readonly showForm = signal(false);
+  readonly changingPlanFor = signal<Tenant | null>(null);
 
   ngOnInit(): void {
     this.reload();
@@ -150,5 +175,19 @@ export class TenantsPageComponent implements OnInit {
 
   onCancelled(): void {
     this.showForm.set(false);
+  }
+
+  openChangePlan(tenant: Tenant): void {
+    this.tenantService.error.set(null);
+    this.changingPlanFor.set(tenant);
+  }
+
+  onPlanChanged(): void {
+    this.changingPlanFor.set(null);
+    this.reload();
+  }
+
+  onPlanChangeCancelled(): void {
+    this.changingPlanFor.set(null);
   }
 }
