@@ -7,8 +7,6 @@ import {
   Page,
   RoleName,
   TenantUser,
-  TenantUserCreatePayload,
-  TenantUserForm,
   TenantUserRoleUpdatePayload,
   TenantUserStatusUpdatePayload,
 } from '../interfaces/user-profile.interface';
@@ -51,35 +49,6 @@ export class UsersService {
       this.error.set(this.extractError(err));
     } finally {
       this.loading.set(false);
-    }
-  }
-
-  async createUser(form: TenantUserForm): Promise<void> {
-    this.isSubmitting.set(true);
-    this.error.set(null);
-
-    if (form.role === '') {
-      this.error.set('Debes seleccionar un rol.');
-      this.isSubmitting.set(false);
-      return;
-    }
-
-    const phone = form.phone.trim();
-    const payload: TenantUserCreatePayload = {
-      name: form.name.trim(),
-      email: form.email.trim(),
-      password: form.password,
-      role: form.role,
-      ...(phone ? { phone } : {}),
-    };
-
-    try {
-      await firstValueFrom(this.http.post<TenantUser>(this.baseUrl, payload));
-      await this.loadUsers(1);
-    } catch (err) {
-      this.error.set(this.extractError(err));
-    } finally {
-      this.isSubmitting.set(false);
     }
   }
 
