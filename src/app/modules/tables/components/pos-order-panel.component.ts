@@ -1,21 +1,29 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
-import { KitchenStatus } from '../interfaces/dining.interface';
+import { KitchenStatus, getSidebarMode } from '../interfaces/dining.interface';
 import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-status.util';
+import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
+import { PendingPaymentsPanelComponent } from './pending-payments-panel.component';
 
-/** Columna central: armado y edición del pedido de la mesa seleccionada. */
+/** Columna central: armado y edición del pedido de la mesa seleccionada.
+ *  Sin mesa seleccionada, muestra aquí mismo "Pagos por confirmar" (spec
+ *  036, FR-004) — es el único momento en que esta sección está libre. */
 @Component({
   selector: 'app-pos-order-panel',
   standalone: true,
+  imports: [PosCatalogDrawerComponent, PendingPaymentsPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // El host es `inline` por defecto: sin esto no ocupa el alto de la columna y
   // el carrito no puede tener su propio scroll (la página entera se estiraba).
   host: { class: 'flex-1 flex flex-col min-h-0' },
   template: `
     @if (!store.hasActiveOrder()) {
-      <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-8 gap-3">
-        <div class="text-5xl">🍽️</div>
-        <p class="text-sm max-w-xs">Selecciona una mesa ocupada para cobrar, o una mesa libre para crear un pedido nuevo.</p>
+      <div class="flex-1 flex flex-col min-h-0">
+        <div class="flex flex-col items-center text-center text-gray-400 p-6 gap-2 shrink-0">
+          <div class="text-4xl">🍽️</div>
+          <p class="text-sm max-w-xs">Selecciona una mesa ocupada para cobrar, o una mesa libre para crear un pedido nuevo.</p>
+        </div>
+        <app-pending-payments-panel />
       </div>
     } @else {
       <div class="flex-1 flex flex-col min-h-0">
@@ -56,6 +64,13 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
           }
         </div>
 
+        @if (showCatalog()) {
+          <!-- Catálogo embebido (spec 036, FR-006/FR-007): reemplaza la lista
+               de ítems mientras se agrega un producto, sin overlay de
+               pantalla completa — "← Volver" del catálogo regresa aquí sin
+               perder lo ya agregado (store.closeCatalog()). -->
+          <app-pos-catalog-drawer />
+        } @else {
         <!-- Cart -->
         <div class="flex-1 overflow-y-auto p-4 space-y-3">
           @for (it of store.cartView(); track it.key) {
@@ -112,10 +127,12 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
           @if (store.cartEmpty()) {
             <div class="text-center text-gray-400 py-10 text-sm">Aún no hay productos en este pedido.</div>
           }
-          <button
-            (click)="store.openCatalog()"
-            class="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1"
-          >＋ Agregar producto</button>
+          @if (!readOnly()) {
+            <button
+              (click)="store.openCatalog()"
+              class="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1"
+            >＋ Agregar producto</button>
+          }
         </div>
 
         <!-- Totales -->
@@ -154,12 +171,24 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
             }
           </div>
         </div>
+        }
       </div>
     }
   `,
 })
 export class PosOrderPanelComponent {
   readonly store = inject(PosTerminalStore);
+
+  /** Spec 036, US2, escenario 5: mismo criterio que ya usa
+   *  `pos-checkout-panel.component.ts` para su propio modo de solo lectura
+   *  (`getSidebarMode`, `dining.interface.ts`) — una orden QR o ya pagada no
+   *  ofrece "+ Agregar producto". */
+  readonly readOnly = computed(() => getSidebarMode(this.store.selectedOrder()) === 'resumen');
+
+  /** Catálogo embebido visible (spec 036, FR-006/FR-007): nunca en modo de
+   *  solo lectura, aunque `catalogOpen()` hubiera quedado en `true` de una
+   *  orden distinta seleccionada antes en la misma mesa. */
+  readonly showCatalog = computed(() => this.store.catalogOpen() && !this.readOnly());
 
   /**
    * Spec 029, Historia 3: "listo para cobrar" exige pago Y cocina, las dos a

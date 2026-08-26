@@ -25,7 +25,18 @@ import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.
 
       <app-sidebar />
 
-      <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+      <!--
+        El sidebar es "fixed" en todos los breakpoints (spec 036, FR-012): en
+        escritorio no ocupa espacio de flexbox por sí solo, así que este
+        margen es lo que le cede el ancho al contenido cuando está colapsado
+        (y se lo devuelve cuando vuelve a abrirse). En móvil no aplica
+        (prefijo "md:" en el nombre de la clase) — ahí sigue siendo un
+        slide-over con backdrop, sin desplazar el contenido.
+      -->
+      <div
+        class="flex flex-col flex-1 min-w-0 overflow-hidden transition-[margin-left] duration-300 ease-in-out"
+        [class.md:ml-64]="layoutService.sidebarOpen()"
+      >
         <app-header />
         <main class="flex-1 overflow-y-auto p-4 md:p-6">
           <router-outlet />
@@ -52,6 +63,17 @@ export class DashboardLayoutComponent implements OnInit {
         filter(e => e instanceof NavigationEnd),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.layoutService.close());
+      .subscribe(() => {
+        // Spec 036 (FR-012): `sidebarOpen()` ahora también controla el panel
+        // de escritorio, no solo el slide-over móvil — cerrar sin condición
+        // en cada navegación (como antes) colapsaba el sidebar de escritorio
+        // en cuanto el usuario cambiaba de página, perdiendo su elección.
+        // Solo tiene sentido auto-cerrar en móvil (el slide-over debe
+        // taparse tras navegar); en escritorio la navegación no debe tocar
+        // el estado del sidebar.
+        if (typeof window !== 'undefined' && window.innerWidth < 768) {
+          this.layoutService.close();
+        }
+      });
   }
 }

@@ -3,14 +3,24 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
-import { PosTerminalStore, currentNow, deriveTableStatus, newPendingIds } from './pos-terminal.store';
+import {
+  PosTerminalStore,
+  currentNow,
+  deriveTableStatus,
+  newPendingIds,
+  normalizeSearchTerm,
+} from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { Table } from '../interfaces/table.interface';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { Sale } from '../../sales/interfaces/sales.interface';
+import { TableService } from './table.service';
+import { MenuService } from '../../../core/services/menu.service';
+import { MenuProduct } from '../../products/interfaces/product.interface';
 
 const API = environment.apiBaseUrl;
 
@@ -679,5 +689,197 @@ describe('PosTerminalStore.ensureReadyToCharge', () => {
     confirm.respond(false);
 
     await expect(promise).resolves.toBe(false);
+  });
+});
+
+// ── spec 036, FR-001/FR-003: pestaña de tipo de orden ──────────────────────
+describe('PosTerminalStore.orderTypeTab / setOrderTypeTab', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('empieza en "mesas"', () => {
+    expect(store.orderTypeTab()).toBe('mesas');
+  });
+
+  it('setOrderTypeTab cambia la pestaña activa', () => {
+    store.setOrderTypeTab('domicilios');
+    expect(store.orderTypeTab()).toBe('domicilios');
+
+    store.setOrderTypeTab('para-llevar');
+    expect(store.orderTypeTab()).toBe('para-llevar');
+
+    store.setOrderTypeTab('mesas');
+    expect(store.orderTypeTab()).toBe('mesas');
+  });
+});
+
+// ── spec 036, FR-004: sección "Pagos por confirmar" ─────────────────────────
+describe('PosTerminalStore.pendingPaymentsView', () => {
+  let store: PosTerminalStore;
+  let tableService: TableService;
+
+  function table(id: string, number: number): Table {
+    return { id, number, name: null, qr_token: 'tok-' + id, active: true, status: 'ocupada' };
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    tableService = TestBed.inject(TableService);
+  });
+
+  it('une pendingOrders() con tables() exponiendo mesa, cliente y total', () => {
+    tableService.tables.set([table('t1', 5)]);
+    store.orders.set([
+      { ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1', customer_name: 'Ana' },
+    ]);
+
+    const view = store.pendingPaymentsView();
+    expect(view).toHaveLength(1);
+    expect(view[0].orderId).toBe('qr1');
+    expect(view[0].tableId).toBe('t1');
+    expect(view[0].tableLabel).toBe('Mesa 5');
+    expect(view[0].customerLabel).toBe('Ana');
+  });
+
+  it('usa el nombre de la mesa como cliente cuando la orden no trae customer_name', () => {
+    tableService.tables.set([table('t1', 2)]);
+    store.orders.set([{ ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1' }]);
+
+    expect(store.pendingPaymentsView()[0].customerLabel).toBe('Mesa 2');
+  });
+
+  it('excluye pedidos de mostrador (hold_for_payment) igual que pendingOrders', () => {
+    tableService.tables.set([table('t1', 5)]);
+    store.orders.set([
+      { ...order('counter1', 'recibida'), channel: 'counter', dining_table_id: 't1' },
+    ]);
+
+    expect(store.pendingPaymentsView()).toEqual([]);
+  });
+
+  it('vacío cuando orderTypeTab() no es "mesas" (FR-003)', () => {
+    tableService.tables.set([table('t1', 5)]);
+    store.orders.set([{ ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1' }]);
+    store.setOrderTypeTab('domicilios');
+
+    expect(store.pendingPaymentsView()).toEqual([]);
+
+    store.setOrderTypeTab('para-llevar');
+    expect(store.pendingPaymentsView()).toEqual([]);
+  });
+});
+
+// ── spec 036, FR-007: buscador por nombre del catálogo embebido ────────────
+describe('PosTerminalStore.catalogSearchText / setCatalogSearchText / catalogProductsFiltered', () => {
+  let store: PosTerminalStore;
+  let menuService: MenuService;
+
+  function product(id: string, name: string): MenuProduct {
+    return {
+      id,
+      name,
+      description: null,
+      image_url: null,
+      variants: [],
+      option_groups: [],
+      available: true,
+    };
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    menuService = TestBed.inject(MenuService);
+  });
+
+  it('setCatalogSearchText actualiza catalogSearchText', () => {
+    expect(store.catalogSearchText()).toBe('');
+    store.setCatalogSearchText('malta');
+    expect(store.catalogSearchText()).toBe('malta');
+  });
+
+  it('sin texto de búsqueda devuelve catalogProducts() completo', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Cat', products: [product('p1', 'Malteada'), product('p2', 'Helado')] },
+    ]);
+    store.catalogCategoryId.set('c1');
+
+    expect(store.catalogProductsFiltered().map((p) => p.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('filtra por nombre insensible a mayúsculas y acentos', () => {
+    menuService.categories.set([
+      {
+        id: 'c1',
+        name: 'Cat',
+        products: [product('p1', 'Malteada de Café'), product('p2', 'Helado de vainilla')],
+      },
+    ]);
+    store.catalogCategoryId.set('c1');
+
+    store.setCatalogSearchText('CAFE');
+    expect(store.catalogProductsFiltered().map((p) => p.id)).toEqual(['p1']);
+  });
+
+  it('combina categoría (ya existente) + búsqueda por nombre por intersección', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [product('p1', 'Malteada de fresa')] },
+      { id: 'c2', name: 'Postres', products: [product('p2', 'Malteada de fresa (postre)')] },
+    ]);
+    store.catalogCategoryId.set('c1');
+    store.setCatalogSearchText('fresa');
+
+    expect(store.catalogProductsFiltered().map((p) => p.id)).toEqual(['p1']);
+  });
+
+  it('sin coincidencias devuelve una lista vacía', () => {
+    menuService.categories.set([{ id: 'c1', name: 'Cat', products: [product('p1', 'Malteada')] }]);
+    store.catalogCategoryId.set('c1');
+
+    store.setCatalogSearchText('xyz-no-existe');
+    expect(store.catalogProductsFiltered()).toEqual([]);
+  });
+});
+
+describe('normalizeSearchTerm', () => {
+  it('ignora mayúsculas y acentos', () => {
+    expect(normalizeSearchTerm('Café')).toBe(normalizeSearchTerm('cafe'));
+    expect(normalizeSearchTerm('MALTEADA')).toBe('malteada');
+  });
+
+  it('recorta espacios en los extremos', () => {
+    expect(normalizeSearchTerm('  helado  ')).toBe('helado');
   });
 });

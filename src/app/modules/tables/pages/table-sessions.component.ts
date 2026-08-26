@@ -7,17 +7,20 @@ import {
   inject,
   viewChild,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { LayoutService } from '../../dashboard/layout/layout.service';
 import { PosTablesPanelComponent } from '../components/pos-tables-panel.component';
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
-import { PosCatalogDrawerComponent } from '../components/pos-catalog-drawer.component';
 import { PaymentValidationBlockComponent } from '../components/payment-validation-block.component';
 import { ManualOrderPanelComponent } from '../components/manual-order-panel.component';
 
 /**
- * Terminal POS de mesas (staff): 3 columnas — mesas · pedido · cobro — con
- * catálogo en drawer, diálogo de éxito y atajos de teclado (F2/F3/ESC/Ctrl+P).
+ * Terminal POS de mesas (staff): 3 columnas — mesas (carrusel, spec 036) ·
+ * pedido (con catálogo embebido y "Pagos por confirmar" cuando no hay mesa
+ * seleccionada, spec 036) · cobro — con diálogo de éxito y atajos de
+ * teclado (F2/F3/ESC/Ctrl+P).
  * `F4` (descuento manual) se retiró en spec 029, Historia 2 — prohibición
  * absoluta, sin excepción de rol.
  *
@@ -41,7 +44,6 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
     PosTablesPanelComponent,
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
-    PosCatalogDrawerComponent,
     PaymentValidationBlockComponent,
     ManualOrderPanelComponent,
   ],
@@ -50,6 +52,17 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
       <!-- Barra superior -->
       <div class="flex items-center justify-between gap-4 px-4 py-2.5 border-b border-gray-200 bg-white shrink-0">
         <div class="flex items-center gap-2 min-w-0">
+          <!-- Colapsa/expande el menú de navegación global (spec 036,
+               FR-012): mismo LayoutService/toggle() que ya usa el hamburger
+               del header del dashboard — sin afectar ninguna orden en
+               curso en los paneles central/derecho. -->
+          <button
+            (click)="layoutService.toggle()"
+            [title]="layoutService.sidebarOpen() ? 'Ocultar menú de navegación' : 'Mostrar menú de navegación'"
+            class="w-8 h-8 shrink-0 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 flex items-center justify-center transition-colors"
+          >
+            {{ layoutService.sidebarOpen() ? '«' : '»' }}
+          </button>
           <span class="text-lg">🪑</span>
           <span class="font-bold text-gray-900 truncate">Terminal de mesas</span>
         </div>
@@ -67,61 +80,69 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
           <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">{{ store.error() }}</div>
         }
         <div class="flex-1 flex min-h-0">
-          <app-pos-tables-panel />
-          <div class="flex-1 flex flex-col min-h-0 border-r border-gray-200 bg-white">
-            <!--
-              Sin pestañas (feature 028): la columna central se decide sola
-              según store.centralState(). El botón de silenciar la campana
-              vive aquí porque tiene que verse pase lo que pase en el centro.
-            -->
-            <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 shrink-0">
-              <span class="text-sm font-semibold text-gray-500">
-                @switch (store.centralState()) {
-                  @case ('validar-pago') { 🔔 Pagos por confirmar }
-                  @case ('mesa-libre') { Mesa libre }
-                  @default { Pedido de la mesa }
-                }
-              </span>
-              <button
-                (click)="store.sound.toggleMute()"
-                [title]="
-                  store.sound.muted()
-                    ? 'Activar el sonido de pedido nuevo'
-                    : 'Silenciar el sonido de pedido nuevo'
-                "
-                class="px-2 py-1 rounded-lg text-base hover:bg-gray-50 transition-colors"
-              >
-                {{ store.sound.muted() ? '🔕' : '🔔' }}
-              </button>
+          <!-- Columna izquierda (spec 036): franja superior con pestañas de
+               tipo de orden + buscador + filtro de ocupación + carrusel de
+               mesas (FR-001); debajo, el panel central (validación de pago /
+               mesa libre / pedido, con "Pagos por confirmar" cuando no hay
+               mesa seleccionada — FR-004) ocupa el resto del alto disponible
+               con su scroll interno ya existente, sin cambios de
+               comportamiento. -->
+          <div class="flex-1 min-w-0 flex flex-col min-h-0 border-r border-gray-200 bg-gray-50">
+            <div class="shrink-0 min-w-0 border-b border-gray-200 bg-white">
+              <app-pos-tables-panel />
             </div>
 
-            @switch (store.centralState()) {
-              @case ('validar-pago') {
-                <div class="flex-1 overflow-y-auto p-4">
-                  <app-payment-validation-block
-                    [orders]="store.pendingOfSelectedTable()"
-                    [categories]="store.categories()"
-                    [cashShiftId]="store.cashShiftId()"
-                    (refresh)="store.reload()"
-                  />
-                </div>
+            <div class="flex-1 flex flex-col min-h-0 bg-white">
+              <!--
+                Sin pestañas (feature 028): la columna central se decide sola
+                según store.centralState(). El botón de silenciar la campana
+                vive aquí porque tiene que verse pase lo que pase en el centro.
+              -->
+              <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 shrink-0">
+                <span class="text-sm font-semibold text-gray-500">
+                  @switch (store.centralState()) {
+                    @case ('validar-pago') { 🔔 Pagos por confirmar }
+                    @case ('mesa-libre') { Mesa libre }
+                    @default { Pedido de la mesa }
+                  }
+                </span>
+                <button
+                  (click)="store.sound.toggleMute()"
+                  [title]="
+                    store.sound.muted()
+                      ? 'Activar el sonido de pedido nuevo'
+                      : 'Silenciar el sonido de pedido nuevo'
+                  "
+                  class="px-2 py-1 rounded-lg text-base hover:bg-gray-50 transition-colors"
+                >
+                  {{ store.sound.muted() ? '🔕' : '🔔' }}
+                </button>
+              </div>
+
+              @switch (store.centralState()) {
+                @case ('validar-pago') {
+                  <div class="flex-1 overflow-y-auto p-4">
+                    <app-payment-validation-block
+                      [orders]="store.pendingOfSelectedTable()"
+                      [categories]="store.categories()"
+                      [cashShiftId]="store.cashShiftId()"
+                      (refresh)="store.reload()"
+                    />
+                  </div>
+                }
+                @case ('mesa-libre') {
+                  <app-manual-order-panel />
+                }
+                @default {
+                  <app-pos-order-panel />
+                }
               }
-              @case ('mesa-libre') {
-                <app-manual-order-panel />
-              }
-              @default {
-                <app-pos-order-panel />
-              }
-            }
+            </div>
           </div>
           <app-pos-checkout-panel />
         </div>
       }
     </div>
-
-    @if (store.catalogOpen()) {
-      <app-pos-catalog-drawer />
-    }
 
     <!-- Diálogo de éxito -->
     @if (store.successOpen()) {
@@ -188,6 +209,8 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
 })
 export class TableSessionsComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
+  readonly layoutService = inject(LayoutService);
+  private readonly router = inject(Router);
   private readonly tablesPanel = viewChild(PosTablesPanelComponent);
 
   ngOnInit(): void {
@@ -207,10 +230,12 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
       this.tablesPanel()?.focusSearch();
     } else if (e.key === 'F3') {
       e.preventDefault();
-      // Mismo gatillo que el CTA "+ Crear Orden Manual" (feature 028, T022):
-      // solo hace algo si hay una mesa libre seleccionada — `startManualOrder`
-      // ya se cuida de eso.
-      this.store.startManualOrder();
+      // Mismo gatillo que el CTA "+ Crear Orden Manual" (feature 028, T022;
+      // ajuste posterior de spec 036: ahora navega a la vista dedicada de
+      // armado de pedido en vez de abrir el catálogo embebido) — solo hace
+      // algo si hay una mesa seleccionada.
+      const tableId = this.store.selectedTableId();
+      if (tableId) this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
       else this.store.cancelSelection();

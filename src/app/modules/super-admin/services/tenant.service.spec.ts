@@ -19,7 +19,8 @@ function tenant(partial: Partial<Tenant>): Tenant {
     name: 'Tenant',
     schema: 'tenant',
     host: 'tenant.pos-sistem.com',
-    plan: 'basic',
+    plan_id: 'plan-basic',
+    ciclo_facturacion: 'mensual',
     created_at: '2026-01-01',
     ...partial,
   };
@@ -35,6 +36,8 @@ const validPayload: TenantCreateWithUser = {
   host: 'nuevo.pos-sistem.com',
   name: 'Admin',
   email: 'admin@nuevo.com',
+  plan_id: 'plan-basic',
+  ciclo_facturacion: 'mensual',
 };
 
 describe('TenantService', () => {

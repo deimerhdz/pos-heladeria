@@ -91,6 +91,25 @@ type TableDisplayStatus =
 
 type TableFilter = 'todas' | 'libres' | 'ocupadas' | 'pendientes';
 
+/**
+ * Pestaña de tipo de orden (spec 036, FR-001/FR-003), independiente del
+ * `filter` de ocupación de arriba. Solo `'mesas'` tiene datos reales hoy —
+ * las otras dos no tienen ninguna vía de creación de orden todavía.
+ */
+export type OrderTypeTab = 'mesas' | 'domicilios' | 'para-llevar';
+
+/** Fila de la sección "Pagos por confirmar" (spec 036, FR-004): una por cada
+ *  orden de `pendingOrders()`, enriquecida con el número/nombre de su mesa. */
+export interface PendingPaymentViewModel {
+  orderId: string;
+  tableId: string;
+  tableLabel: string;
+  customerLabel: string;
+  totalLabel: string;
+  elapsedLabel: string;
+  createdAt: string;
+}
+
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
   libre: { label: 'Libre', chip: 'bg-gray-100 text-gray-600' },
   por_confirmar: { label: 'Por confirmar', chip: 'bg-violet-600 text-white' },
@@ -194,6 +213,20 @@ export function currentNow(promotionService: { ready(): boolean; now(): Date }):
   return promotionService.ready() ? promotionService.now() : null;
 }
 
+/** Normaliza para comparar nombres de producto sin distinguir mayúsculas ni
+ *  acentos (spec 036, FR-007: buscador por nombre del catálogo embebido). */
+export function normalizeSearchTerm(value: string): string {
+  const decomposed = value.trim().toLowerCase().normalize('NFD');
+  // Tras NFD, cada acento queda como su letra base seguida de una marca
+  // diacrítica combinante (U+0300–U+036F) — se descartan para comparar.
+  return Array.from(decomposed)
+    .filter((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      return code < 0x300 || code > 0x36f;
+    })
+    .join('');
+}
+
 /**
  * Store de la terminal POS de mesas (staff). Orquesta el catálogo, el armado del
  * pedido (draft + ítems persistidos), y la cuenta de la mesa. El cobro lo cierra
@@ -234,11 +267,15 @@ export class PosTerminalStore {
 
   readonly search = signal('');
   readonly filter = signal<TableFilter>('todas');
+  /** Pestaña de tipo de orden (spec 036, FR-001) — independiente de `filter`. */
+  readonly orderTypeTab = signal<OrderTypeTab>('mesas');
 
   // Catálogo
   readonly catalogOpen = signal(false);
   readonly catalogCategoryId = signal<string | null>(null);
   readonly configuringProduct = signal<MenuProduct | null>(null);
+  /** Buscador por nombre de la grilla de "+ Agregar producto" (spec 036, FR-007). */
+  readonly catalogSearchText = signal('');
 
   readonly loading = signal(false);
   readonly submitting = signal(false);
@@ -347,6 +384,32 @@ export class PosTerminalStore {
   readonly pendingOrders = computed(() =>
     this.orders().filter((o) => o.status === 'recibida' && o.channel === 'qr'),
   );
+
+  /**
+   * Vista de la sección "Pagos por confirmar" (spec 036, FR-004): el mismo
+   * `pendingOrders()` de arriba, enriquecido con el número/nombre de mesa —
+   * no duplica la lógica de confirmación, que sigue viviendo en
+   * `payment-attempt-review-panel.component.ts` (embebido tal cual en
+   * `pending-payments-panel.component.ts`). Vacío fuera de la pestaña
+   * "Mesas" (FR-003): no existe ningún pago pendiente de "Domicilios"/"Para
+   * llevar" todavía.
+   */
+  readonly pendingPaymentsView = computed<PendingPaymentViewModel[]>(() => {
+    if (this.orderTypeTab() !== 'mesas') return [];
+    return this.pendingOrders().map((o) => {
+      const table = this.tables().find((t) => t.id === o.dining_table_id);
+      const tableLabel = table ? `Mesa ${table.number}` : 'Mesa';
+      return {
+        orderId: o.id,
+        tableId: o.dining_table_id ?? '',
+        tableLabel,
+        customerLabel: o.customer_name || tableLabel,
+        totalLabel: this.fmt(this.orderSubtotal(o)),
+        elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
+        createdAt: o.created_at,
+      };
+    });
+  });
 
   /**
    * Órdenes activas por mesa: ni terminales ni QR sin confirmar. Un pedido de
@@ -620,6 +683,17 @@ export class PosTerminalStore {
     return cat?.products ?? [];
   });
 
+  /** Intersección categoría + nombre (spec 036, FR-007): extiende
+   *  `catalogProducts` con el buscador por nombre, insensible a mayúsculas y
+   *  acentos. Lista vacía cuando no hay coincidencias — el componente
+   *  renderiza el estado vacío, este computed no decide qué mostrar. */
+  readonly catalogProductsFiltered = computed<MenuProduct[]>(() => {
+    const term = normalizeSearchTerm(this.catalogSearchText());
+    const products = this.catalogProducts();
+    if (!term) return products;
+    return products.filter((p) => normalizeSearchTerm(p.name).includes(term));
+  });
+
   // ─── Ciclo de vida ───────────────────────────────────────────────────────────
   async init(): Promise<void> {
     this.timer ??= startVisibleInterval(() => this.nowTick.set(Date.now()), 30000);
@@ -786,6 +860,11 @@ export class PosTerminalStore {
     await this.loadSessionBill(this.selectedTableId());
   }
 
+  /** Único punto de escritura de `orderTypeTab` (spec 036, FR-001/FR-003). */
+  setOrderTypeTab(tab: OrderTypeTab): void {
+    this.orderTypeTab.set(tab);
+  }
+
   // ─── Selección de mesa / pedido ───────────────────────────────────────────────
   selectTable(tableId: string): void {
     const list = this.ordersOfTable(tableId);
@@ -891,6 +970,7 @@ export class PosTerminalStore {
   private resetTransient(): void {
     this.draftLines.set([]);
     this.catalogOpen.set(false);
+    this.catalogSearchText.set('');
     this.configuringProduct.set(null);
     this.error.set(null);
     this.manualOrderBuilding.set(false);
@@ -907,10 +987,14 @@ export class PosTerminalStore {
   }
   closeCatalog(): void {
     this.catalogOpen.set(false);
+    this.catalogSearchText.set('');
     this.configuringProduct.set(null);
   }
   setCatalogCategory(id: string): void {
     this.catalogCategoryId.set(id);
+  }
+  setCatalogSearchText(text: string): void {
+    this.catalogSearchText.set(text);
   }
   openConfig(product: MenuProduct): void {
     this.configuringProduct.set(product);
@@ -951,6 +1035,7 @@ export class PosTerminalStore {
     });
     this.configuringProduct.set(null);
     this.catalogOpen.set(false);
+    this.catalogSearchText.set('');
   }
 
   /** Selección explícita de un combo (paralelo a `addDraftFromSelection`). */
@@ -974,6 +1059,7 @@ export class PosTerminalStore {
     });
     this.configuringProduct.set(null);
     this.catalogOpen.set(false);
+    this.catalogSearchText.set('');
   }
 
   /** Productos incluidos en un combo, para mostrarlos como bullets del carrito. */
