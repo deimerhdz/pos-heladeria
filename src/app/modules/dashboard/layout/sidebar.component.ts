@@ -20,8 +20,7 @@ interface NavGroup {
     <aside
       class="w-64 bg-indigo-600 text-white flex flex-col shrink-0 h-full
              fixed inset-y-0 left-0 z-40
-             transition-transform duration-300 ease-in-out
-             md:relative md:translate-x-0"
+             transition-transform duration-300 ease-in-out"
       [class.-translate-x-full]="!layoutService.sidebarOpen()"
       [class.translate-x-0]="layoutService.sidebarOpen()"
     >

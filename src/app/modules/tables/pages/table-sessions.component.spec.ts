@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { TableSessionsComponent } from './table-sessions.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
@@ -20,6 +21,7 @@ describe('TableSessionsComponent — atajo F4 retirado (spec 029)', () => {
       imports: [TableSessionsComponent],
       providers: [
         PosTerminalStore,
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -59,6 +61,7 @@ describe('TableSessionsComponent — diálogo de éxito sin botón duplicado (sp
     TestBed.configureTestingModule({
       imports: [TableSessionsComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -96,5 +99,53 @@ describe('TableSessionsComponent — diálogo de éxito sin botón duplicado (sp
     const textos = printButtons().map((b) => b.textContent?.trim());
     expect(textos).toContain('🧾 Imprimir todos');
     expect(textos.filter((t) => t === '🧾 Imprimir')).toHaveLength(2);
+  });
+});
+
+/**
+ * Ajuste posterior a spec 036: F3 ("+ Crear Orden Manual") ya no llama a
+ * `store.startManualOrder()` (que abría el catálogo embebido) — navega a la
+ * vista dedicada `manual-order-page.component.ts`. No se llama
+ * `fixture.detectChanges()` a propósito (mismo motivo que el bloque F4 de
+ * arriba): evita `ngOnInit()`/`store.init()`.
+ */
+describe('TableSessionsComponent — atajo F3 navega a la vista de armado de pedido (ajuste posterior)', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let router: Router;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        PosTerminalStore,
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    router = TestBed.inject(Router);
+  });
+
+  it('con una mesa seleccionada, F3 navega a la vista dedicada', () => {
+    fixture.componentInstance.store.selectedTableId.set('t1');
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const event = new KeyboardEvent('keydown', { key: 'F3', cancelable: true });
+    fixture.componentInstance.onKey(event);
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
+  });
+
+  it('sin mesa seleccionada, F3 no navega', () => {
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const event = new KeyboardEvent('keydown', { key: 'F3', cancelable: true });
+    fixture.componentInstance.onKey(event);
+
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 });

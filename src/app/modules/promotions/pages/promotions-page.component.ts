@@ -134,7 +134,13 @@ function vigPhrase(v: VigInput): string {
   selector: 'app-promotions-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet, PaginationBarComponent, ScopePickerComponent, MoneyInputComponent],
+  imports: [
+    FormsModule,
+    NgTemplateOutlet,
+    PaginationBarComponent,
+    ScopePickerComponent,
+    MoneyInputComponent,
+  ],
   template: `
     <div>
       @switch (screen()) {
@@ -185,7 +191,9 @@ function vigPhrase(v: VigInput): string {
           </div>
 
           @if (svc.error()) {
-            <div class="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+            <div
+              class="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+            >
               {{ svc.error() }}
             </div>
           }
@@ -224,24 +232,36 @@ function vigPhrase(v: VigInput): string {
                 <table class="w-full min-w-[980px]">
                   <thead>
                     <tr class="border-b border-gray-100 bg-gray-50">
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      <th
+                        class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                      >
                         Promoción
                       </th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      <th
+                        class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                      >
                         Aplica a
                       </th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      <th
+                        class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                      >
                         Beneficio
                       </th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      <th
+                        class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                      >
                         Vigencia
                       </th>
                       @if (showPriorityColumn()) {
-                        <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                        <th
+                          class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                        >
                           Prioridad
                         </th>
                       }
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">
+                      <th
+                        class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3"
+                      >
                         Estado
                       </th>
                       <th class="px-5 py-3"></th>
@@ -251,7 +271,9 @@ function vigPhrase(v: VigInput): string {
                     @for (row of rows(); track row.promo.id) {
                       <tr class="hover:bg-gray-50 transition-colors align-top">
                         <td class="px-5 py-3">
-                          <div class="text-sm font-semibold text-gray-900">{{ row.promo.name }}</div>
+                          <div class="text-sm font-semibold text-gray-900">
+                            {{ row.promo.name }}
+                          </div>
                           <span
                             class="inline-block mt-1 text-[10.5px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded"
                             [class]="typeBadgeClass(row.promo.type)"
@@ -266,7 +288,9 @@ function vigPhrase(v: VigInput): string {
                         <td class="px-5 py-3 text-sm text-gray-700">
                           {{ scopePhrase(row.promo) }}
                           @if (row.overlap; as clash) {
-                            <div class="flex items-start gap-1 mt-1.5 text-[11.5px] text-amber-700 max-w-[230px]">
+                            <div
+                              class="flex items-start gap-1 mt-1.5 text-[11.5px] text-amber-700 max-w-[230px]"
+                            >
                               <span>⚠️</span>
                               <span>
                                 Compite con "{{ clash.name }}".
@@ -286,7 +310,10 @@ function vigPhrase(v: VigInput): string {
                         }
                         <td class="px-5 py-3">
                           <div class="flex items-center gap-2">
-                            <span class="w-2.5 h-2.5 rounded-full flex-none" [class]="dotClass(row.display)"></span>
+                            <span
+                              class="w-2.5 h-2.5 rounded-full flex-none"
+                              [class]="dotClass(row.display)"
+                            ></span>
                             <div>
                               <div class="text-sm font-medium" [class]="textClass(row.display)">
                                 {{ displayLabel(row.display) }}
@@ -346,11 +373,14 @@ function vigPhrase(v: VigInput): string {
                 </table>
               </div>
               <app-pagination-bar
-                [page]="svc.page()" [size]="svc.size()"
-                [total]="svc.total()" [totalPages]="svc.totalPages()"
+                [page]="svc.page()"
+                [size]="svc.size()"
+                [total]="svc.total()"
+                [totalPages]="svc.totalPages()"
                 [loading]="svc.loading()"
                 (pageChange)="svc.load($event, svc.size())"
-                (sizeChange)="svc.load(1, $event)" />
+                (sizeChange)="svc.load(1, $event)"
+              />
             </div>
           }
         }
@@ -365,8 +395,8 @@ function vigPhrase(v: VigInput): string {
           </button>
           <h1 class="text-2xl font-bold text-gray-900 mb-2">¿Qué quieres crear?</h1>
           <p class="text-gray-500 text-sm mb-8 max-w-xl">
-            El descuento y el paquete se aplican solos cuando se cumplen las condiciones. El combo lo
-            elige el cajero al vender.
+            El descuento y el paquete se aplican solos cuando se cumplen las condiciones. El combo
+            lo elige el cajero al vender.
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
             <button
@@ -374,7 +404,9 @@ function vigPhrase(v: VigInput): string {
               (click)="chooseKind('discount')"
               class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all p-6"
             >
-              <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-lg">
+              <div
+                class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-lg"
+              >
                 %
               </div>
               <div class="text-lg font-bold text-gray-900 mb-1.5">Descuento</div>
@@ -388,7 +420,9 @@ function vigPhrase(v: VigInput): string {
               (click)="chooseKind('pack')"
               class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all p-6"
             >
-              <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-sm font-bold">
+              <div
+                class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-sm font-bold"
+              >
                 3x
               </div>
               <div class="text-lg font-bold text-gray-900 mb-1.5">Paquete</div>
@@ -397,20 +431,20 @@ function vigPhrase(v: VigInput): string {
                 solo, por paquetes completos.
               </div>
             </button>
-            <button
-              type="button"
-              (click)="chooseKind('combo')"
-              class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all p-6"
-            >
-              <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-lg">
-                🎁
-              </div>
-              <div class="text-lg font-bold text-gray-900 mb-1.5">Combo</div>
-              <div class="text-sm text-gray-500">
-                Productos distintos por un precio. El cajero lo elige al vender. Ej: cono + malteada
-                + topping por $15.000.
-              </div>
-            </button>
+            <!-- <button
+               type="button"
+               (click)="chooseKind('combo')"
+               class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all p-6"
+             >
+               <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-lg">
+                 🎁
+               </div>
+               <div class="text-lg font-bold text-gray-900 mb-1.5">Combo</div>
+               <div class="text-sm text-gray-500">
+                 Productos distintos por un precio. El cajero lo elige al vender. Ej: cono + malteada
+                 + topping por $15.000.
+               </div>
+            </button> !-->
           </div>
         }
 
@@ -425,79 +459,82 @@ function vigPhrase(v: VigInput): string {
           <h1 class="text-2xl font-bold text-gray-900 mb-6">Nuevo descuento</h1>
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             <div class="lg:col-span-5 space-y-7">
-            <ng-container [ngTemplateOutlet]="identityFields" />
+              <ng-container [ngTemplateOutlet]="identityFields" />
 
-            <div>
-              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
-                >¿Cuánto descuenta?</label
-              >
-              <div class="inline-flex rounded-lg border border-gray-200 overflow-hidden mb-3">
-                <button
-                  type="button"
-                  (click)="form.type = 'percent'"
-                  class="px-4 py-2 text-sm font-semibold transition-colors"
-                  [class]="
-                    form.type === 'percent'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  "
+              <div>
+                <label
+                  class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
+                  >¿Cuánto descuenta?</label
                 >
-                  Porcentaje
-                </button>
-                <button
-                  type="button"
-                  (click)="form.type = 'fixed'"
-                  class="px-4 py-2 text-sm font-semibold border-l border-gray-200 transition-colors"
-                  [class]="
-                    form.type === 'fixed'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  "
-                >
-                  Monto fijo
-                </button>
-              </div>
-              <div class="flex items-center gap-2 max-w-[200px]">
-                @if (form.type === 'percent') {
-                  <input
-                    [(ngModel)]="form.value"
-                    (blur)="touch('value')"
-                    type="number"
-                    min="0"
-                    max="100"
-                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                } @else {
-                  <app-money-input
-                    [ngModel]="form.value"
-                    (ngModelChange)="form.value = $event ?? 0"
-                    (blurred)="touch('value')"
-                    sizeClass="px-3 py-2.5 rounded-lg text-sm"
-                  />
-                }
-                <span class="text-sm font-semibold text-gray-600">{{
-                  form.type === 'percent' ? '%' : 'pesos'
-                }}</span>
-              </div>
-              @if (touched['value'] && numberValue() <= 0) {
-                <p class="text-xs text-red-500 mt-1">Ingresa un valor mayor a 0.</p>
-              }
-              @if (form.type === 'percent' && numberValue() > 100) {
-                <p class="text-xs text-red-500 mt-1">
-                  Un descuento porcentual no puede superar 100.
-                </p>
-              }
-              @if (discountExample(); as ex) {
-                <div class="inline-block mt-3 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
-                  Ejemplo: {{ ex.name }} pasa de
-                  <span class="line-through text-gray-400">{{ ex.before }}</span> a
-                  <strong class="text-gray-900">{{ ex.after }}</strong>
+                <div class="inline-flex rounded-lg border border-gray-200 overflow-hidden mb-3">
+                  <button
+                    type="button"
+                    (click)="form.type = 'percent'"
+                    class="px-4 py-2 text-sm font-semibold transition-colors"
+                    [class]="
+                      form.type === 'percent'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    "
+                  >
+                    Porcentaje
+                  </button>
+                  <button
+                    type="button"
+                    (click)="form.type = 'fixed'"
+                    class="px-4 py-2 text-sm font-semibold border-l border-gray-200 transition-colors"
+                    [class]="
+                      form.type === 'fixed'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    "
+                  >
+                    Monto fijo
+                  </button>
                 </div>
-              }
-            </div>
+                <div class="flex items-center gap-2 max-w-[200px]">
+                  @if (form.type === 'percent') {
+                    <input
+                      [(ngModel)]="form.value"
+                      (blur)="touch('value')"
+                      type="number"
+                      min="0"
+                      max="100"
+                      class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  } @else {
+                    <app-money-input
+                      [ngModel]="form.value"
+                      (ngModelChange)="form.value = $event ?? 0"
+                      (blurred)="touch('value')"
+                      sizeClass="px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  }
+                  <span class="text-sm font-semibold text-gray-600">{{
+                    form.type === 'percent' ? '%' : 'pesos'
+                  }}</span>
+                </div>
+                @if (touched['value'] && numberValue() <= 0) {
+                  <p class="text-xs text-red-500 mt-1">Ingresa un valor mayor a 0.</p>
+                }
+                @if (form.type === 'percent' && numberValue() > 100) {
+                  <p class="text-xs text-red-500 mt-1">
+                    Un descuento porcentual no puede superar 100.
+                  </p>
+                }
+                @if (discountExample(); as ex) {
+                  <div
+                    class="inline-block mt-3 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2"
+                  >
+                    Ejemplo: {{ ex.name }} pasa de
+                    <span class="line-through text-gray-400">{{ ex.before }}</span> a
+                    <strong class="text-gray-900">{{ ex.after }}</strong>
+                  </div>
+                }
+              </div>
 
-            <ng-container [ngTemplateOutlet]="scheduleFields" />
-            <ng-container [ngTemplateOutlet]="priorityFields" />
+              <ng-container [ngTemplateOutlet]="scheduleFields" />
+              <ng-container [ngTemplateOutlet]="priorityFields" />
             </div>
 
             <div class="lg:col-span-7 space-y-4">
@@ -519,35 +556,35 @@ function vigPhrase(v: VigInput): string {
           <h1 class="text-2xl font-bold text-gray-900 mb-6">Nuevo paquete</h1>
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             <div class="lg:col-span-5 space-y-7">
-            <ng-container [ngTemplateOutlet]="identityFields" />
+              <ng-container [ngTemplateOutlet]="identityFields" />
 
-            <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-              <p class="text-sm text-indigo-900 font-semibold mb-1">
-                El precio se define producto por producto
-              </p>
-              <p class="text-xs text-indigo-700">
-                Elige a la derecha a qué aplica y pon en cada fila cuántas unidades entran y a qué
-                precio. Solo descuenta paquetes completos: con 2 unidades por paquete, una compra de
-                3 cobra un paquete y una unidad suelta al precio normal.
-              </p>
-            </div>
-
-            @if (packExample(); as ex) {
-              <div class="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
-                {{ ex.line }}
-                @if (ex.savings > 0) {
-                  · <strong class="text-emerald-600">ahorra {{ money(ex.savings) }}</strong>
-                } @else {
-                  ·
-                  <strong class="text-amber-600">
-                    no hay ahorro frente al precio normal ({{ money(ex.normal) }})
-                  </strong>
-                }
+              <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
+                <p class="text-sm text-indigo-900 font-semibold mb-1">
+                  El precio se define producto por producto
+                </p>
+                <p class="text-xs text-indigo-700">
+                  Elige a la derecha a qué aplica y pon en cada fila cuántas unidades entran y a qué
+                  precio. Solo descuenta paquetes completos: con 2 unidades por paquete, una compra
+                  de 3 cobra un paquete y una unidad suelta al precio normal.
+                </p>
               </div>
-            }
 
-            <ng-container [ngTemplateOutlet]="scheduleFields" />
-            <ng-container [ngTemplateOutlet]="priorityFields" />
+              @if (packExample(); as ex) {
+                <div class="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+                  {{ ex.line }}
+                  @if (ex.savings > 0) {
+                    · <strong class="text-emerald-600">ahorra {{ money(ex.savings) }}</strong>
+                  } @else {
+                    ·
+                    <strong class="text-amber-600">
+                      no hay ahorro frente al precio normal ({{ money(ex.normal) }})
+                    </strong>
+                  }
+                </div>
+              }
+
+              <ng-container [ngTemplateOutlet]="scheduleFields" />
+              <ng-container [ngTemplateOutlet]="priorityFields" />
             </div>
 
             <div class="lg:col-span-7 space-y-4">
@@ -614,7 +651,9 @@ function vigPhrase(v: VigInput): string {
           </div>
 
           @if (svc.error()) {
-            <div class="max-w-xl mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+            <div
+              class="max-w-xl mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+            >
               {{ svc.error() }}
             </div>
           }
@@ -667,133 +706,146 @@ function vigPhrase(v: VigInput): string {
 
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             <div class="lg:col-span-5 space-y-6">
-            @if (isDraft()) {
-              <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-4">
-                <div class="text-sm font-semibold text-indigo-900 mb-1">
-                  Es un borrador: todavía puedes cambiarlo todo
+              @if (isDraft()) {
+                <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-4">
+                  <div class="text-sm font-semibold text-indigo-900 mb-1">
+                    Es un borrador: todavía puedes cambiarlo todo
+                  </div>
+                  <p class="text-xs text-indigo-700">
+                    El tipo y a qué aplica solo se pueden editar aquí. Al activarla quedan fijos.
+                  </p>
                 </div>
-                <p class="text-xs text-indigo-700">
-                  El tipo y a qué aplica solo se pueden editar aquí. Al activarla quedan fijos.
-                </p>
-              </div>
-            } @else {
-              <div class="bg-gray-50 border border-gray-100 rounded-xl px-5 py-4">
-                <div class="flex items-center gap-2 mb-2 text-gray-500">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                    <rect x="3" y="11" width="18" height="10" rx="1" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  <span class="text-xs font-semibold uppercase tracking-wide">No se puede modificar</span>
+              } @else {
+                <div class="bg-gray-50 border border-gray-100 rounded-xl px-5 py-4">
+                  <div class="flex items-center gap-2 mb-2 text-gray-500">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                    >
+                      <rect x="3" y="11" width="18" height="10" rx="1" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <span class="text-xs font-semibold uppercase tracking-wide"
+                      >No se puede modificar</span
+                    >
+                  </div>
+                  <div class="text-sm text-gray-900 mb-1">
+                    <strong>{{ typeLabel(form.type) }}</strong> · alcance fijo
+                  </div>
+                  <p class="text-xs text-gray-500 mb-3">
+                    Esta promoción ya salió de borrador y pudo explicar el descuento de una venta.
+                    Duplícala, edita la copia y finaliza la original.
+                  </p>
+                  <button
+                    type="button"
+                    (click)="askDuplicateEditing()"
+                    class="px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-white"
+                  >
+                    Duplicar y editar la copia
+                  </button>
                 </div>
-                <div class="text-sm text-gray-900 mb-1">
-                  <strong>{{ typeLabel(form.type) }}</strong> · alcance fijo
-                </div>
-                <p class="text-xs text-gray-500 mb-3">
-                  Esta promoción ya salió de borrador y pudo explicar el descuento de una venta.
-                  Duplícala, edita la copia y finaliza la original.
-                </p>
-                <button
-                  type="button"
-                  (click)="askDuplicateEditing()"
-                  class="px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-white"
-                >
-                  Duplicar y editar la copia
-                </button>
-              </div>
-            }
+              }
 
               @if (!isReadOnly()) {
                 <ng-container [ngTemplateOutlet]="identityFields" />
 
                 @if (isDraft()) {
-                <div>
-                  <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
-                    >Tipo</label
-                  >
-                  <div class="inline-flex rounded-lg border border-gray-200 overflow-hidden">
-                    @for (t of editableTypes; track t) {
-                      <button
-                        type="button"
-                        (click)="switchType(t)"
-                        class="px-3.5 py-2 text-sm font-semibold border-l border-gray-200 first:border-l-0 transition-colors"
-                        [class]="
-                          form.type === t
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-50'
-                        "
-                      >
-                        {{ typeLabel(t) }}
-                      </button>
-                    }
+                  <div>
+                    <label
+                      class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
+                      >Tipo</label
+                    >
+                    <div class="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                      @for (t of editableTypes; track t) {
+                        <button
+                          type="button"
+                          (click)="switchType(t)"
+                          class="px-3.5 py-2 text-sm font-semibold border-l border-gray-200 first:border-l-0 transition-colors"
+                          [class]="
+                            form.type === t
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-white text-gray-600 hover:bg-gray-50'
+                          "
+                        >
+                          {{ typeLabel(t) }}
+                        </button>
+                      }
+                    </div>
                   </div>
-                </div>
                 }
 
-              @if (form.type === 'qty_price') {
-                <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-                  <p class="text-xs text-indigo-700">
-                    El precio y las unidades de este paquete se definen en cada fila de la tabla.
-                  </p>
-                </div>
-              } @else if (form.type === 'combo') {
-                <div>
-                  <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
-                    >Precio del combo</label
-                  >
-                  <div class="flex items-center gap-2 max-w-50">
-                    <span class="text-sm font-semibold text-gray-500">$</span>
-                    <app-money-input
-                      [ngModel]="form.value"
-                      (ngModelChange)="form.value = $event ?? 0"
-                      sizeClass="px-3 py-2.5 rounded-lg text-sm"
-                    />
+                @if (form.type === 'qty_price') {
+                  <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
+                    <p class="text-xs text-indigo-700">
+                      El precio y las unidades de este paquete se definen en cada fila de la tabla.
+                    </p>
                   </div>
-                  <p class="text-sm text-gray-600 mt-2">
-                    Ahorro para el cliente:
-                    <strong [class]="comboSavings() > 0 ? 'text-emerald-600' : 'text-amber-600'">{{
-                      comboSavingsLabel()
-                    }}</strong>
-                  </p>
-                </div>
-              } @else {
-                <div>
-                  <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
-                    >¿Cuánto descuenta?</label
-                  >
-                  <div class="flex items-center gap-2 max-w-50">
-                    @if (form.type === 'percent') {
-                      <input
-                        [(ngModel)]="form.value"
-                        type="number"
-                        min="0"
-                        max="100"
-                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                      />
-                    } @else {
+                } @else if (form.type === 'combo') {
+                  <div>
+                    <label
+                      class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                      >Precio del combo</label
+                    >
+                    <div class="flex items-center gap-2 max-w-50">
+                      <span class="text-sm font-semibold text-gray-500">$</span>
                       <app-money-input
                         [ngModel]="form.value"
                         (ngModelChange)="form.value = $event ?? 0"
                         sizeClass="px-3 py-2.5 rounded-lg text-sm"
                       />
-                    }
-                    <span class="text-sm font-semibold text-gray-600">{{
-                      form.type === 'percent' ? '%' : 'pesos'
-                    }}</span>
-                  </div>
-                  @if (form.type === 'percent' && numberValue() > 100) {
-                    <p class="text-xs text-red-500 mt-1">
-                      Un descuento porcentual no puede superar 100.
+                    </div>
+                    <p class="text-sm text-gray-600 mt-2">
+                      Ahorro para el cliente:
+                      <strong
+                        [class]="comboSavings() > 0 ? 'text-emerald-600' : 'text-amber-600'"
+                        >{{ comboSavingsLabel() }}</strong
+                      >
                     </p>
-                  }
-                </div>
-              }
+                  </div>
+                } @else {
+                  <div>
+                    <label
+                      class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                      >¿Cuánto descuenta?</label
+                    >
+                    <div class="flex items-center gap-2 max-w-50">
+                      @if (form.type === 'percent') {
+                        <input
+                          [(ngModel)]="form.value"
+                          type="number"
+                          min="0"
+                          max="100"
+                          class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        />
+                      } @else {
+                        <app-money-input
+                          [ngModel]="form.value"
+                          (ngModelChange)="form.value = $event ?? 0"
+                          sizeClass="px-3 py-2.5 rounded-lg text-sm"
+                        />
+                      }
+                      <span class="text-sm font-semibold text-gray-600">{{
+                        form.type === 'percent' ? '%' : 'pesos'
+                      }}</span>
+                    </div>
+                    @if (form.type === 'percent' && numberValue() > 100) {
+                      <p class="text-xs text-red-500 mt-1">
+                        Un descuento porcentual no puede superar 100.
+                      </p>
+                    }
+                  </div>
+                }
 
                 <ng-container [ngTemplateOutlet]="scheduleFields" />
                 <ng-container [ngTemplateOutlet]="priorityFields" />
               } @else {
-              <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <p class="text-base text-gray-800 leading-relaxed">{{ draftSummary() }}</p>
-              </div>
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                  <p class="text-base text-gray-800 leading-relaxed">{{ draftSummary() }}</p>
+                </div>
               }
             </div>
 
@@ -815,7 +867,9 @@ function vigPhrase(v: VigInput): string {
             class="sticky bottom-0 -mx-4 md:-mx-6 mt-6 px-4 md:px-6 py-3 bg-gray-50/95 backdrop-blur border-t border-gray-200"
           >
             @if (svc.error()) {
-              <div class="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+              <div
+                class="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+              >
                 {{ svc.error() }}
               </div>
             }
@@ -928,101 +982,105 @@ function vigPhrase(v: VigInput): string {
           class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
         />
         @if (comboSearchResults().length > 0) {
-                <div class="border border-gray-200 rounded-lg mt-2 max-h-52 overflow-y-auto divide-y divide-gray-100">
-                  @for (opt of comboSearchResults(); track opt.id) {
-                    <button
-                      type="button"
-                      (click)="addComboVariant(opt.id)"
-                      class="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-gray-50"
-                    >
-                      <span>{{ opt.label }}</span>
-                      <span class="text-gray-400 text-xs">{{
-                        money(variantPrices().get(opt.id) || 0)
-                      }}</span>
-                    </button>
-                  }
-                </div>
-              }
+          <div
+            class="border border-gray-200 rounded-lg mt-2 max-h-52 overflow-y-auto divide-y divide-gray-100"
+          >
+            @for (opt of comboSearchResults(); track opt.id) {
+              <button
+                type="button"
+                (click)="addComboVariant(opt.id)"
+                class="w-full flex items-center justify-between px-3 py-2.5 text-sm hover:bg-gray-50"
+              >
+                <span>{{ opt.label }}</span>
+                <span class="text-gray-400 text-xs">{{
+                  money(variantPrices().get(opt.id) || 0)
+                }}</span>
+              </button>
+            }
+          </div>
+        }
 
-              @if (comboItemRows().length > 0) {
-                <div class="border border-gray-200 rounded-lg mt-3 divide-y divide-gray-100">
-                  @for (line of comboItemRows(); track line.variantId) {
-                    <div class="flex items-center justify-between px-3 py-2.5">
-                      <div class="text-sm text-gray-800">{{ line.label }}</div>
-                      <div class="flex items-center gap-3">
-                        <button
-                          type="button"
-                          (click)="decrementComboQty(line.variantId)"
-                          class="w-7 h-7 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                        >
-                          −
-                        </button>
-                        <span class="w-4 text-center text-sm font-semibold">{{ line.quantity }}</span>
-                        <button
-                          type="button"
-                          (click)="incrementComboQty(line.variantId)"
-                          class="w-7 h-7 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                        >
-                          +
-                        </button>
-                        <span class="w-20 text-right text-sm text-gray-500">{{ line.lineTotal }}</span>
-                        <button
-                          type="button"
-                          (click)="removeComboVariant(line.variantId)"
-                          class="text-gray-400 hover:text-red-500 px-1"
-                          aria-label="Quitar"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  }
+        @if (comboItemRows().length > 0) {
+          <div class="border border-gray-200 rounded-lg mt-3 divide-y divide-gray-100">
+            @for (line of comboItemRows(); track line.variantId) {
+              <div class="flex items-center justify-between px-3 py-2.5">
+                <div class="text-sm text-gray-800">{{ line.label }}</div>
+                <div class="flex items-center gap-3">
+                  <button
+                    type="button"
+                    (click)="decrementComboQty(line.variantId)"
+                    class="w-7 h-7 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                  >
+                    −
+                  </button>
+                  <span class="w-4 text-center text-sm font-semibold">{{ line.quantity }}</span>
+                  <button
+                    type="button"
+                    (click)="incrementComboQty(line.variantId)"
+                    class="w-7 h-7 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                  >
+                    +
+                  </button>
+                  <span class="w-20 text-right text-sm text-gray-500">{{ line.lineTotal }}</span>
+                  <button
+                    type="button"
+                    (click)="removeComboVariant(line.variantId)"
+                    class="text-gray-400 hover:text-red-500 px-1"
+                    aria-label="Quitar"
+                  >
+                    ✕
+                  </button>
                 </div>
-              }
-              @if (touched['comboPrice'] && comboDistinctCount() < 2) {
-                <p class="text-xs text-red-500 mt-2">
-                  Selecciona al menos 2 productos distintos para el combo.
-                </p>
-              }
-            </div>
+              </div>
+            }
+          </div>
+        }
+        @if (touched['comboPrice'] && comboDistinctCount() < 2) {
+          <p class="text-xs text-red-500 mt-2">
+            Selecciona al menos 2 productos distintos para el combo.
+          </p>
+        }
+      </div>
     </ng-template>
 
     <ng-template #comboPriceFields>
-              <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
-                  >Precio del combo</label
-                >
-                <div class="flex items-center gap-2 max-w-[200px]">
-                  <span class="text-sm font-semibold text-gray-500">$</span>
-                  <app-money-input
-                    [ngModel]="form.value"
-                    (ngModelChange)="form.value = $event ?? 0"
-                    (blurred)="touch('comboPrice')"
-                    sizeClass="px-3 py-2.5 rounded-lg text-sm"
-                  />
-                </div>
-                <div class="flex gap-6 mt-3 text-sm">
-                  <div>
-                    <div class="text-xs text-gray-400">Precio normal</div>
-                    <div class="font-semibold text-gray-900">{{ money(comboNormalTotal()) }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-gray-400">Ahorro para el cliente</div>
-                    <div
-                      class="font-semibold"
-                      [class]="comboSavings() > 0 ? 'text-emerald-600' : 'text-amber-600'"
-                    >
-                      {{ comboSavingsLabel() }}
-                    </div>
-                  </div>
-                </div>
-                @if (numberValue() > 0 && comboSavings() <= 0) {
-                  <div class="mt-2 text-xs font-medium text-amber-700 bg-amber-50 rounded-lg px-3 py-2 inline-block">
-                    El precio del combo es igual o más caro que comprar por separado. El cliente no
-                    ahorra nada.
-                  </div>
-                }
-              </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+          >Precio del combo</label
+        >
+        <div class="flex items-center gap-2 max-w-[200px]">
+          <span class="text-sm font-semibold text-gray-500">$</span>
+          <app-money-input
+            [ngModel]="form.value"
+            (ngModelChange)="form.value = $event ?? 0"
+            (blurred)="touch('comboPrice')"
+            sizeClass="px-3 py-2.5 rounded-lg text-sm"
+          />
+        </div>
+        <div class="flex gap-6 mt-3 text-sm">
+          <div>
+            <div class="text-xs text-gray-400">Precio normal</div>
+            <div class="font-semibold text-gray-900">{{ money(comboNormalTotal()) }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-400">Ahorro para el cliente</div>
+            <div
+              class="font-semibold"
+              [class]="comboSavings() > 0 ? 'text-emerald-600' : 'text-amber-600'"
+            >
+              {{ comboSavingsLabel() }}
+            </div>
+          </div>
+        </div>
+        @if (numberValue() > 0 && comboSavings() <= 0) {
+          <div
+            class="mt-2 text-xs font-medium text-amber-700 bg-amber-50 rounded-lg px-3 py-2 inline-block"
+          >
+            El precio del combo es igual o más caro que comprar por separado. El cliente no ahorra
+            nada.
+          </div>
+        }
+      </div>
     </ng-template>
     <ng-template #identityFields>
       <div class="space-y-4">
@@ -1170,7 +1228,9 @@ function vigPhrase(v: VigInput): string {
             <div class="text-sm text-amber-800">
               <p class="font-semibold mb-1">
                 Esta promoción compite con
-                {{ draftOverlaps().length === 1 ? 'otra' : draftOverlaps().length + ' promociones' }}
+                {{
+                  draftOverlaps().length === 1 ? 'otra' : draftOverlaps().length + ' promociones'
+                }}
               </p>
               <ul class="space-y-0.5">
                 @for (o of draftOverlaps(); track o.id) {
@@ -1237,7 +1297,9 @@ function vigPhrase(v: VigInput): string {
         class="sticky bottom-0 -mx-4 md:-mx-6 mt-6 px-4 md:px-6 py-3 bg-gray-50/95 backdrop-blur border-t border-gray-200"
       >
         @if (svc.error()) {
-          <div class="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+          <div
+            class="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+          >
             {{ svc.error() }}
           </div>
         }
@@ -1362,7 +1424,9 @@ function vigPhrase(v: VigInput): string {
             />
           </div>
           @if (invalidDateRange()) {
-            <p class="text-xs text-red-500 mb-3">La fecha de fin no puede ser anterior al inicio.</p>
+            <p class="text-xs text-red-500 mb-3">
+              La fecha de fin no puede ser anterior al inicio.
+            </p>
           } @else {
             <p class="text-[11px] text-gray-400 mb-3">Vacío = sin límite de fecha</p>
           }
@@ -1381,7 +1445,9 @@ function vigPhrase(v: VigInput): string {
             <div class="grid grid-cols-2 gap-3 mb-3">
               @if (form.type !== 'qty_price') {
                 <div>
-                  <label class="block text-xs font-semibold text-gray-500 mb-1">Cantidad mínima</label>
+                  <label class="block text-xs font-semibold text-gray-500 mb-1"
+                    >Cantidad mínima</label
+                  >
                   <input
                     [(ngModel)]="form.min_qty"
                     type="number"
@@ -1605,7 +1671,8 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   emptyMessage(): string {
-    if (this.isFiltered()) return 'Prueba con otro término de búsqueda o quita el filtro de estado.';
+    if (this.isFiltered())
+      return 'Prueba con otro término de búsqueda o quita el filtro de estado.';
     return 'Crea un descuento que se aplique solo, un paquete a precio cerrado, o un combo que el cajero elija al vender.';
   }
 
@@ -1616,11 +1683,13 @@ export class PromotionsPageComponent implements OnInit {
     this.screen.set('type');
   }
 
-  chooseKind(kind: 'discount' | 'pack' | 'combo'): void {
-    if (kind === 'combo') {
-      this.form.type = 'combo';
-      this.form.min_qty = 1;
-    } else if (kind === 'pack') {
+  chooseKind(kind: 'discount' | 'pack'): void {
+    // if (kind === 'combo') {
+    //   this.form.type = 'combo';
+    //   this.form.min_qty = 1;
+    // } else
+
+    if (kind === 'pack') {
       this.form.type = 'qty_price';
       // Un paquete no puede aplicar a "toda la venta": el precio vive en cada fila.
       this.scopeMode.set('pick');
@@ -1767,7 +1836,8 @@ export class PromotionsPageComponent implements OnInit {
     if (this.scopeMode() === 'all') return this.form.type === 'qty_price';
     // En `pick` basta con una de las dos: el alcance puede ser solo categorías,
     // solo productos, o una mezcla de ambos.
-    if (this.form.categoryTargets.length === 0 && this.form.productTargets.length === 0) return true;
+    if (this.form.categoryTargets.length === 0 && this.form.productTargets.length === 0)
+      return true;
     return this.targetsSinPrecio() > 0;
   }
 
@@ -1887,9 +1957,7 @@ export class PromotionsPageComponent implements OnInit {
    */
   packExample(): { line: string; normal: number; savings: number; propio: boolean } | null {
     const product = this.sampleProduct();
-    const propio = product
-      ? this.form.productTargets.find((t) => t.id === product.id)
-      : undefined;
+    const propio = product ? this.form.productTargets.find((t) => t.id === product.id) : undefined;
     const deCategoria = product
       ? this.form.categoryTargets.find((t) => t.id === this.categoryOfProduct().get(product.id))
       : undefined;
@@ -1983,7 +2051,10 @@ export class PromotionsPageComponent implements OnInit {
         it.product_variant_id === variantId ? { ...it, quantity: it.quantity + 1 } : it,
       );
     } else {
-      this.form.comboItems = [...this.form.comboItems, { product_variant_id: variantId, quantity: 1 }];
+      this.form.comboItems = [
+        ...this.form.comboItems,
+        { product_variant_id: variantId, quantity: 1 },
+      ];
     }
     this.comboSearchQuery.set('');
   }
@@ -2413,7 +2484,8 @@ export class PromotionsPageComponent implements OnInit {
     const before = this.formFromPromotion(original);
     const same = (a: string[], b: string[]) =>
       a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
-    if (!same(targetKeys(before.categoryTargets), targetKeys(this.form.categoryTargets))) return true;
+    if (!same(targetKeys(before.categoryTargets), targetKeys(this.form.categoryTargets)))
+      return true;
     if (!same(targetKeys(before.productTargets), targetKeys(this.form.productTargets))) return true;
     const key = (items: { product_variant_id: string; quantity: number }[]) =>
       items

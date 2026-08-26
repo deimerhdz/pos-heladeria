@@ -155,6 +155,15 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
       },
       {
+        // Vista dedicada para armar un pedido de mostrador nuevo (spec 036,
+        // ajuste posterior): reemplaza el CTA "+ Crear Orden Manual" que
+        // antes se mostraba embebido en la Terminal de Mesas.
+        path: 'mesas-sesiones/:tableId/orden-manual',
+        loadComponent: () =>
+          import('../tables/pages/manual-order-page.component').then((m) => m.ManualOrderPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+      },
+      {
         path: 'orders',
         loadComponent: () =>
           import('../orders/pages/orders-page.component').then((m) => m.OrdersPageComponent),

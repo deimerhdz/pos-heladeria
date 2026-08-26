@@ -1,18 +1,23 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { ManualOrderPanelComponent } from './manual-order-panel.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
 
-/** Feature 028, T021/T026: CTA "+ Crear Orden Manual" en el estado vacío de
- *  una mesa libre. El atajo F3 se prueba en el store (`startManualOrder`),
- *  que es lo que dispara este mismo botón y lo que enlaza `table-sessions
- *  .component.ts` con `@HostListener('window:keydown')`. */
+/**
+ * Feature 028, T021/T026: estado vacío de una mesa libre. Spec 036 (ajuste
+ * posterior): el CTA "+ Crear Orden Manual" ya no abre el catálogo embebido
+ * (`startManualOrder()`) — navega a la vista dedicada
+ * `manual-order-page.component.ts`. El atajo F3 se prueba en
+ * `table-sessions.component.ts` (dispara la misma navegación).
+ */
 describe('ManualOrderPanelComponent', () => {
   let fixture: ComponentFixture<ManualOrderPanelComponent>;
   let store: PosTerminalStore;
+  let router: Router;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
@@ -20,6 +25,7 @@ describe('ManualOrderPanelComponent', () => {
       imports: [ManualOrderPanelComponent],
       providers: [
         PosTerminalStore,
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         // El store arrastra varios servicios que usan TanStack Query
@@ -31,11 +37,13 @@ describe('ManualOrderPanelComponent', () => {
     });
     fixture = TestBed.createComponent(ManualOrderPanelComponent);
     store = TestBed.inject(PosTerminalStore);
+    router = TestBed.inject(Router);
   });
 
-  it('el botón "+ Crear Orden Manual" empieza a armar el pedido', () => {
+  it('el botón "+ Crear Orden Manual" navega a la vista dedicada de armado de pedido', () => {
     store.selectedTableId.set('t1');
     fixture.detectChanges();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       (b as HTMLButtonElement).textContent?.includes('Crear Orden Manual'),
@@ -43,10 +51,20 @@ describe('ManualOrderPanelComponent', () => {
     expect(button).toBeDefined();
 
     button.click();
-    fixture.detectChanges();
 
-    expect(store.manualOrderBuilding()).toBe(true);
-    expect(store.catalogOpen()).toBe(true);
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
+  });
+
+  it('sin mesa seleccionada, el CTA no navega', () => {
+    fixture.detectChanges();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear Orden Manual'),
+    ) as HTMLButtonElement;
+    button.click();
+
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it('menciona el atajo F3', () => {
