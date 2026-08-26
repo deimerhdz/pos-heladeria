@@ -1,11 +1,13 @@
 import { signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { SidebarComponent } from './sidebar.component';
+import { LayoutService } from './layout.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { User, UserRole } from '../../../core/interfaces/user.interface';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 
 function makeUser(partial: Partial<User>): User {
   return {
@@ -63,5 +65,65 @@ describe('SidebarComponent.visibleItems', () => {
     currentUser.set(null);
     const sidebar = createComponent();
     expect(sidebar.visibleItems()).toEqual([]);
+  });
+});
+
+/**
+ * Spec 036 (FR-012): `sidebarOpen()` ahora también controla la visibilidad
+ * del `<aside>` en escritorio — antes `md:relative md:translate-x-0` era
+ * incondicional y el componente lo ignoraba ahí (solo importaba en el
+ * slide-over móvil). No hay forma de simular el breakpoint `md` en jsdom
+ * (no evalúa media queries), así que la prueba correcta es sobre las clases
+ * reactivas (`-translate-x-full` / `translate-x-0`), que ahora son la
+ * ÚNICA fuente de verdad de la visibilidad en cualquier tamaño de pantalla
+ * — y confirmar que la clase `md:` incondicional que las anulaba en
+ * escritorio ya no está.
+ */
+describe('SidebarComponent — clases de escritorio honran sidebarOpen() (spec 036)', () => {
+  const currentUser = signal<User | null>(makeUser({ isSuperAdmin: false, role: UserRole.CASHIER }));
+  let fixture: ComponentFixture<SidebarComponent>;
+  let layoutService: LayoutService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { currentUser } },
+        // Evita la cadena TenantInfoService → TenantContextService (necesita
+        // provideTenantInitializer() al arranque real): este bloque solo
+        // ejercita las clases reactivas del <aside>, no el branding.
+        { provide: TenantInfoService, useValue: { businessName: () => 'Heladería', logoUrl: () => null } },
+      ],
+    });
+    fixture = TestBed.createComponent(SidebarComponent);
+    layoutService = TestBed.inject(LayoutService);
+  });
+
+  const aside = (): HTMLElement => fixture.nativeElement.querySelector('aside') as HTMLElement;
+
+  it('ya no fuerza "md:relative md:translate-x-0" de forma incondicional', () => {
+    fixture.detectChanges();
+    expect(aside().className).not.toContain('md:relative');
+    expect(aside().className).not.toContain('md:translate-x-0');
+  });
+
+  it('sidebarOpen() en true → visible (translate-x-0), también en escritorio', () => {
+    layoutService.sidebarOpen.set(true);
+    fixture.detectChanges();
+
+    expect(aside().classList.contains('translate-x-0')).toBe(true);
+    expect(aside().classList.contains('-translate-x-full')).toBe(false);
+  });
+
+  it('sidebarOpen() en false → oculto (-translate-x-full), también en escritorio', () => {
+    layoutService.sidebarOpen.set(false);
+    fixture.detectChanges();
+
+    expect(aside().classList.contains('-translate-x-full')).toBe(true);
+    expect(aside().classList.contains('translate-x-0')).toBe(false);
   });
 });

@@ -40,7 +40,6 @@ describe('ReportsService', () => {
       id: 1,
       name: 'Heladería de prueba',
       host: 'prueba.skeilopos.com',
-      plan: 'basic',
       logo_url: null,
       receipt_message: null,
       timezone: TEST_TIMEZONE,
