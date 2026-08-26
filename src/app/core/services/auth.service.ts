@@ -86,6 +86,34 @@ export class AuthService {
     return { error: null };
   }
 
+  /**
+   * Request a password-reset link (Flow A, unauthenticated). Always resolves
+   * with the backend's generic message (or a fallback) — the endpoint never
+   * reveals whether the email belongs to an account (FR-003).
+   */
+  async forgotPassword(email: string): Promise<{ error: string | null }> {
+    try {
+      await firstValueFrom(this.authApi.forgotPassword({ email }));
+      return { error: null };
+    } catch (err) {
+      return { error: this.extractError(err, 'No se pudo procesar la solicitud. Intenta de nuevo.') };
+    }
+  }
+
+  /**
+   * Consume a reset link and set a new password (Flow A, unauthenticated).
+   * Any existing session was already cleared by the reset-password screen
+   * before this call (FR-006) — this never touches stored tokens.
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ error: string | null }> {
+    try {
+      await firstValueFrom(this.authApi.resetPassword({ token, new_password: newPassword }));
+      return { error: null };
+    } catch (err) {
+      return { error: this.extractError(err, 'No se pudo restablecer la contraseña. Intenta de nuevo.') };
+    }
+  }
+
   async logout(): Promise<void> {
     const access = this.tokenStorage.getAccessToken();
     if (access) {
@@ -177,7 +205,12 @@ export class AuthService {
     };
   }
 
-  private clearSession(): void {
+  /**
+   * Clear the local session (tokens + in-memory user) without calling the
+   * backend or navigating. Used by `ResetPasswordComponent` to drop any
+   * existing session before showing the "set a new password" form (FR-006).
+   */
+  clearSession(): void {
     this.tokenStorage.clear();
     this.currentUser.set(null);
   }

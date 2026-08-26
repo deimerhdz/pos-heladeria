@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { Tenant, TenantCreateWithUser } from '../interfaces/tenant.interface';
+import { Tenant, TenantCreateWithUser, TenantPlanUpdatePayload } from '../interfaces/tenant.interface';
 import { Page } from '../interfaces/page.interface';
 
 @Injectable({ providedIn: 'root' })
@@ -33,6 +33,26 @@ export class TenantService {
       await firstValueFrom(this.http.post<void>(this.adminTenantsUrl, payload));
     } catch (err) {
       this.error.set(this.extractError(err));
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  /**
+   * Asigna, cambia O renueva el plan de un tenant vía
+   * `PATCH /api/v1/super-admin/tenants/{id}` — mismo método sirve las tres
+   * operaciones (research.md Decisión 16, spec 033): pasar el mismo
+   * `plan_id` que el tenant ya tenía es una renovación.
+   */
+  async changePlan(tenantId: number, payload: TenantPlanUpdatePayload): Promise<boolean> {
+    this.isSubmitting.set(true);
+    this.error.set(null);
+    try {
+      await firstValueFrom(this.http.patch<Tenant>(`${this.baseUrl}/tenants/${tenantId}`, payload));
+      return true;
+    } catch (err) {
+      this.error.set(this.extractError(err));
+      return false;
     } finally {
       this.isSubmitting.set(false);
     }

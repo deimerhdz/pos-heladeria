@@ -1,9 +1,11 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
-import { UserFormComponent } from '../components/user-form.component';
+import { InvitationFormComponent } from '../components/invitation-form.component';
+import { PendingInvitationsListComponent } from '../components/pending-invitations-list.component';
 import { UserRoleModalComponent } from '../components/user-role-modal.component';
 import { TenantUser } from '../interfaces/user-profile.interface';
+import { InvitationsService } from '../services/invitations.service';
 import { UsersService } from '../services/users.service';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -21,7 +23,12 @@ const PAGE_SIZES = [10, 20, 50, 100];
 @Component({
   selector: 'app-users-page',
   standalone: true,
-  imports: [FormsModule, UserFormComponent, UserRoleModalComponent],
+  imports: [
+    FormsModule,
+    InvitationFormComponent,
+    PendingInvitationsListComponent,
+    UserRoleModalComponent,
+  ],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -40,9 +47,9 @@ const PAGE_SIZES = [10, 20, 50, 100];
         }
       </div>
 
-      <!-- Formulario de creación -->
+      <!-- Formulario de invitación -->
       @if (showForm()) {
-        <app-user-form (saved)="onUserSaved()" (cancelled)="showForm.set(false)" />
+        <app-invitation-form (saved)="onUserSaved()" (cancelled)="showForm.set(false)" />
       }
 
       <!-- Error global -->
@@ -203,6 +210,9 @@ const PAGE_SIZES = [10, 20, 50, 100];
           </div>
         </div>
       }
+
+      <!-- Invitaciones pendientes (US3) -->
+      <app-pending-invitations-list />
     </div>
 
     <!-- Modal cambiar rol -->
@@ -217,6 +227,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
 })
 export class UsersPageComponent implements OnInit {
   readonly usersService = inject(UsersService);
+  readonly invitationsService = inject(InvitationsService);
   private readonly authService = inject(AuthService);
 
   readonly showForm = signal(false);
@@ -227,6 +238,7 @@ export class UsersPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.usersService.loadUsers();
+    this.invitationsService.loadPendingInvitations();
   }
 
   openForm(): void {
@@ -236,6 +248,7 @@ export class UsersPageComponent implements OnInit {
 
   onUserSaved(): void {
     this.showForm.set(false);
+    this.invitationsService.loadPendingInvitations(1);
   }
 
   openRoleModal(user: TenantUser): void {

@@ -23,6 +23,18 @@ export const superAdminRoutes: Routes = [
             (m) => m.SuperAdminUsersPageComponent,
           ),
       },
+      {
+        path: 'payment-methods-catalog',
+        loadComponent: () =>
+          import('./pages/payment-method-catalog-page.component').then(
+            (m) => m.PaymentMethodCatalogPageComponent,
+          ),
+      },
+      {
+        path: 'plans',
+        loadComponent: () =>
+          import('./pages/plans-page.component').then((m) => m.PlansPageComponent),
+      },
     ],
   },
 ];

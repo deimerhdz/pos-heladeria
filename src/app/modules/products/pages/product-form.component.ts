@@ -26,6 +26,7 @@ import {
 } from '../interfaces/product.interface';
 import { ProductService } from '../services/product.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /** Una fila del desglose: qué pasa si el cliente elige esta opción. */
 interface SlotBreakdownRow {
@@ -56,7 +57,7 @@ interface SlotBreakdown {
 @Component({
   selector: 'app-product-form',
   standalone: true,
-  imports: [RouterLink, FormsModule, DecimalPipe, SearchableSelectComponent],
+  imports: [RouterLink, FormsModule, DecimalPipe, SearchableSelectComponent, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="max-w-3xl mx-auto space-y-5">
@@ -227,9 +228,9 @@ interface SlotBreakdown {
                   <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
                   <div class="flex items-center gap-1.5 border border-gray-300 rounded-xl px-3 py-2 w-36">
                     <span class="text-gray-400 text-sm">$</span>
-                    <input type="number" min="0" [value]="av.price"
-                      (input)="setVariantField(av.localId, 'price', +$any($event.target).value)"
-                      class="w-full text-sm outline-none" />
+                    <app-money-input [ngModel]="av.price"
+                      (ngModelChange)="setVariantField(av.localId, 'price', $event ?? 0)"
+                      [bordered]="false" sizeClass="text-sm" />
                   </div>
                 </div>
                 @if (draft().hasSizes && draft().variants.length > 1) {

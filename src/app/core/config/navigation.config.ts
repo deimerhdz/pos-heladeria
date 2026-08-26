@@ -32,4 +32,6 @@ export const NAV_ITEMS: NavItem[] = [
 export const SUPER_ADMIN_NAV_ITEMS: NavItem[] = [
   { label: 'Tenants', icon: 'tenants', route: '/super-admin/tenants', group: 'PLATAFORMA', roles: [UserRole.SUPER_ADMIN] },
   { label: 'Usuarios', icon: 'users', route: '/super-admin/users', group: 'PLATAFORMA', roles: [UserRole.SUPER_ADMIN] },
+  { label: 'Métodos de pago', icon: 'payment-methods', route: '/super-admin/payment-methods-catalog', group: 'PLATAFORMA', roles: [UserRole.SUPER_ADMIN] },
+  { label: 'Planes', icon: 'layers', route: '/super-admin/plans', group: 'PLATAFORMA', roles: [UserRole.SUPER_ADMIN] },
 ];

@@ -12,11 +12,12 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { InventoryItem, InventoryItemForm } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 @Component({
   selector: 'app-inventory-item-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, MoneyInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -80,8 +81,8 @@ import { InventoryService } from '../services/inventory.service';
             <!-- Costo unitario -->
             <div [class.col-span-2]="!!item">
               <label class="block text-sm font-medium text-gray-700 mb-1">Costo unitario</label>
-              <input formControlName="unit_cost" type="number" min="0" step="0.01" placeholder="0"
-                class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <app-money-input formControlName="unit_cost" [decimals]="2" placeholder="0"
+                sizeClass="px-3 py-2 rounded-xl text-sm" />
             </div>
           </div>
 

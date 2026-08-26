@@ -198,13 +198,6 @@ const REFRESH_DEBOUNCE_MS = 250;
         <div class="max-w-5xl mx-auto px-4 py-6 pb-24 md:flex md:gap-6 md:items-start">
           <!-- Menu column -->
           <div class="flex-1 min-w-0">
-            @if (orderSuccess()) {
-              <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-5 text-center">
-                <p class="text-green-700 font-medium text-sm">¡Pedido enviado! 🎉</p>
-                <p class="text-green-600 text-xs mt-0.5">El personal lo atenderá pronto. Puedes seguir pidiendo.</p>
-              </div>
-            }
-
             @if (section() === 'pedidos') {
               <div class="space-y-3">
                 @for (order of myOrders(); track order.id) {
@@ -380,7 +373,6 @@ const REFRESH_DEBOUNCE_MS = 250;
           <div class="hidden md:block w-80 shrink-0 sticky top-32">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 min-h-64">
               <app-cart
-                [submitting]="reviewSubmitting()"
                 [error]="orderError()"
                 (submitOrder)="sendOrder()"
                 (quantityChanged)="changeQuantity($event.itemId, $event.quantity)"
@@ -399,7 +391,6 @@ const REFRESH_DEBOUNCE_MS = 250;
                 <button (click)="cartDrawerOpen.set(false)" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
               </div>
               <app-cart
-                [submitting]="reviewSubmitting()"
                 [error]="orderError()"
                 (submitOrder)="sendOrder()"
                 (quantityChanged)="changeQuantity($event.itemId, $event.quantity)"
@@ -532,110 +523,6 @@ const REFRESH_DEBOUNCE_MS = 250;
         </div>
       }
 
-      <!-- Revisión y pago antes de enviar (spec 025, US1-US4) -->
-      @if (reviewOpen()) {
-        <div class="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 class="text-base font-semibold text-gray-900">
-                @if (reviewStep() === 'method') {
-                  Revisa tu pedido
-                } @else {
-                  ¿Cómo vas a pagar?
-                }
-              </h2>
-              <button
-                (click)="reviewStep() === 'transfer' ? reviewBackToMethods() : closeReview()"
-                [disabled]="reviewSubmitting()"
-                class="text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
-              >
-                {{ reviewStep() === 'transfer' ? '← Volver' : '✕' }}
-              </button>
-            </div>
-            <div class="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
-              @if (reviewError()) {
-                <p class="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{{ reviewError() }}</p>
-              }
-
-              @if (reviewStep() === 'method') {
-                <!-- Resumen del carrito: ítems, cantidades, notas, subtotal y total. -->
-                <div class="space-y-2">
-                  @for (line of cart.lines(); track line.id) {
-                    <div class="flex items-start justify-between gap-2 text-sm">
-                      <div class="min-w-0">
-                        <p class="text-gray-800 truncate">
-                          <span class="font-medium">{{ line.quantity }}×</span>
-                          {{ line.productName }} · {{ line.variantName }}
-                        </p>
-                        @if (line.optionNames.length > 0) {
-                          <p class="text-xs text-gray-400 truncate">{{ line.optionNames.join(', ') }}</p>
-                        }
-                        @if (line.notes) {
-                          <p class="text-xs text-gray-400 italic truncate">“{{ line.notes }}”</p>
-                        }
-                      </div>
-                      <span class="text-gray-700 font-medium shrink-0">{{ line.lineTotal | money }}</span>
-                    </div>
-                  }
-                </div>
-                <div class="flex justify-between items-center border-t border-gray-100 pt-3">
-                  <span class="text-sm font-semibold text-gray-700">Total</span>
-                  <span class="text-base font-bold text-gray-900">{{ cart.total() | money }}</span>
-                </div>
-
-                <!-- Selección de método de pago. -->
-                <div>
-                  <p class="text-xs font-medium text-gray-700 mb-2">Elige cómo pagar</p>
-                  @if (paymentMethods().length === 0) {
-                    <p class="text-sm text-gray-400 text-center py-4">Cargando métodos de pago…</p>
-                  } @else {
-                    <div class="space-y-2">
-                      @for (m of paymentMethods(); track m.id) {
-                        <button
-                          (click)="reviewSelectMethod(m)"
-                          [disabled]="reviewSubmitting()"
-                          class="w-full flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-40 transition-colors text-left"
-                        >
-                          {{ m.is_cash ? '💵' : '📲' }} {{ m.name }}
-                        </button>
-                      }
-                    </div>
-                  }
-                  @if (reviewSubmitting()) {
-                    <p class="text-xs text-gray-400 text-center mt-2">Enviando pedido…</p>
-                  }
-                </div>
-              } @else {
-                <!-- Transferencia: datos de pago + subir comprobante. -->
-                @if (reviewMethod()?.payment_info; as info) {
-                  <div class="bg-indigo-50 rounded-xl p-3 space-y-1">
-                    @for (key of objectKeys(info); track key) {
-                      <p class="text-sm text-indigo-900">
-                        <span class="font-medium capitalize">{{ key }}:</span> {{ info[key] }}
-                      </p>
-                    }
-                  </div>
-                }
-                <label class="block">
-                  <span class="text-xs font-medium text-gray-700">Sube tu comprobante</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    (change)="onReviewReceiptSelected($event)"
-                    [disabled]="reviewSubmitting()"
-                    class="mt-1 w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700"
-                  />
-                </label>
-                @if (reviewSubmitting()) {
-                  <p class="text-xs text-gray-400 text-center">
-                    {{ reviewReceiptUrl() ? 'Enviando pedido…' : 'Subiendo comprobante…' }}
-                  </p>
-                }
-              }
-            </div>
-          </div>
-        </div>
-      }
     </div>
   `,
 })
@@ -679,7 +566,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   readonly selectedProduct = signal<MenuProduct | null>(null);
   readonly cartDrawerOpen = signal(false);
   readonly orderError = signal<string | null>(null);
-  readonly orderSuccess = signal(false);
 
   /**
    * Pedidos de este comensal. Se refrescan desde `GET /cart/orders`, nunca se
@@ -708,21 +594,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   readonly activeAttempt = signal<DinerPaymentAttempt | null>(null);
   readonly paymentSubmitting = signal(false);
   readonly paymentError = signal<string | null>(null);
-
-  // ── Revisión y pago antes de enviar (spec 025) ─────────────────────────────
-  /** Pantalla de revisión+pago abierta al presionar "Enviar pedido", antes de
-   *  que exista cualquier pedido. */
-  readonly reviewOpen = signal(false);
-  readonly reviewStep = signal<'method' | 'transfer'>('method');
-  readonly reviewMethod = signal<DinerPaymentMethod | null>(null);
-  /** `public_url` ya subido a R2 para el método de transferencia elegido —
-   *  se conserva en memoria para poder reintentar `submitCart` sin volver a
-   *  subir el archivo (FR-012). Se limpia al cambiar de método o al volver a
-   *  la selección (US4): un archivo ya subido para un método abandonado
-   *  queda sin usar, costo aceptado (research.md Decisión 6). */
-  readonly reviewReceiptUrl = signal<string | null>(null);
-  readonly reviewSubmitting = signal(false);
-  readonly reviewError = signal<string | null>(null);
 
   /** Categoría abierta en las pestañas. Se fija a la primera al cargar el menú. */
   readonly activeCategoryId = signal<string | null>(null);
@@ -888,7 +759,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   }
 
   openProduct(product: MenuProduct): void {
-    this.orderSuccess.set(false);
     this.selectedProduct.set(product);
   }
 
@@ -896,7 +766,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   selectCategory(categoryId: string): void {
     this.activeCategoryId.set(categoryId);
-    this.orderSuccess.set(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -984,13 +853,13 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * "Enviar pedido" ya no crea el pedido: abre la pantalla de revisión+pago
-   * (spec 025, US1) — el pedido solo nace cuando el comensal completa el
-   * paso de pago que le corresponde (`submitReview`).
+   * "Enviar pedido" ya no abre un modal: navega a la vista de pasos de
+   * revisión y pago (spec 034) — el pedido solo nace cuando el comensal
+   * completa el paso de pago que le corresponde, ahí.
    */
   sendOrder(): void {
     if (this.cart.isEmpty()) return;
-    this.openReview();
+    this.router.navigate(['/menu/t', this.token, 'checkout']);
   }
 
   /** ¿Puede el comensal cancelar este pedido? Cocina aún no lo ha empezado. */
@@ -1130,117 +999,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     } finally {
       this.paymentSubmitting.set(false);
       input.value = '';
-    }
-  }
-
-  // ── Revisión y pago antes de enviar (spec 025) ─────────────────────────────
-
-  /** Abre la pantalla de revisión+pago (US1) — todavía no existe ningún
-   *  pedido ni ningún intento de pago en este punto. */
-  async openReview(): Promise<void> {
-    this.reviewStep.set('method');
-    this.reviewMethod.set(null);
-    this.reviewReceiptUrl.set(null);
-    this.reviewError.set(null);
-    this.reviewOpen.set(true);
-
-    if (this.paymentMethods().length === 0) {
-      try {
-        this.paymentMethods.set(await this.api.getPaymentMethods());
-      } catch (err) {
-        this.reviewError.set(this.api.extractError(err, 'No se pudieron cargar los métodos de pago.'));
-      }
-    }
-  }
-
-  /** Cierra la revisión sin enviar nada — el carrito sigue intacto (FR-008). */
-  closeReview(): void {
-    this.reviewOpen.set(false);
-    this.reviewStep.set('method');
-    this.reviewMethod.set(null);
-    this.reviewReceiptUrl.set(null);
-    this.reviewError.set(null);
-  }
-
-  /**
-   * Elige el método de pago (US2/US3). Efectivo no tiene ningún paso
-   * adicional: confirmar el método ya envía el pedido (SC-003, ≤2 toques).
-   * Transferencia pasa al paso de datos de pago + carga de comprobante.
-   */
-  async reviewSelectMethod(method: DinerPaymentMethod): Promise<void> {
-    this.reviewError.set(null);
-    this.reviewMethod.set(method);
-    if (method.is_cash) {
-      await this.submitReview();
-      return;
-    }
-    this.reviewReceiptUrl.set(null);
-    this.reviewStep.set('transfer');
-  }
-
-  /**
-   * Vuelve a la selección de método (US4) — sin restricción, porque no
-   * existe todavía ningún pedido ni intento que gestionar. Un comprobante ya
-   * subido para el método abandonado queda sin usar (research.md Decisión 6).
-   */
-  reviewBackToMethods(): void {
-    this.reviewStep.set('method');
-    this.reviewMethod.set(null);
-    this.reviewReceiptUrl.set(null);
-    this.reviewError.set(null);
-  }
-
-  async onReviewReceiptSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    this.reviewSubmitting.set(true);
-    this.reviewError.set(null);
-    try {
-      const presign = await this.api.presignPaymentReceipt(file.type);
-      await this.api.uploadReceiptFile(presign.upload_url, file);
-      this.reviewReceiptUrl.set(presign.public_url);
-      await this.submitReview();
-    } catch (err) {
-      if (err instanceof DinerSessionExpiredError) {
-        this.expireSession(err.message);
-        return;
-      }
-      this.reviewError.set(this.api.extractError(err, 'No se pudo subir el comprobante.'));
-    } finally {
-      this.reviewSubmitting.set(false);
-      input.value = '';
-    }
-  }
-
-  /**
-   * Envía `POST /cart/submit` con el método elegido y, si aplica, el
-   * comprobante ya subido — el pedido nace aquí, junto con su primer
-   * intento de pago. Si falla (p. ej. red), el `receiptFileUrl` ya subido se
-   * conserva en memoria: un reintento no vuelve a subir el archivo (FR-012).
-   */
-  async submitReview(): Promise<void> {
-    const method = this.reviewMethod();
-    if (!method) return;
-
-    this.reviewSubmitting.set(true);
-    this.reviewError.set(null);
-    try {
-      await this.api.submitCart(method.id, this.reviewReceiptUrl());
-      this.cart.clear();
-      await this.refreshOrders();
-      this.orderSuccess.set(true);
-      this.cartDrawerOpen.set(false);
-      this.closeReview();
-    } catch (err) {
-      if (err instanceof DinerSessionExpiredError) {
-        this.expireSession(err.message);
-        return;
-      }
-      this.reviewError.set(this.api.extractError(err, 'No se pudo enviar el pedido.'));
-    } finally {
-      this.reviewSubmitting.set(false);
     }
   }
 

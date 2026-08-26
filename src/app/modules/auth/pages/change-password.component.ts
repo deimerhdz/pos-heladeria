@@ -81,13 +81,13 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
               </label>
               <app-password-input
                 formControlName="new_password"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Entre 8 y 12 caracteres"
                 autocomplete="new-password"
                 sizeClass="px-3 py-2 rounded-xl text-sm"
                 [invalid]="invalid('new_password')"
               />
               @if (invalid('new_password')) {
-                <p class="text-red-500 text-xs mt-1">Entre 6 y 128 caracteres</p>
+                <p class="text-red-500 text-xs mt-1">Entre 8 y 12 caracteres</p>
               }
             </div>
 
@@ -136,7 +136,7 @@ export class ChangePasswordComponent {
       }),
       new_password: new FormControl('', {
         nonNullable: true,
-        validators: [Validators.required, Validators.minLength(6), Validators.maxLength(128)],
+        validators: [Validators.required, Validators.minLength(8), Validators.maxLength(12)],
       }),
       confirm_password: new FormControl('', {
         nonNullable: true,

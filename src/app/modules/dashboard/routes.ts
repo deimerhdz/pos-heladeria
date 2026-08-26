@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { DashboardLayoutComponent } from './layout/dashboard-layout.component';
 import { roleGuard } from '../../core/guards/role.guard';
+import { planModuleGuard } from '../../core/guards/plan-module.guard';
 import { UserRole } from '../../core/interfaces/user.interface';
 
 export const dashboardRoutes: Routes = [
@@ -24,6 +25,26 @@ export const dashboardRoutes: Routes = [
         loadComponent: () =>
           import('../cash-register/pages/cash-page.component').then((m) => m.CashPageComponent),
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+      },
+      {
+        // Ajustes de cuenta personal (spec 031) — a diferencia de 'ajustes'
+        // (configuración del negocio, solo ADMIN), accesible a cualquier
+        // usuario autenticado del dashboard, sin roleGuard.
+        path: 'mi-cuenta',
+        loadComponent: () =>
+          import('../account/pages/account-settings.component').then(
+            (m) => m.AccountSettingsComponent,
+          ),
+      },
+      {
+        // "Mi plan" (spec 033, Historia de Usuario 6) — mismo criterio que
+        // 'mi-cuenta': accesible a cualquier usuario autenticado del
+        // dashboard, sin roleGuard (solo expone el consumo del propio tenant).
+        path: 'mi-plan',
+        loadComponent: () =>
+          import('../plan/pages/plan-summary-page.component').then(
+            (m) => m.PlanSummaryPageComponent,
+          ),
       },
       // Mesas salió de Ajustes a Operaciones; va antes del bloque 'ajustes'
       // para que el redirect gane al match de la ruta padre.
@@ -112,7 +133,7 @@ export const dashboardRoutes: Routes = [
           import('../promotions/pages/promotions-page.component').then(
             (m) => m.PromotionsPageComponent,
           ),
-        canActivate: [roleGuard([UserRole.ADMIN])],
+        canActivate: [roleGuard([UserRole.ADMIN]), planModuleGuard('promociones')],
       },
       {
         // Antes que `mesas` para que no la capture como parámetro.
@@ -151,7 +172,7 @@ export const dashboardRoutes: Routes = [
           import('../inventory/pages/inventory-page.component').then(
             (m) => m.InventoryPageComponent,
           ),
-        canActivate: [roleGuard([UserRole.ADMIN])],
+        canActivate: [roleGuard([UserRole.ADMIN]), planModuleGuard('inventario')],
       },
       {
         path: 'insumos',

@@ -109,6 +109,19 @@ export interface MyOrderCancelPayload {
 
 // ── Pagos del comensal (spec 024) ──────────────────────────────────────────
 
+/**
+ * Metadata de formato de una clave de `payment_info` (`PaymentMethodFieldDefinition`,
+ * spec 032/034) — le dice al frontend si `codigo_qr` es una imagen o
+ * `numero_celular` es texto, en vez de adivinarlo (contracts/cart-payment-methods.md).
+ */
+export interface PaymentMethodField {
+  key: string;
+  label?: string;
+  required?: boolean;
+  format: 'text' | 'numeric' | 'image';
+  length?: number | null;
+}
+
 /** Método de pago activo del tenant, tal como lo ve el comensal (`DinerPaymentMethod`). */
 export interface DinerPaymentMethod {
   id: string;
@@ -116,6 +129,8 @@ export interface DinerPaymentMethod {
   type: string;
   is_cash: boolean;
   payment_info: Record<string, string> | null;
+  /** Spec 034 (US3): cómo renderizar cada clave de `payment_info` — `format: 'image'` → `<img>`. */
+  fields: PaymentMethodField[];
 }
 
 /** Body de `POST /cart/orders/{id}/payment-attempts` (`PaymentAttemptCreateIn`). */

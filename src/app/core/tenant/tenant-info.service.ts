@@ -9,7 +9,8 @@ export interface TenantInfo {
   id: number;
   name: string;
   host: string;
-  plan: string;
+  // `plan` (texto libre heredado) se elimina en spec 033 — el plan de
+  // suscripción real vive en `dashboard/mi-plan` (Historia de Usuario 6).
   logo_url: string | null;
   /** Mensaje que cierra la factura impresa. `null` = usar el texto por defecto. */
   receipt_message: string | null;

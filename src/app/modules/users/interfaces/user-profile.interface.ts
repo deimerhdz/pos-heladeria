@@ -24,22 +24,25 @@ export interface TenantUser {
   updated_at: string | null;
 }
 
-/** Campos capturados por el formulario de creación. */
-export interface TenantUserForm {
-  name: string;
+/** Campos capturados por el formulario "Agregar usuario" — exactamente correo y rol,
+ * sin contraseña (FR-001): dar de alta un usuario interno ocurre solo por invitación. */
+export interface InvitationForm {
   email: string;
-  password: string;
-  phone: string;
   role: RoleName | '';
 }
 
-/** Cuerpo para `POST /users` (`UserCreate`). */
-export interface TenantUserCreatePayload {
-  name: string;
+/** Cuerpo para `POST /invitations` (`InvitationCreate`). */
+export interface InvitationCreatePayload {
   email: string;
-  password: string;
-  phone?: string;
   role: RoleName;
+}
+
+/** Invitación pendiente tal como la devuelve la API (`InvitationResponse`). */
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  role_name: string;
+  sent_at: string;
 }
 
 /** Cuerpo para `PATCH /users/{user_id}/role` (`UserRoleUpdate`). */

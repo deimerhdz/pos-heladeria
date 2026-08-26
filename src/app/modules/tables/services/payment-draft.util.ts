@@ -1,4 +1,4 @@
-import { PaymentMethod } from '../../sales/interfaces/sales.interface';
+import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import { PaymentLine } from '../interfaces/dining.interface';
 import { formatMoney } from './receipt.util';
 
@@ -39,7 +39,7 @@ export function paidAmount(draft: PaymentDraft): number {
 }
 
 /** Suma de lo cobrado por métodos que no son efectivo. */
-export function nonCashAmount(draft: PaymentDraft, methods: PaymentMethod[]): number {
+export function nonCashAmount(draft: PaymentDraft, methods: PaymentMethodCheckoutOption[]): number {
   const isCash = (id: string): boolean => !!methods.find((m) => m.id === id)?.is_cash;
   let sum = 0;
   if (draft.methodId && !isCash(draft.methodId)) sum += draft.amount;
@@ -70,7 +70,7 @@ export function missingAmount(draft: PaymentDraft, total: number): number {
 export function paymentIssue(
   draft: PaymentDraft,
   total: number,
-  methods: PaymentMethod[],
+  methods: PaymentMethodCheckoutOption[],
 ): string | null {
   if (!draft.methodId) return 'Elige el método de pago.';
   if (draft.amount <= 0) return 'Escribe el importe del pago.';

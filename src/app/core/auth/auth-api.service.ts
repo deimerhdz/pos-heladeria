@@ -4,9 +4,12 @@ import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   ChangePasswordRequest,
+  ForgotPasswordRequest,
   LoginRequest,
   LoginResponse,
   RefreshResponse,
+  ResetPasswordRequest,
+  ValidateResetTokenResponse,
 } from './auth.models';
 
 /**
@@ -44,5 +47,22 @@ export class AuthApiService {
    */
   changePassword(req: ChangePasswordRequest): Observable<unknown> {
     return this.http.post(`${this.base}/auth/change-password`, req);
+  }
+
+  /** Request a password-reset link for an email (Flow A, unauthenticated). */
+  forgotPassword(req: ForgotPasswordRequest): Observable<unknown> {
+    return this.http.post(`${this.base}/auth/forgot-password`, req);
+  }
+
+  /** Check a reset link's state without consuming it. */
+  validateResetToken(token: string): Observable<ValidateResetTokenResponse> {
+    return this.http.get<ValidateResetTokenResponse>(`${this.base}/auth/reset-password/validate`, {
+      params: { token },
+    });
+  }
+
+  /** Consume a reset link and set a new password (Flow A, unauthenticated). */
+  resetPassword(req: ResetPasswordRequest): Observable<unknown> {
+    return this.http.post(`${this.base}/auth/reset-password`, req);
   }
 }

@@ -1,11 +1,14 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { CashSessionStore } from '../services/cash-session.store';
+import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /** Pantalla de apertura de turno: selección de caja + fondo inicial. */
 @Component({
   selector: 'app-cash-open',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, MoneyInputComponent],
   template: `
     <div class="flex-1 flex items-center justify-center p-6">
       <div class="w-[420px] max-w-full bg-white rounded-2xl shadow-md border border-gray-100 p-6 space-y-4">
@@ -75,14 +78,10 @@ import { CashSessionStore } from '../services/cash-session.store';
 
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1">Fondo inicial (base de efectivo)</label>
-            <input
-              type="number"
-              min="0"
-              step="1000"
-              [value]="store.openingAmount()"
-              (input)="store.openingAmount.set(+$any($event.target).value)"
-              placeholder="0"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            <app-money-input
+              [ngModel]="store.openingAmount()"
+              (ngModelChange)="store.openingAmount.set($event ?? 0)"
+              sizeClass="px-3 py-2 rounded-lg text-sm"
             />
           </div>
 
