@@ -84,6 +84,13 @@ export interface DiningOrderItem {
   participant_id?: string | null;
   quantity: number;
   unit_price: string;
+  /**
+   * Precio/subtotal ya con el mejor descuento vigente aplicado al confirmar,
+   * o `null`/ausente si ninguna promoción aplicó a esta línea (o es un
+   * combo, que ahorra aparte), o si el pedido es anterior a esta spec.
+   */
+  discounted_unit_price?: string | null;
+  discounted_line_total?: string | null;
   /** Estado de preparación de este ítem. */
   estado_cocina: KitchenStatus;
   /**
