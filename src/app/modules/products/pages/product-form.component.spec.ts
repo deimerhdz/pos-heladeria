@@ -8,6 +8,8 @@ import {
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { vi } from 'vitest';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
+import type { VariantDraft } from '../interfaces/product.interface';
 import { environment } from '../../../../environments/environment';
 import { ProductFormComponent } from './product-form.component';
 import { CategoryService } from '../../categories/services/category.service';
@@ -391,5 +393,87 @@ describe('ProductFormComponent', () => {
 
     expect(component.draft().hasSizes).toBe(true);
     expect(copyButton()).not.toBeNull();
+  });
+
+  // ── Orden de presentaciones por arrastre (spec 042) ──────────────────────
+
+  const drop = (previousIndex: number, currentIndex: number) =>
+    ({ previousIndex, currentIndex }) as CdkDragDrop<VariantDraft[]>;
+
+  it('arrastrar reordena draft().variants de inmediato, sin ninguna llamada al backend', async () => {
+    await createEdit('p9', true); // v1 Grande, v2 Pequeña (ese orden)
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(['Grande', 'Pequeña']);
+
+    component.onVariantDrop(drop(0, 1));
+    fixture.detectChanges();
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(['Pequeña', 'Grande']);
+    // Puramente local: ninguna petición pendiente por el solo hecho de arrastrar.
+    http.expectNone((r) => r.url.endsWith('/variants/reorder'));
+  });
+
+  it('soltar en la misma posición no cambia nada', async () => {
+    await createEdit('p9', true);
+    const before = component.draft().variants.map((v) => v.name);
+
+    component.onVariantDrop(drop(1, 1));
+    fixture.detectChanges();
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(before);
+  });
+
+  it('guardar tras arrastrar persiste el nuevo orden en una sola llamada atómica', async () => {
+    await createEdit('p9', true);
+    component.onVariantDrop(drop(0, 1)); // Grande, Pequeña → Pequeña, Grande
+    fixture.detectChanges();
+
+    const savePromise = component.save();
+
+    http.expectOne(`${PRODUCTS}/p9`).flush({
+      id: 'p9', category_id: 'c1', name: 'Cono doble', description: null,
+      preparation_type: 'prepared', image_url: null, active: true, available: true,
+      tracks_inventory: true, created_at: '2026-08-19T00:00:00',
+    });
+    await tick();
+
+    http.expectOne((r) => r.url === `${PRODUCTS}/p9/variants`).flush([
+      { id: 'v1', product_id: 'p9', name: 'Grande', sku: null, price: '8000', active: true },
+      { id: 'v2', product_id: 'p9', name: 'Pequeña', sku: null, price: '5000', active: true },
+    ]);
+    await tick();
+
+    // El draft ya trae Pequeña (v2) primero: así se procesa en el guardado.
+    http.expectOne(`${VARIANTS}/v2`).flush({
+      id: 'v2', product_id: 'p9', name: 'Pequeña', sku: null, price: '5000', active: true,
+    });
+    await tick();
+    http.expectOne(`${VARIANTS}/v2/recipe`).flush({});
+    await tick();
+    http.expectOne(`${VARIANTS}/v2/option-groups`).flush({});
+    await tick();
+
+    http.expectOne(`${VARIANTS}/v1`).flush({
+      id: 'v1', product_id: 'p9', name: 'Grande', sku: null, price: '8000', active: true,
+    });
+    await tick();
+    http.expectOne(`${VARIANTS}/v1/recipe`).flush({});
+    await tick();
+    http.expectOne(`${VARIANTS}/v1/option-groups`).flush({});
+    await tick();
+
+    const reorder = http.expectOne(`${PRODUCTS}/p9/variants/reorder`);
+    expect(reorder.request.method).toBe('PATCH');
+    expect(reorder.request.body).toEqual({ variant_ids: ['v2', 'v1'] });
+    reorder.flush({
+      variants: [
+        { id: 'v2', display_order: 1 },
+        { id: 'v1', display_order: 2 },
+      ],
+    });
+
+    await savePromise;
+    expect(component.service.error()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/dashboard/products']);
   });
 });
