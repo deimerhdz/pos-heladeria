@@ -115,8 +115,32 @@ describe('ProductService', () => {
     });
   });
 
-  describe('saveProduct sobre un producto existente', () => {
-    it('reconcilia solo contra las activas y no re-borra las desactivadas', async () => {
+  describe('saveProduct para un producto nuevo (spec 043: guardado consolidado)', () => {
+    it('hace una sola petición POST con el árbol completo de presentaciones', async () => {
+      const promise = service.saveProduct(
+        draft({
+          id: null,
+          variants: [
+            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'l2', name: 'Grande', price: 9000, recipe: [], optionGroups: [] },
+          ],
+        }),
+      );
+
+      const req = http.expectOne(PRODUCTS);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.variants).toEqual([
+        { name: 'Pequeña', price: 6000, recipe: [], option_groups: [] },
+        { name: 'Grande', price: 9000, recipe: [], option_groups: [] },
+      ]);
+      req.flush({ ...productResponse(), variants: [] });
+
+      expect(await promise).toBe(PID);
+    });
+  });
+
+  describe('saveProduct sobre un producto existente (spec 043: guardado consolidado)', () => {
+    it('hace una sola petición PATCH con el árbol completo, en vez de una por presentación', async () => {
       const promise = service.saveProduct(
         draft({
           variants: [
@@ -126,31 +150,12 @@ describe('ProductService', () => {
         }),
       );
 
-      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
-      await tick();
-
-      const list = http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`);
-      expect(list.request.params.get('active')).toBe('true');
-      list.flush([variantResponse({ id: 'viva', name: 'Mediana', active: true })]);
-      await tick();
-
-      http.expectOne(`${VARIANTS}/viva`).flush(variantResponse({ id: 'viva' }));
-      await tick();
-      http.expectOne(`${VARIANTS}/viva/recipe`).flush({});
-      await tick();
-      http.expectOne(`${VARIANTS}/viva/option-groups`).flush({});
-      await tick();
-
-      // `muerta` no está en el draft, pero tampoco debe recibir un DELETE: ya está
-      // desactivada y el usuario no la quitó en esta edición.
-      http.expectNone(`${VARIANTS}/muerta`);
-
-      // spec 042: el orden (aquí trivial, una sola presentación) se persiste al
-      // final, como un paso más de este mismo guardado.
-      const reorder = http.expectOne(`${PRODUCTS}/${PID}/variants/reorder`);
-      expect(reorder.request.method).toBe('PATCH');
-      expect(reorder.request.body).toEqual({ variant_ids: ['viva'] });
-      reorder.flush({ variants: [{ id: 'viva', display_order: 1 }] });
+      const req = http.expectOne(`${PRODUCTS}/${PID}`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body.variants).toEqual([
+        { id: 'viva', name: 'Mediana', price: 9000, recipe: [], option_groups: [] },
+      ]);
+      req.flush({ ...productResponse(), variants: [] });
 
       // `saveProduct` invalida la query paginada de productos al terminar, pero
       // este test nunca la activó (no llamó `loadProducts()`), así que no hay
@@ -168,16 +173,12 @@ describe('ProductService', () => {
         }),
       );
 
-      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
-      await tick();
-      http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`).flush([]);
-      await tick();
-
-      http.expectOne((r) => r.method === 'POST' && r.url === `${PRODUCTS}/${PID}/variants`).flush(
+      http.expectOne(`${PRODUCTS}/${PID}`).flush(
         {
           detail: {
             error: 'Ya existe una variante «Pequeña» desactivada en este producto. Reactívala en vez de crear otra.',
             variant_id: 'muerta',
+            variant_index: 0,
             active: false,
           },
         },
@@ -192,8 +193,8 @@ describe('ProductService', () => {
     });
   });
 
-  describe('orden de presentaciones al guardar (spec 042)', () => {
-    it('envía los IDs en el mismo orden que draft.variants, incluida una recién creada', async () => {
+  describe('orden de presentaciones al guardar (spec 043, sustituye a spec 042)', () => {
+    it('el orden de variants[] en el payload es el orden final -- ya no hay un endpoint aparte de reorder', async () => {
       const promise = service.saveProduct(
         draft({
           variants: [
@@ -204,50 +205,10 @@ describe('ProductService', () => {
         }),
       );
 
-      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
-      await tick();
-      http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`).flush([
-        variantResponse({ id: 'v1', name: 'Pequeña' }),
-        variantResponse({ id: 'v2', name: 'Grande' }),
-      ]);
-      await tick();
-
-      // v2 (ya existe)
-      http.expectOne(`${VARIANTS}/v2`).flush(variantResponse({ id: 'v2' }));
-      await tick();
-      http.expectOne(`${VARIANTS}/v2/recipe`).flush({});
-      await tick();
-      http.expectOne(`${VARIANTS}/v2/option-groups`).flush({});
-      await tick();
-
-      // "nueva" (sin id): se crea, y el nuevo id resuelto ('v3') es el que debe
-      // aparecer en el orden enviado, no ningún id local del draft.
-      http.expectOne((r) => r.method === 'POST' && r.url === `${PRODUCTS}/${PID}/variants`).flush(
-        variantResponse({ id: 'v3', name: 'Mediana' }),
-      );
-      await tick();
-      http.expectOne(`${VARIANTS}/v3/recipe`).flush({});
-      await tick();
-      http.expectOne(`${VARIANTS}/v3/option-groups`).flush({});
-      await tick();
-
-      // v1 (ya existe)
-      http.expectOne(`${VARIANTS}/v1`).flush(variantResponse({ id: 'v1' }));
-      await tick();
-      http.expectOne(`${VARIANTS}/v1/recipe`).flush({});
-      await tick();
-      http.expectOne(`${VARIANTS}/v1/option-groups`).flush({});
-      await tick();
-
-      const reorder = http.expectOne(`${PRODUCTS}/${PID}/variants/reorder`);
-      expect(reorder.request.body).toEqual({ variant_ids: ['v2', 'v3', 'v1'] });
-      reorder.flush({
-        variants: [
-          { id: 'v2', display_order: 1 },
-          { id: 'v3', display_order: 2 },
-          { id: 'v1', display_order: 3 },
-        ],
-      });
+      const req = http.expectOne(`${PRODUCTS}/${PID}`);
+      const ids = (req.request.body.variants as Array<{ id?: string }>).map((v) => v.id ?? null);
+      expect(ids).toEqual(['v2', null, 'v1']);
+      req.flush({ ...productResponse(), variants: [] });
 
       expect(await promise).toBe(PID);
     });
