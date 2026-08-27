@@ -857,7 +857,31 @@ export class PosTerminalStore {
    */
   async reload(): Promise<void> {
     await Promise.all([this.tableService.loadTables(), this.reloadOrders()]);
+    this.resyncSelectedOrder();
     await this.loadSessionBill(this.selectedTableId());
+  }
+
+  /**
+   * Spec 044: tras un `reload()`, si la mesa seleccionada sigue teniendo
+   * pedidos activos pero el pedido seleccionado ya no es válido, vuelve a
+   * elegir uno (mismo criterio que `selectTable()`). Cubre el caso de
+   * confirmar/aprobar un pago QR pendiente: mientras el pedido era
+   * `recibida`+`qr` quedaba excluido de `activeOrders()`, así que
+   * `selectedOrderId` se había quedado en `null` desde que se seleccionó la
+   * mesa — sin esto, el panel mostraba "Pedido nuevo sin guardar" vacío hasta
+   * que el cajero volvía a tocar la tarjeta. Si la selección actual sigue
+   * vigente (p. ej. el cajero ya eligió una pestaña concreta entre varios
+   * pedidos activos), no se toca.
+   */
+  private resyncSelectedOrder(): void {
+    const tableId = this.selectedTableId();
+    if (!tableId) return;
+    const list = this.ordersOfTable(tableId);
+    const current = this.selectedOrderId();
+    if (current !== null && list.some((o) => o.id === current)) return;
+    const next = list[0] ?? null;
+    this.selectedOrderId.set(next?.id ?? null);
+    this.customerName.set(next?.customer_name || '');
   }
 
   /** Único punto de escritura de `orderTypeTab` (spec 036, FR-001/FR-003). */

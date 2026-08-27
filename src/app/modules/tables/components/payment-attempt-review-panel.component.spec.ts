@@ -164,4 +164,86 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     expect(texto).toContain('Recibido: $ 20000.00');
     expect(texto).toContain('Cambio: $ 2000.00');
   });
+
+  // ── Rechazar pedido completo (spec 044) ──────────────────────────────────
+
+  const rejectOrderButton = (): HTMLButtonElement | undefined =>
+    (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+      (b) => b.textContent?.includes('Rechazar pedido'),
+    );
+
+  it('efectivo: rechazar el pedido llama a cancel con el motivo tipeado', async () => {
+    await renderWith([attempt({ status: 'pendiente', is_cash: true })]);
+
+    rejectOrderButton()!.click();
+    fixture.detectChanges();
+    panel.rejectOrderReason = 'El comensal se fue sin pagar';
+    const done = panel.rejectOrder(order());
+
+    http
+      .expectOne((r) => r.url === `${API}/orders/o1/cancel` && r.body?.motivo === 'El comensal se fue sin pagar')
+      .flush(order());
+    await done;
+
+    expect(panel.showRejectOrder()).toBe(false);
+    expect(panel.rejectOrderReason).toBe('');
+  });
+
+  it('transferencia sin comprobante aún: también puede rechazar el pedido completo', async () => {
+    await renderWith([
+      attempt({ status: 'pendiente', is_cash: false, receipt_file_url: null }),
+    ]);
+
+    expect(fixture.nativeElement.textContent as string).toContain(
+      'Esperando que el comensal suba el comprobante',
+    );
+    rejectOrderButton()!.click();
+    fixture.detectChanges();
+    panel.rejectOrderReason = 'No llegó el comprobante';
+    const done = panel.rejectOrder(order());
+
+    http
+      .expectOne((r) => r.url === `${API}/orders/o1/cancel` && r.body?.motivo === 'No llegó el comprobante')
+      .flush(order());
+    await done;
+  });
+
+  it('transferencia con comprobante ya subido: no ofrece "Rechazar pedido" (solo el rechazo del intento, sin cambios)', async () => {
+    await renderWith([
+      attempt({ status: 'pendiente', is_cash: false, receipt_file_url: 'https://example.invalid/r.jpg' }),
+    ]);
+
+    expect(rejectOrderButton()).toBeUndefined();
+    expect(fixture.nativeElement.textContent as string).toContain('Rechazar');
+  });
+
+  it('el botón de confirmar rechazo de pedido está deshabilitado con motivo vacío', async () => {
+    await renderWith([attempt({ status: 'pendiente', is_cash: true })]);
+
+    rejectOrderButton()!.click();
+    fixture.detectChanges();
+
+    const confirmarDisabled = () =>
+      (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+        (b) => b.textContent?.includes('Confirmar rechazo del pedido'),
+      )!.disabled;
+    expect(confirmarDisabled()).toBe(true);
+
+    // Simula al cajero escribiendo el motivo (evento real de `input`, no una
+    // asignación directa a la propiedad -- en zoneless, `ngModel` solo
+    // re-dispara detección de cambios ante un evento DOM real).
+    const input = fixture.nativeElement.querySelector(
+      'input[placeholder="Motivo del rechazo (obligatorio)"]',
+    ) as HTMLInputElement;
+    input.value = 'motivo';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(confirmarDisabled()).toBe(false);
+
+    // Con motivo vacío, `rejectOrder()` tampoco dispara ninguna llamada (guarda
+    // en el método, no solo en el binding del botón).
+    panel.rejectOrderReason = '   ';
+    await panel.rejectOrder(order());
+    http.expectNone(`${API}/orders/o1/cancel`);
+  });
 });

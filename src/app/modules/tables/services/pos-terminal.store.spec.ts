@@ -619,6 +619,85 @@ describe('PosTerminalStore.rejectOrder', () => {
 });
 
 /**
+ * Spec 044: `reload()` refrescaba `orders()` pero nunca volvía a calcular
+ * `selectedOrderId` — al confirmar/aprobar un pago QR pendiente, el pedido
+ * dejaba de estar excluido de `activeOrders()`, pero la selección se quedaba
+ * en `null` (desde que se eligió la mesa mientras el pedido aún era
+ * `recibida`+`qr`) hasta que el cajero volvía a tocar la tarjeta.
+ */
+describe('PosTerminalStore.reload — resincroniza la selección tras confirmar un pago', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  /** Deja correr los microtasks pendientes entre una tanda de `flush()` y la
+   *  siguiente petición que dispara `reload()` internamente (mismo patrón que
+   *  `product.service.spec.ts`/`product-form.component.spec.ts`). */
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it('mesa con un único pedido QR pendiente: al confirmarse el pago, reload() selecciona ese pedido sin que el cajero vuelva a tocar la tarjeta', async () => {
+    store.orders.set([
+      { ...order('o1', 'recibida', ['pendiente']), channel: 'qr', dining_table_id: 't1' },
+    ]);
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    expect(store.selectedOrder()).toBeNull(); // línea base: excluido mientras está pendiente
+
+    const promise = store.reload();
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http
+      .expectOne((r) => r.url === `${API}/orders`)
+      .flush([{ ...order('o1', 'abierta', ['pendiente']), channel: 'qr', dining_table_id: 't1' }]);
+    await tick();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    await promise;
+
+    expect(store.selectedOrder()?.id).toBe('o1');
+  });
+
+  it('mesa con dos pedidos activos y uno ya elegido a mano: reload() no cambia la selección mientras siga vigente', async () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'counter', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'counter', dining_table_id: 't1' },
+    ]);
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    store.selectOrder('o2');
+    expect(store.selectedOrder()?.id).toBe('o2');
+
+    const promise = store.reload();
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http
+      .expectOne((r) => r.url === `${API}/orders`)
+      .flush([
+        { ...order('o1', 'abierta', ['pendiente']), channel: 'counter', dining_table_id: 't1' },
+        { ...order('o2', 'abierta', ['pendiente']), channel: 'counter', dining_table_id: 't1' },
+      ]);
+    await tick();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    await promise;
+
+    expect(store.selectedOrder()?.id).toBe('o2');
+  });
+});
+
+/**
  * Spec 029, hotfix #3: `ensureReadyToCharge` existía sin ningún test — nadie
  * la llamaba (huérfana, ver `pos-checkout-panel.component.ts`, ahora
  * conectada como `beforeCharge` de `app-session-bill-panel` para el cobro
