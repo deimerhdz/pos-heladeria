@@ -3,27 +3,32 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { KitchenStatus, getSidebarMode } from '../interfaces/dining.interface';
 import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-status.util';
 import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
-import { PendingPaymentsPanelComponent } from './pending-payments-panel.component';
 
-/** Columna central: armado y edición del pedido de la mesa seleccionada.
- *  Sin mesa seleccionada, muestra aquí mismo "Pagos por confirmar" (spec
- *  036, FR-004) — es el único momento en que esta sección está libre. */
+/**
+ * Columna central: armado y edición del pedido de la mesa seleccionada.
+ *
+ * Spec 045: sin mesa seleccionada, esta es la única responsabilidad de este
+ * panel — un placeholder informativo, nada más. Ya no muestra aquí "Pagos
+ * por confirmar" (spec 036 FR-004, retirada) — ese listado global se
+ * reemplaza por el filtro "Pendientes" de la grilla de mesas más el flujo
+ * ya existente por mesa (`payment-validation-block.component.ts`, spec 044).
+ */
 @Component({
   selector: 'app-pos-order-panel',
   standalone: true,
-  imports: [PosCatalogDrawerComponent, PendingPaymentsPanelComponent],
+  imports: [PosCatalogDrawerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // El host es `inline` por defecto: sin esto no ocupa el alto de la columna y
   // el carrito no puede tener su propio scroll (la página entera se estiraba).
   host: { class: 'flex-1 flex flex-col min-h-0' },
   template: `
     @if (!store.hasActiveOrder()) {
-      <div class="flex-1 flex flex-col min-h-0">
-        <div class="flex flex-col items-center text-center text-gray-400 p-6 gap-2 shrink-0">
-          <div class="text-4xl">🍽️</div>
-          <p class="text-sm max-w-xs">Selecciona una mesa ocupada para cobrar, o una mesa libre para crear un pedido nuevo.</p>
-        </div>
-        <app-pending-payments-panel />
+      <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-6 gap-2">
+        <div class="text-4xl">🍽️</div>
+        <p class="text-sm max-w-xs">
+          Selecciona una mesa para ver su pedido, o usa el filtro "Pendientes" de arriba para
+          encontrar pagos por confirmar.
+        </p>
       </div>
     } @else {
       <div class="flex-1 flex flex-col min-h-0">
@@ -149,15 +154,7 @@ import { PendingPaymentsPanelComponent } from './pending-payments-panel.componen
           <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
           <div class="flex gap-2 pt-1">
-            @if (store.hasDraft() && store.manualOrderBuilding()) {
-              <!-- Pedido de mostrador nuevo (feature 028, T023): una sola
-                   llamada con hold_for_payment, no toca cocina/inventario
-                   hasta cobrarlo desde el panel de la derecha. -->
-              <button (click)="store.createManualOrderFromDraft()" [disabled]="store.submitting()"
-                class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                {{ store.submitting() ? 'Creando…' : 'Crear pedido' }}
-              </button>
-            } @else if (store.hasDraft()) {
+            @if (store.hasDraft()) {
               <button (click)="store.saveOrder()" [disabled]="store.submitting()"
                 class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
                 {{ store.submitting() ? 'Guardando…' : 'Guardar pedido' }}

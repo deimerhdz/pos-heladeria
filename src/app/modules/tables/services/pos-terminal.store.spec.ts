@@ -11,14 +11,12 @@ import {
   normalizeSearchTerm,
 } from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
-import { Table } from '../interfaces/table.interface';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { Sale } from '../../sales/interfaces/sales.interface';
-import { TableService } from './table.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { MenuProduct } from '../../products/interfaces/product.interface';
 
@@ -802,72 +800,6 @@ describe('PosTerminalStore.orderTypeTab / setOrderTypeTab', () => {
 
     store.setOrderTypeTab('mesas');
     expect(store.orderTypeTab()).toBe('mesas');
-  });
-});
-
-// ── spec 036, FR-004: sección "Pagos por confirmar" ─────────────────────────
-describe('PosTerminalStore.pendingPaymentsView', () => {
-  let store: PosTerminalStore;
-  let tableService: TableService;
-
-  function table(id: string, number: number): Table {
-    return { id, number, name: null, qr_token: 'tok-' + id, active: true, status: 'ocupada' };
-  }
-
-  beforeEach(() => {
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      providers: [
-        PosTerminalStore,
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideTanStackQuery(new QueryClient()),
-        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
-      ],
-    });
-    store = TestBed.inject(PosTerminalStore);
-    tableService = TestBed.inject(TableService);
-  });
-
-  it('une pendingOrders() con tables() exponiendo mesa, cliente y total', () => {
-    tableService.tables.set([table('t1', 5)]);
-    store.orders.set([
-      { ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1', customer_name: 'Ana' },
-    ]);
-
-    const view = store.pendingPaymentsView();
-    expect(view).toHaveLength(1);
-    expect(view[0].orderId).toBe('qr1');
-    expect(view[0].tableId).toBe('t1');
-    expect(view[0].tableLabel).toBe('Mesa 5');
-    expect(view[0].customerLabel).toBe('Ana');
-  });
-
-  it('usa el nombre de la mesa como cliente cuando la orden no trae customer_name', () => {
-    tableService.tables.set([table('t1', 2)]);
-    store.orders.set([{ ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1' }]);
-
-    expect(store.pendingPaymentsView()[0].customerLabel).toBe('Mesa 2');
-  });
-
-  it('excluye pedidos de mostrador (hold_for_payment) igual que pendingOrders', () => {
-    tableService.tables.set([table('t1', 5)]);
-    store.orders.set([
-      { ...order('counter1', 'recibida'), channel: 'counter', dining_table_id: 't1' },
-    ]);
-
-    expect(store.pendingPaymentsView()).toEqual([]);
-  });
-
-  it('vacío cuando orderTypeTab() no es "mesas" (FR-003)', () => {
-    tableService.tables.set([table('t1', 5)]);
-    store.orders.set([{ ...order('qr1', 'recibida'), channel: 'qr', dining_table_id: 't1' }]);
-    store.setOrderTypeTab('domicilios');
-
-    expect(store.pendingPaymentsView()).toEqual([]);
-
-    store.setOrderTypeTab('para-llevar');
-    expect(store.pendingPaymentsView()).toEqual([]);
   });
 });
 

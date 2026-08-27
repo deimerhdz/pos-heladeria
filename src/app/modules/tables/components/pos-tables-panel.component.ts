@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 
 /**
@@ -74,7 +73,7 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
           <div #carousel class="flex-1 min-w-0 flex gap-3 overflow-x-auto scroll-smooth">
             @for (t of store.tablesView(); track t.id) {
               <button
-                (click)="t.statusLabel === 'Libre' ? goToManualOrder(t.id) : store.selectTable(t.id)"
+                (click)="store.selectTable(t.id)"
                 class="shrink-0 w-[calc((100%-2.25rem)/4)] text-left bg-white rounded-xl border p-3 space-y-2 min-h-11 transition-colors hover:border-indigo-300"
                 [class]="t.selected ? 'border-indigo-500 ring-1 ring-indigo-200' : 'border-gray-200'"
               >
@@ -124,16 +123,8 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 })
 export class PosTablesPanelComponent {
   readonly store = inject(PosTerminalStore);
-  private readonly router = inject(Router);
   readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
   readonly carousel = viewChild<ElementRef<HTMLDivElement>>('carousel');
-
-  /** Mesa libre: en vez de seleccionarla y mostrar el CTA embebido de
-   *  siempre, va directo a la vista dedicada de armado de pedido nuevo
-   *  (`manual-order-page.component.ts`, reemplaza `manual-order-panel`). */
-  goToManualOrder(tableId: string): void {
-    this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
-  }
 
   readonly orderTypeTabs = [
     { key: 'mesas' as const, label: 'Mesas' },

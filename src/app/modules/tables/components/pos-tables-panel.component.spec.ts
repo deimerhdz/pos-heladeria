@@ -179,7 +179,7 @@ describe('PosTablesPanelComponent', () => {
       (b as HTMLButtonElement).textContent?.includes(label),
     ) as HTMLButtonElement | undefined;
 
-  it('seleccionar una mesa libre navega a la vista dedicada de armado de pedido (ajuste posterior)', () => {
+  it('seleccionar una mesa libre solo la selecciona, sin navegar (spec 045: la tarjeta solo muestra el pedido)', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'libre' })]);
     fixture.detectChanges();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -187,8 +187,11 @@ describe('PosTablesPanelComponent', () => {
 
     tableCard('Mesa 3')!.click();
 
-    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
-    expect(selectSpy).not.toHaveBeenCalled();
+    expect(selectSpy).toHaveBeenCalledWith('t1');
+    expect(navigateSpy).not.toHaveBeenCalled();
+    // selectTable() dispara la carga de la cuenta de la mesa (comportamiento
+    // ya existente, sin cambios) — se resuelve para no dejar la petición abierta.
+    http.expectOne(`${environment.apiBaseUrl}/table-sessions`).flush([]);
   });
 
   it('seleccionar una mesa ocupada sigue llamando a store.selectTable() sin cambios (no navega)', () => {

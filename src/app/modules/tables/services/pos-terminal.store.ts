@@ -98,18 +98,6 @@ type TableFilter = 'todas' | 'libres' | 'ocupadas' | 'pendientes';
  */
 export type OrderTypeTab = 'mesas' | 'domicilios' | 'para-llevar';
 
-/** Fila de la sección "Pagos por confirmar" (spec 036, FR-004): una por cada
- *  orden de `pendingOrders()`, enriquecida con el número/nombre de su mesa. */
-export interface PendingPaymentViewModel {
-  orderId: string;
-  tableId: string;
-  tableLabel: string;
-  customerLabel: string;
-  totalLabel: string;
-  elapsedLabel: string;
-  createdAt: string;
-}
-
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
   libre: { label: 'Libre', chip: 'bg-gray-100 text-gray-600' },
   por_confirmar: { label: 'Por confirmar', chip: 'bg-violet-600 text-white' },
@@ -286,14 +274,6 @@ export class PosTerminalStore {
   /** Facturas del último cobro (una por venta) listas para imprimir. */
   readonly lastReceipts = signal<ReceiptData[]>([]);
 
-  /**
-   * Mesa libre / sin pedido: el cajero pulsó "+ Crear Orden Manual" (o F3) y
-   * está armando el pedido con el catálogo, pero todavía no existe en el
-   * backend (feature 028, T021-T023). Se crea de una vez con
-   * `createManualOrderFromDraft()` cuando termina.
-   */
-  readonly manualOrderBuilding = signal(false);
-
   /** A nombre de quién se factura el cobro de mostrador; el cajero puede
    *  cambiarlo, pero por defecto va sin identificar (feature 028, T024). */
   readonly billingCustomerName = signal('Consumidor Final');
@@ -386,32 +366,6 @@ export class PosTerminalStore {
   );
 
   /**
-   * Vista de la sección "Pagos por confirmar" (spec 036, FR-004): el mismo
-   * `pendingOrders()` de arriba, enriquecido con el número/nombre de mesa —
-   * no duplica la lógica de confirmación, que sigue viviendo en
-   * `payment-attempt-review-panel.component.ts` (embebido tal cual en
-   * `pending-payments-panel.component.ts`). Vacío fuera de la pestaña
-   * "Mesas" (FR-003): no existe ningún pago pendiente de "Domicilios"/"Para
-   * llevar" todavía.
-   */
-  readonly pendingPaymentsView = computed<PendingPaymentViewModel[]>(() => {
-    if (this.orderTypeTab() !== 'mesas') return [];
-    return this.pendingOrders().map((o) => {
-      const table = this.tables().find((t) => t.id === o.dining_table_id);
-      const tableLabel = table ? `Mesa ${table.number}` : 'Mesa';
-      return {
-        orderId: o.id,
-        tableId: o.dining_table_id ?? '',
-        tableLabel,
-        customerLabel: o.customer_name || tableLabel,
-        totalLabel: this.fmt(this.orderSubtotal(o)),
-        elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
-        createdAt: o.created_at,
-      };
-    });
-  });
-
-  /**
    * Órdenes activas por mesa: ni terminales ni QR sin confirmar. Un pedido de
    * mostrador `hold_for_payment` también vive en `'recibida'` mientras se arma
    * (ver `pendingOrders` arriba) pero SÍ es editable/seleccionable — solo el
@@ -467,8 +421,10 @@ export class PosTerminalStore {
    * - `'validar-pago'`: hay al menos un pedido QR esperando que el cajero
    *   apruebe/rechace su comprobante o confirme el efectivo. Tiene prioridad
    *   sobre todo lo demás: es lo más urgente en pantalla.
-   * - `'mesa-libre'`: la mesa no tiene ningún pedido vivo y el cajero no ha
-   *   empezado a armar uno manual todavía — CTA "+ Crear Orden Manual".
+   * - `'mesa-libre'`: la mesa no tiene ningún pedido vivo — bloque puramente
+   *   informativo (spec 045); crear un pedido nuevo se hace desde el botón
+   *   fijo de "Pedido de mostrador" o F3, que navegan a la vista dedicada
+   *   (`manual-order-page.component.ts`), no desde aquí.
    * - `'armando-pedido'` / `'pedido-activo'`: se sigue mostrando el panel de
    *   carrito existente (`app-pos-order-panel`), que ya distingue internamente
    *   entre un draft sin guardar y un pedido persistido.
@@ -478,7 +434,7 @@ export class PosTerminalStore {
     const tableId = this.selectedTableId();
     if (!tableId) return 'pedido'; // nada seleccionado: pos-order-panel pinta su placeholder
     const hasTableConsumption = this.tableOrders(tableId).length > 0;
-    if (!hasTableConsumption && !this.manualOrderBuilding() && !this.hasDraft()) {
+    if (!hasTableConsumption && !this.hasDraft()) {
       return 'mesa-libre';
     }
     return 'pedido';
@@ -920,21 +876,6 @@ export class PosTerminalStore {
   }
 
   /**
-   * "+ Crear Orden Manual" (o F3) en una mesa libre (feature 028, T021/T022).
-   *
-   * Solo abre el catálogo para empezar a armar el draft: el pedido no existe
-   * en el backend hasta `createManualOrderFromDraft()`, así que nada se manda
-   * a cocina ni descuenta inventario todavía.
-   */
-  startManualOrder(): void {
-    if (!this.selectedTableId()) return;
-    this.manualOrderBuilding.set(true);
-    this.selectedOrderId.set(null);
-    this.draftLines.set([]);
-    this.openCatalog();
-  }
-
-  /**
    * Crea el pedido de mostrador armado en `draftLines`, en una sola llamada
    * (feature 028, T023) — a diferencia de `saveOrder()` (que usa
    * `addTableItem`, un POST por línea, y descuenta inventario al toque), este
@@ -965,7 +906,6 @@ export class PosTerminalStore {
         hold_for_payment: true,
       });
       this.draftLines.set([]);
-      this.manualOrderBuilding.set(false);
       await this.reload();
       this.selectedOrderId.set(order.id);
       this.toast.success('Pedido creado — cóbralo desde el panel de la derecha.');
@@ -997,7 +937,6 @@ export class PosTerminalStore {
     this.catalogSearchText.set('');
     this.configuringProduct.set(null);
     this.error.set(null);
-    this.manualOrderBuilding.set(false);
     this.billingCustomerName.set('Consumidor Final');
   }
 

@@ -11,7 +11,6 @@ import { PromotionService } from '../../promotions/services/promotion.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
-import { environment } from '../../../../environments/environment';
 
 /** Pedido con un solo ítem ya en cocina ('listo'), origen mesero. `paid` se
  *  fija por test (spec 029, Historia 1: "Anular" desaparece una vez pagado). */
@@ -366,11 +365,11 @@ function pendingOrder(id: string, tableId: string): DiningOrder {
 }
 
 /**
- * Spec 036: "Pagos por confirmar" vive dentro de esta misma sección
- * (detalle del pedido), no debajo de la grilla de mesas — es el único
- * momento en que la columna central está libre (nada seleccionado).
+ * Spec 045: sin mesa seleccionada, este panel ya no muestra la sección
+ * global "Pagos por confirmar" (spec 036 FR-004, retirada) — solo un
+ * placeholder informativo único.
  */
-describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa seleccionada (spec 036)', () => {
+describe('PosOrderPanelComponent — placeholder cuando no hay mesa seleccionada (spec 045)', () => {
   let fixture: ComponentFixture<PosOrderPanelComponent>;
   let store: PosTerminalStore;
   let tableService: TableService;
@@ -397,18 +396,14 @@ describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa se
 
   afterEach(() => http.verify());
 
-  it('sin mesa seleccionada, muestra "Pagos por confirmar" dentro de la misma sección', () => {
+  it('sin mesa seleccionada, muestra un único placeholder informativo (sin "Pagos por confirmar")', () => {
     tableService.tables.set([table({ id: 't1', number: 4 })]);
     store.orders.set([pendingOrder('o1', 't1')]);
     fixture.detectChanges();
 
-    // El panel de revisión embebido (spec 036, T009) carga sus propios
-    // intentos de pago — se resuelve para no dejar la petición abierta.
-    http.expectOne(`${environment.apiBaseUrl}/orders/o1/payment-attempts`).flush([]);
-
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto).toContain('Pagos por confirmar');
-    expect(texto).toContain('Mesa 4');
+    expect(texto).not.toContain('Pagos por confirmar');
+    expect(texto).toContain('Selecciona una mesa');
   });
 
   it('con una mesa/pedido seleccionado, ya no muestra "Pagos por confirmar" (solo el detalle del pedido)', () => {

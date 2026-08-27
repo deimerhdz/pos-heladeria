@@ -14,13 +14,11 @@ import { PosTablesPanelComponent } from '../components/pos-tables-panel.componen
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
 import { PaymentValidationBlockComponent } from '../components/payment-validation-block.component';
-import { ManualOrderPanelComponent } from '../components/manual-order-panel.component';
 
 /**
  * Terminal POS de mesas (staff): 3 columnas — mesas (carrusel, spec 036) ·
- * pedido (con catálogo embebido y "Pagos por confirmar" cuando no hay mesa
- * seleccionada, spec 036) · cobro — con diálogo de éxito y atajos de
- * teclado (F2/F3/ESC/Ctrl+P).
+ * pedido (con catálogo embebido, spec 036) · cobro — con diálogo de éxito y
+ * atajos de teclado (F2/F3/ESC/Ctrl+P).
  * `F4` (descuento manual) se retiró en spec 029, Historia 2 — prohibición
  * absoluta, sin excepción de rol.
  *
@@ -31,9 +29,15 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
  * (`store.centralState()`, ver `pos-terminal.store.ts`):
  *
  * - un pedido QR esperando validación de pago → `app-payment-validation-block`
- * - una mesa libre sin pedido en curso → `app-manual-order-panel` (CTA / F3)
+ * - una mesa libre sin pedido en curso → bloque informativo en línea (spec
+ *   045: ya no abre ningún armado de pedido embebido — para crear uno nuevo,
+ *   el cajero usa el botón fijo de "Pedido de mostrador" o F3, que navegan a
+ *   `manual-order-page.component.ts`)
  * - cualquier otro caso (armando un pedido, o uno ya en cocina) →
- *   `app-pos-order-panel`, sin cambios de contenido.
+ *   `app-pos-order-panel`, sin cambios de contenido. Sin ninguna mesa
+ *   seleccionada, ese mismo panel muestra su propio placeholder informativo
+ *   (spec 045) — ya no la sección global "Pagos por confirmar" (spec 036
+ *   FR-004, retirada; el pago pendiente se sigue viendo por mesa).
  */
 @Component({
   selector: 'app-table-sessions',
@@ -45,7 +49,6 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
     PaymentValidationBlockComponent,
-    ManualOrderPanelComponent,
   ],
   template: `
     <div class="flex flex-col -m-4 md:-m-6 bg-gray-50 h-[calc(100dvh-57px)]">
@@ -131,7 +134,17 @@ import { ManualOrderPanelComponent } from '../components/manual-order-panel.comp
                   </div>
                 }
                 @case ('mesa-libre') {
-                  <app-manual-order-panel />
+                  <!-- Spec 045: solo informativo -- ya no abre el armado de
+                       pedido embebido (retirado, manual-order-panel.component.ts).
+                       Crear un pedido nuevo para esta mesa es el botón fijo de
+                       "Pedido de mostrador" (columna derecha) o F3. -->
+                  <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-6 gap-2">
+                    <div class="text-4xl">🍽️</div>
+                    <p class="text-sm max-w-xs">
+                      Mesa {{ store.selectedTable()?.number }} está libre. Para crear un pedido
+                      nuevo, usa "Pedido de mostrador" o F3.
+                    </p>
+                  </div>
                 }
                 @default {
                   <app-pos-order-panel />

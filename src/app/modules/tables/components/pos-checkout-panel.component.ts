@@ -6,6 +6,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { DiningOrder, SessionBill, getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
@@ -130,29 +131,6 @@ import {
               {{ store.selectedOrder() ? 'Cobrar pedido' : 'Pedido de mostrador' }}
             </h2>
 
-            @if (store.cartEmpty()) {
-              <p class="text-sm text-gray-400 py-6 text-center">
-                Agrega productos desde el catálogo para armar el pedido.
-              </p>
-            } @else {
-              <div class="space-y-1 mb-3">
-                @for (it of store.cartView(); track it.key) {
-                  <div class="flex items-center justify-between text-sm gap-2">
-                    <span class="text-gray-700 truncate">{{ it.qty }}× {{ it.name }}</span>
-                    <span class="text-gray-900 font-medium shrink-0">{{
-                      store.fmt(it.subtotal)
-                    }}</span>
-                  </div>
-                }
-              </div>
-              <div class="flex items-center justify-between pt-2 border-t border-gray-100 mb-3">
-                <span class="text-base font-semibold text-gray-800">Total</span>
-                <span class="text-lg font-bold text-gray-900">{{
-                  store.fmt(store.totals().total)
-                }}</span>
-              </div>
-            }
-
             @if (store.sessionBill(); as bill) {
               <!-- Sin esto, una mesa donde pidió una sola persona no se puede dividir:
                    el desglose tendría una única línea y el modo split queda bloqueado. -->
@@ -165,9 +143,19 @@ import {
             }
 
             @if (!store.selectedOrder()) {
-              <p class="text-sm text-gray-400">
-                Crea el pedido (botón "Crear pedido" en el panel central) para poder cobrarlo.
-              </p>
+              <!-- Spec 045: único contenido de este panel sin pedido -- ya no
+                   arma un carrito propio aquí (ese flujo embebido se retiró,
+                   spec 036 nota posterior); crear un pedido nuevo se hace en
+                   la vista dedicada (manual-order-page.component.ts). -->
+              <button
+                type="button"
+                (click)="goToNewOrder()"
+                [disabled]="!newOrderTableId()"
+                [title]="!newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
+                class="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+              >
+                + Crear pedido nuevo
+              </button>
             } @else {
               <div class="mb-2">
                 <label class="block text-sm font-medium text-gray-600 mb-1"
@@ -261,7 +249,30 @@ import {
 })
 export class PosCheckoutPanelComponent {
   readonly store = inject(PosTerminalStore);
+  private readonly router = inject(Router);
   readonly splitOpen = signal(false);
+
+  /**
+   * Spec 045: mesa destino del botón fijo "+ Crear pedido nuevo" -- la mesa
+   * libre ya seleccionada (estado informativo del panel central), o la
+   * primera mesa libre disponible si ninguna lo está. `null` (botón
+   * deshabilitado) si no hay ninguna mesa libre en absoluto.
+   */
+  readonly newOrderTableId = computed(
+    () =>
+      this.store.selectedTableId() ??
+      this.store.tablesView().find((t) => t.statusLabel === 'Libre')?.id ??
+      null,
+  );
+
+  /** Navega a la vista dedicada de armado de pedido nuevo
+   *  (manual-order-page.component.ts) -- mismo destino al que antes se
+   *  llegaba haciendo clic directo en una mesa libre. */
+  goToNewOrder(): void {
+    const tableId = this.newOrderTableId();
+    if (!tableId) return;
+    this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+  }
 
   /** T004: qué panel de cobro va según el origen del pedido activo. */
   readonly sidebarMode = computed(() => getSidebarMode(this.store.selectedOrder()));
