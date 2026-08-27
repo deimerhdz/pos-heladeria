@@ -1,6 +1,8 @@
 import { Injectable, signal } from '@angular/core';
 
 const STORAGE_KEY = 'pos.diner.session_token';
+/** Marca, por pestaña, del token cuyo acceso el propio comensal cerró explícitamente. */
+const EXITED_STORAGE_KEY = 'pos.diner.exited_token';
 
 /** Nombre del query param que permite reingresar desde un enlace compartido. */
 export const DINER_TOKEN_PARAM = 's';
@@ -64,5 +66,30 @@ export class DinerTokenStore {
     const url = new URL(location.href);
     url.searchParams.set(DINER_TOKEN_PARAM, t);
     return url.toString();
+  }
+
+  /**
+   * Marca `token` como un acceso que el comensal cerró explícitamente (`exit()`).
+   *
+   * Vive en `sessionStorage`, no `localStorage`: debe sobrevivir a un reload/
+   * back/forward de **esta misma pestaña**, pero no debe bloquear una pestaña
+   * nueva (equivalente, en la práctica, a un escaneo físico nuevo del QR) —
+   * `research.md` Decisión 1.
+   */
+  markExited(token: string): void {
+    try {
+      sessionStorage.setItem(EXITED_STORAGE_KEY, token);
+    } catch {
+      /* modo privado / storage bloqueado: sin marca persistente en esta pestaña */
+    }
+  }
+
+  /** ¿Esta pestaña ya cerró explícitamente el acceso de `token`? */
+  isExited(token: string): boolean {
+    try {
+      return sessionStorage.getItem(EXITED_STORAGE_KEY) === token;
+    } catch {
+      return false;
+    }
   }
 }

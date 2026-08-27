@@ -381,7 +381,7 @@ interface SlotBreakdown {
               </div>
               }
 
-              @if (draft().hasSizes && draft().variants.length > 1) {
+              @if (draft().hasSizes && draft().variants.length > 1 && draft().tracks_inventory) {
                 <button type="button" (click)="copyConfigToOthers(av.localId)"
                   class="text-xs font-medium text-gray-500 hover:text-indigo-600 border border-dashed border-gray-300 hover:border-indigo-400 rounded-lg px-3 py-2 transition-colors">
                   Copiar insumos y sabores de «{{ av.name }}» a los otros tamaños

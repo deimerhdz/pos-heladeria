@@ -272,4 +272,124 @@ describe('ProductFormComponent', () => {
     expect(component.service.error()).toBeNull();
     expect(navigate).toHaveBeenCalledWith(['/dashboard/products']);
   });
+
+  // ── Bug 4 — "Copiar insumos" solo con inventario activo (FR-021 a FR-024) ─
+
+  /** Arranca en modo edición para `id`, con dos presentaciones ya guardadas
+   *  (una con un insumo) y `tracks_inventory` según `tracksInventory`. */
+  async function createEdit(id: string, tracksInventory: boolean): Promise<void> {
+    navigate = vi.fn().mockResolvedValue(true);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProductFormComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+        { provide: CategoryService, useClass: FakeCategoryService },
+        { provide: InventoryService, useClass: FakeInventoryService },
+        { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
+        { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id }) } },
+        },
+        { provide: Router, useValue: { navigate } },
+      ],
+    });
+    fixture = TestBed.createComponent(ProductFormComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges(); // dispara ngOnInit
+    await tick();
+
+    http.expectOne(`${PRODUCTS}/${id}`).flush({
+      id,
+      category_id: 'c1',
+      name: 'Cono doble',
+      description: null,
+      preparation_type: 'prepared',
+      image_url: null,
+      active: true,
+      available: true,
+      tracks_inventory: tracksInventory,
+      created_at: '2026-08-19T00:00:00',
+    });
+    await tick();
+
+    http.expectOne(`${PRODUCTS}/${id}/variants`).flush([
+      { id: 'v1', product_id: id, name: 'Grande', sku: null, price: '8000', active: true },
+      { id: 'v2', product_id: id, name: 'Pequeña', sku: null, price: '5000', active: true },
+    ]);
+    await tick();
+
+    // v1 ya tiene un insumo guardado; v2 no.
+    http.expectOne(`${VARIANTS}/v1/recipe`).flush([
+      { inventory_item_id: 'i1', quantity: '1', unit_measure_id: 'u1' },
+    ]);
+    http.expectOne(`${VARIANTS}/v1/option-groups`).flush([]);
+    await tick();
+    http.expectOne(`${VARIANTS}/v2/recipe`).flush([]);
+    http.expectOne(`${VARIANTS}/v2/option-groups`).flush([]);
+    await tick();
+    fixture.detectChanges();
+  }
+
+  /** El botón "Copiar insumos..." de la presentación activa, o `null` si no está. */
+  const copyButton = (): HTMLButtonElement | null =>
+    (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+      (b) => b.textContent?.includes('Copiar insumos'),
+    ) ?? null;
+
+  it('el botón "Copiar insumos..." está oculto con tracks_inventory=false, aunque hasSizes && variants.length > 1', async () => {
+    await createNew();
+    component.toggleHasSizes(); // hasSizes=true, 3 variantes — switch de inventario sigue apagado
+    fixture.detectChanges();
+
+    expect(component.draft().tracks_inventory).toBe(false);
+    expect(component.draft().hasSizes && component.draft().variants.length > 1).toBe(true);
+    expect(copyButton()).toBeNull();
+  });
+
+  it('el botón "Copiar insumos..." aparece con tracks_inventory=true, en las mismas condiciones', async () => {
+    await createNew();
+    component.toggleHasSizes();
+    await component.toggleTracksInventory();
+    fixture.detectChanges();
+
+    expect(component.draft().tracks_inventory).toBe(true);
+    expect(copyButton()).not.toBeNull();
+    expect(copyButton()!.textContent).toContain('Copiar insumos');
+  });
+
+  it('reacciona de inmediato a toggleTracksInventory() en ambos sentidos, sin recargar', async () => {
+    await createNew();
+    component.toggleHasSizes();
+    fixture.detectChanges();
+    expect(copyButton()).toBeNull();
+
+    await component.toggleTracksInventory(); // enciende
+    fixture.detectChanges();
+    expect(copyButton()).not.toBeNull();
+
+    await component.toggleTracksInventory(); // apaga (sin insumos configurados: no pide confirmación)
+    fixture.detectChanges();
+    expect(copyButton()).toBeNull();
+  });
+
+  it('en edición, con tracks_inventory=false el botón está oculto aunque el producto ya tenga insumos guardados', async () => {
+    await createEdit('p9', false);
+
+    expect(component.draft().hasSizes).toBe(true); // 2 variantes ya guardadas
+    expect(copyButton()).toBeNull();
+  });
+
+  it('en edición, con tracks_inventory=true el botón aparece igual que en creación', async () => {
+    await createEdit('p9', true);
+
+    expect(component.draft().hasSizes).toBe(true);
+    expect(copyButton()).not.toBeNull();
+  });
 });

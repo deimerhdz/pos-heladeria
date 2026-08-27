@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { Table } from '../interfaces/table.interface';
 import { TableService } from '../services/table.service';
-import { buildTableQr } from '../services/table-qr.util';
+import { QrPreset, labeledQrDataUrl, menuUrlForToken, qrDataUrl } from '../services/table-qr.util';
 
 @Component({
   selector: 'app-table-qr',
@@ -51,11 +51,19 @@ import { buildTableQr } from '../services/table-qr.util';
             </button>
             <button
               type="button"
-              (click)="downloadPng()"
-              [disabled]="loading() || !!error()"
+              (click)="download('mostrador')"
+              [disabled]="loading() || !!error() || downloading()"
               class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Descargar PNG
+              Mostrador
+            </button>
+            <button
+              type="button"
+              (click)="download('sticker')"
+              [disabled]="loading() || !!error() || downloading()"
+              class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Sticker
             </button>
           </div>
         </div>
@@ -68,19 +76,23 @@ export class TableQrComponent implements OnInit {
   @Output() closed = new EventEmitter<void>();
 
   readonly loading = signal(true);
+  readonly downloading = signal(false);
   readonly error = signal<string | null>(null);
   readonly menuUrl = signal<string>('');
   readonly qrDataUrl = signal<string>('');
 
   private readonly tables = inject(TableService);
+  /** Token **firmado** del QR de esta mesa — el mismo que codifica la vista previa. */
+  private signedToken = '';
 
   async ngOnInit(): Promise<void> {
     try {
       // El QR codifica un token **firmado** que el backend emite para esta mesa;
       // lleva el tenant dentro, así que no depende del dominio ni de cabeceras.
-      const { menuUrl, dataUrl } = await buildTableQr(this.tables, this.table.id);
-      this.menuUrl.set(menuUrl);
-      this.qrDataUrl.set(dataUrl);
+      const { qr_token } = await this.tables.getQrToken(this.table.id);
+      this.signedToken = qr_token;
+      this.menuUrl.set(menuUrlForToken(qr_token));
+      this.qrDataUrl.set(await qrDataUrl(qr_token));
       this.loading.set(false);
     } catch {
       this.error.set('No se pudo generar el código QR de la mesa.');
@@ -88,11 +100,22 @@ export class TableQrComponent implements OnInit {
     }
   }
 
-  downloadPng(): void {
-    const a = document.createElement('a');
-    a.href = this.qrDataUrl();
-    a.download = `qr-mesa-${this.table.number}.png`;
-    a.click();
+  /** Identificador visible de la mesa, compuesto sobre el PNG descargado. */
+  private tableLabel(): string {
+    return this.table.name ? `Mesa ${this.table.number} · ${this.table.name}` : `Mesa ${this.table.number}`;
+  }
+
+  async download(preset: QrPreset): Promise<void> {
+    this.downloading.set(true);
+    try {
+      const dataUrl = await labeledQrDataUrl(this.signedToken, this.tableLabel(), preset);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `qr-mesa-${this.table.number}-${preset}.png`;
+      a.click();
+    } finally {
+      this.downloading.set(false);
+    }
   }
 
   onClose(): void {
