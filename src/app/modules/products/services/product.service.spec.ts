@@ -145,6 +145,13 @@ describe('ProductService', () => {
       // desactivada y el usuario no la quitó en esta edición.
       http.expectNone(`${VARIANTS}/muerta`);
 
+      // spec 042: el orden (aquí trivial, una sola presentación) se persiste al
+      // final, como un paso más de este mismo guardado.
+      const reorder = http.expectOne(`${PRODUCTS}/${PID}/variants/reorder`);
+      expect(reorder.request.method).toBe('PATCH');
+      expect(reorder.request.body).toEqual({ variant_ids: ['viva'] });
+      reorder.flush({ variants: [{ id: 'viva', display_order: 1 }] });
+
       // `saveProduct` invalida la query paginada de productos al terminar, pero
       // este test nunca la activó (no llamó `loadProducts()`), así que no hay
       // ningún observer activo al que refrescar — invalidar una query inactiva
@@ -182,6 +189,67 @@ describe('ProductService', () => {
       // Sin el parseo del detalle-objeto, el banner mostraría '[object Object]'.
       expect(service.error()).toContain('«Pequeña» desactivada');
       expect(service.error()).toContain('Presentaciones desactivadas');
+    });
+  });
+
+  describe('orden de presentaciones al guardar (spec 042)', () => {
+    it('envía los IDs en el mismo orden que draft.variants, incluida una recién creada', async () => {
+      const promise = service.saveProduct(
+        draft({
+          variants: [
+            { id: 'v2', localId: 'v2', name: 'Grande', price: 8000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'nueva', name: 'Mediana', price: 6500, recipe: [], optionGroups: [] },
+            { id: 'v1', localId: 'v1', name: 'Pequeña', price: 5000, recipe: [], optionGroups: [] },
+          ],
+        }),
+      );
+
+      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
+      await tick();
+      http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`).flush([
+        variantResponse({ id: 'v1', name: 'Pequeña' }),
+        variantResponse({ id: 'v2', name: 'Grande' }),
+      ]);
+      await tick();
+
+      // v2 (ya existe)
+      http.expectOne(`${VARIANTS}/v2`).flush(variantResponse({ id: 'v2' }));
+      await tick();
+      http.expectOne(`${VARIANTS}/v2/recipe`).flush({});
+      await tick();
+      http.expectOne(`${VARIANTS}/v2/option-groups`).flush({});
+      await tick();
+
+      // "nueva" (sin id): se crea, y el nuevo id resuelto ('v3') es el que debe
+      // aparecer en el orden enviado, no ningún id local del draft.
+      http.expectOne((r) => r.method === 'POST' && r.url === `${PRODUCTS}/${PID}/variants`).flush(
+        variantResponse({ id: 'v3', name: 'Mediana' }),
+      );
+      await tick();
+      http.expectOne(`${VARIANTS}/v3/recipe`).flush({});
+      await tick();
+      http.expectOne(`${VARIANTS}/v3/option-groups`).flush({});
+      await tick();
+
+      // v1 (ya existe)
+      http.expectOne(`${VARIANTS}/v1`).flush(variantResponse({ id: 'v1' }));
+      await tick();
+      http.expectOne(`${VARIANTS}/v1/recipe`).flush({});
+      await tick();
+      http.expectOne(`${VARIANTS}/v1/option-groups`).flush({});
+      await tick();
+
+      const reorder = http.expectOne(`${PRODUCTS}/${PID}/variants/reorder`);
+      expect(reorder.request.body).toEqual({ variant_ids: ['v2', 'v3', 'v1'] });
+      reorder.flush({
+        variants: [
+          { id: 'v2', display_order: 1 },
+          { id: 'v3', display_order: 2 },
+          { id: 'v1', display_order: 3 },
+        ],
+      });
+
+      expect(await promise).toBe(PID);
     });
   });
 

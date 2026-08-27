@@ -317,6 +317,20 @@ export class ProductService {
     return this.run(() => this.http.delete(`${this.variantsUrl}/${variantId}`));
   }
 
+  /**
+   * Persiste el orden de las presentaciones activas de un producto (spec 042). Se
+   * llama una sola vez, al final de `saveExistingProduct` — arrastrar una fila solo
+   * reordena `draft().variants` en memoria (feedback inmediato), nunca dispara esta
+   * llamada por sí solo.
+   */
+  private async reorderVariants(productId: string, orderedIds: string[]): Promise<void> {
+    await firstValueFrom(
+      this.http.patch(`${this.productsUrl}/${productId}/variants/reorder`, {
+        variant_ids: orderedIds,
+      }),
+    );
+  }
+
   // --- Recipes (per variant, consume inventory items) ---
 
   /** Fetch a variant's recipe. A missing recipe (404) is a valid empty state. */
@@ -496,10 +510,12 @@ export class ProductService {
     // Reconcilia: actualiza las que tienen id, crea las nuevas. Toda la configuración
     // de una presentación va junta y sin orden obligado entre presentaciones, porque
     // receta y grupos son dos PUT idempotentes sobre la misma variante.
+    const orderedIds: string[] = [];
     for (const v of draft.variants) {
       const variantId = v.id
         ? (await this.patchVariant(v.id, { name: v.name, price: v.price })).id
         : (await this.postVariant(productId, { name: v.name, price: v.price })).id;
+      orderedIds.push(variantId);
       await this.saveVariantConfig(variantId, v);
     }
 
@@ -509,6 +525,13 @@ export class ProductService {
         await firstValueFrom(this.http.delete(`${this.variantsUrl}/${ex.id}`));
       }
     }
+
+    // spec 042 (FR-002/FR-003): el orden que el usuario vio y arrastró en el
+    // formulario se persiste aquí, al guardar — nunca al soltar la fila. Se llama
+    // después del loop de arriba (todo id ya resuelto) y del borrado (el conjunto de
+    // activas en el backend ya coincide exactamente con `orderedIds`).
+    await this.reorderVariants(productId, orderedIds);
+
     return productId;
   }
 
