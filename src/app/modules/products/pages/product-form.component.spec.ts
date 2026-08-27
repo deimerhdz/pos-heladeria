@@ -233,10 +233,14 @@ describe('ProductFormComponent', () => {
 
     const savePromise = component.save();
 
-    // El switch sigue apagado (default): el payload de creación lo refleja.
+    // Spec 043: una sola petición trae el producto y la presentación "Único" por
+    // defecto (con su receta/grupos vacíos) — ya no hace falta ningún paso aparte.
     const created = http.expectOne(PRODUCTS);
     expect(created.request.method).toBe('POST');
     expect(created.request.body.tracks_inventory).toBe(false);
+    expect(created.request.body.variants).toEqual([
+      { name: 'Único', price: 0, recipe: [], option_groups: [] },
+    ]);
     created.flush({
       id: 'p1',
       category_id: 'c1',
@@ -248,27 +252,8 @@ describe('ProductFormComponent', () => {
       available: true,
       tracks_inventory: false,
       created_at: '2026-08-19T00:00:00',
+      variants: [],
     });
-    await tick();
-
-    http.expectOne(`${PRODUCTS}/p1/variants`).flush([
-      { id: 'v1', product_id: 'p1', name: 'Single', sku: null, price: '0', active: true },
-    ]);
-    await tick();
-
-    http.expectOne(`${VARIANTS}/v1`).flush({
-      id: 'v1', product_id: 'p1', name: 'Único', sku: null, price: '0', active: true,
-    });
-    await tick();
-
-    const recipe = http.expectOne(`${VARIANTS}/v1/recipe`);
-    expect(recipe.request.body).toEqual({ items: [] });
-    recipe.flush({});
-    await tick();
-
-    const groups = http.expectOne(`${VARIANTS}/v1/option-groups`);
-    expect(groups.request.body).toEqual({ groups: [] });
-    groups.flush({});
 
     await savePromise;
     expect(component.service.error()).toBeNull();
@@ -430,50 +415,44 @@ describe('ProductFormComponent', () => {
 
     const savePromise = component.save();
 
-    http.expectOne(`${PRODUCTS}/p9`).flush({
+    // Spec 043: una sola petición PATCH trae producto + presentaciones en el orden
+    // ya arrastrado -- el orden de `variants[]` en el body reemplaza al endpoint de
+    // reordenamiento por separado (spec 042).
+    const req = http.expectOne(`${PRODUCTS}/p9`);
+    expect(req.request.method).toBe('PATCH');
+    const ids = (req.request.body.variants as Array<{ id?: string }>).map((v) => v.id);
+    expect(ids).toEqual(['v2', 'v1']); // Pequeña (v2) primero tras arrastrar
+    req.flush({
       id: 'p9', category_id: 'c1', name: 'Cono doble', description: null,
       preparation_type: 'prepared', image_url: null, active: true, available: true,
-      tracks_inventory: true, created_at: '2026-08-19T00:00:00',
-    });
-    await tick();
-
-    http.expectOne((r) => r.url === `${PRODUCTS}/p9/variants`).flush([
-      { id: 'v1', product_id: 'p9', name: 'Grande', sku: null, price: '8000', active: true },
-      { id: 'v2', product_id: 'p9', name: 'Pequeña', sku: null, price: '5000', active: true },
-    ]);
-    await tick();
-
-    // El draft ya trae Pequeña (v2) primero: así se procesa en el guardado.
-    http.expectOne(`${VARIANTS}/v2`).flush({
-      id: 'v2', product_id: 'p9', name: 'Pequeña', sku: null, price: '5000', active: true,
-    });
-    await tick();
-    http.expectOne(`${VARIANTS}/v2/recipe`).flush({});
-    await tick();
-    http.expectOne(`${VARIANTS}/v2/option-groups`).flush({});
-    await tick();
-
-    http.expectOne(`${VARIANTS}/v1`).flush({
-      id: 'v1', product_id: 'p9', name: 'Grande', sku: null, price: '8000', active: true,
-    });
-    await tick();
-    http.expectOne(`${VARIANTS}/v1/recipe`).flush({});
-    await tick();
-    http.expectOne(`${VARIANTS}/v1/option-groups`).flush({});
-    await tick();
-
-    const reorder = http.expectOne(`${PRODUCTS}/p9/variants/reorder`);
-    expect(reorder.request.method).toBe('PATCH');
-    expect(reorder.request.body).toEqual({ variant_ids: ['v2', 'v1'] });
-    reorder.flush({
-      variants: [
-        { id: 'v2', display_order: 1 },
-        { id: 'v1', display_order: 2 },
-      ],
+      tracks_inventory: true, created_at: '2026-08-19T00:00:00', variants: [],
     });
 
     await savePromise;
     expect(component.service.error()).toBeNull();
     expect(navigate).toHaveBeenCalledWith(['/dashboard/products']);
+  });
+
+  // ── Guardado unificado de producto (spec 043) ────────────────────────────
+
+  it('restaurar una presentación desactivada solo la trae al draft, sin ninguna llamada de escritura', async () => {
+    await createEdit('p9', true);
+    component.draft.update((d) => ({
+      ...d,
+      deactivated: [{ id: 'v3', name: 'Mediana', price: 4000 }],
+    }));
+
+    const restorePromise = component.restoreVariant({ id: 'v3', name: 'Mediana', price: 4000 });
+
+    // Solo lectura (sin cambios, spec 043 no toca los GET) -- research.md Decisión 4:
+    // ya no hay ningún PATCH /variants/v3 disparado por el solo hecho de restaurar.
+    http.expectOne(`${VARIANTS}/v3/recipe`).flush([]);
+    http.expectOne(`${VARIANTS}/v3/option-groups`).flush([]);
+    http.expectNone(`${VARIANTS}/v3`);
+
+    await restorePromise;
+
+    expect(component.draft().variants.map((v) => v.name)).toContain('Mediana');
+    expect(component.draft().deactivated).toEqual([]);
   });
 });
