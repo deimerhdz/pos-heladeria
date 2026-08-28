@@ -21,7 +21,7 @@ import { formatMoney } from '../services/receipt.util';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /**
- * Cómo paga el cliente un cobro: un método, o dos combinados.
+ * Cómo paga el cliente un cobro: un único método (spec 046, FR-004/FR-007).
  *
  * Se usa igual para la cuenta única y para el bloque de cada comensal en la
  * cuenta dividida, así que el importe a cubrir llega por `total`.
@@ -54,38 +54,6 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           (ngModelChange)="setAmount($event ?? 0)"
           sizeClass="min-h-11 px-3 py-2 rounded-lg text-base"
         />
-
-        <label class="flex items-center gap-2 text-sm text-gray-700 pt-1">
-          <input
-            type="checkbox"
-            [checked]="draft().combined"
-            (change)="toggleCombined($any($event.target).checked)"
-            class="rounded w-5 h-5"
-          />
-          Combinar con otro método
-        </label>
-      }
-
-      @if (draft().combined) {
-        <div class="border border-gray-200 rounded-lg p-2 space-y-2">
-          <select
-            [ngModel]="draft().secondMethodId"
-            (ngModelChange)="setSecondMethod($event)"
-            class="w-full min-h-11 px-2 py-1.5 border border-gray-200 rounded text-base"
-          >
-            <option value="">Selecciona…</option>
-            <!-- Sin el método ya elegido: dos líneas iguales suman bien pero se
-                 leen como un error. -->
-            @for (m of otherMethods(); track m.id) {
-              <option [value]="m.id">{{ m.name }}</option>
-            }
-          </select>
-          <app-money-input
-            [ngModel]="draft().secondAmount"
-            (ngModelChange)="setSecondAmount($event ?? 0)"
-            sizeClass="min-h-11 px-2 py-1.5 rounded text-base"
-          />
-        </div>
       }
 
       @if (issue(); as problema) {
@@ -111,10 +79,6 @@ export class PaymentInputComponent implements OnChanges {
   readonly issue = computed(() => paymentIssue(this.draft(), this.total, this.methods));
   readonly change = computed(() => changeDue(this.draft(), this.total));
 
-  readonly otherMethods = computed(() =>
-    this.methods.filter((m) => m.id !== this.draft().methodId),
-  );
-
   ngOnChanges(): void {
     // Cambió la cuenta (otra mesa, otro importe): el pago anterior ya no vale.
     this.draft.set(emptyPaymentDraft());
@@ -135,32 +99,7 @@ export class PaymentInputComponent implements OnChanges {
   }
 
   setAmount(value: string | number): void {
-    const amount = this.toAmount(value);
-    // El segundo método cubre lo que falte, para que el cajero no tenga que restar.
-    this.patch({
-      amount,
-      secondAmount: this.draft().combined ? this.remainder(amount) : 0,
-    });
-  }
-
-  toggleCombined(combined: boolean): void {
-    this.patch(
-      combined
-        ? { combined, secondAmount: this.remainder(this.draft().amount) }
-        : { combined, secondMethodId: '', secondAmount: 0 },
-    );
-  }
-
-  setSecondMethod(secondMethodId: string): void {
-    this.patch({ secondMethodId });
-  }
-
-  setSecondAmount(value: string | number): void {
-    this.patch({ secondAmount: this.toAmount(value) });
-  }
-
-  private remainder(paid: number): number {
-    return Math.max(0, this.total - paid);
+    this.patch({ amount: this.toAmount(value) });
   }
 
   private toAmount(value: string | number): number {

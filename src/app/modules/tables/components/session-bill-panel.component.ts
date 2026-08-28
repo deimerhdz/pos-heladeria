@@ -12,12 +12,10 @@ import {
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import {
-  BillingMode,
   CloseSessionPayload,
   CloseSessionResponse,
   PaymentLine,
   SessionBill,
-  SplitPayment,
 } from '../interfaces/dining.interface';
 import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import { TableSessionService } from '../services/table-session.service';
@@ -29,15 +27,6 @@ import {
   paymentLines,
 } from '../services/payment-draft.util';
 import { ToastService } from '../../../shared/feedback/toast.service';
-
-/** Cobro asignado a un comensal en modo `split`. */
-interface SplitDraft {
-  participantId: string | null;
-  label: string;
-  subtotal: number;
-  /** Con qué método(s) paga su parte; puede combinar dos. */
-  payment: PaymentDraft;
-}
 
 /**
  * Cuenta de la mesa y cobro.
@@ -112,65 +101,13 @@ interface SplitDraft {
             Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
           </p>
         } @else {
-        <!-- Modo de cobro -->
-        <div class="flex gap-2 mb-3">
-          <button
-            (click)="mode.set('unified')"
-            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors"
-            [class]="
-              mode() === 'unified'
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            "
-          >
-            Cuenta única
-          </button>
-          <button
-            (click)="mode.set('split')"
-            [disabled]="!canSplit()"
-            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40"
-            [class]="
-              mode() === 'split'
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            "
-          >
-            Dividir por comensal
-          </button>
-        </div>
-
-        @if (!canSplit()) {
-          <p class="text-sm text-gray-400 mb-3">
-            Dividir requiere consumo asignado a más de un comensal.
-          </p>
-        }
-
         <!-- Pago -->
         <div class="flex-1 overflow-y-auto space-y-2 mb-3">
-          @if (mode() === 'unified') {
-            <app-payment-input
-              [total]="total()"
-              [methods]="methods"
-              (changed)="unifiedPayment.set($event)"
-            />
-          } @else {
-            <p class="text-sm text-gray-500">Cómo paga cada comensal con consumo:</p>
-            @for (d of splits(); track d.participantId) {
-              <div class="border border-gray-200 rounded-lg p-2">
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-base font-semibold text-gray-700 truncate">{{ d.label }}</span>
-                  <span class="text-base font-medium text-gray-900">
-                    $ {{ d.subtotal | number: '1.2-2' }}
-                  </span>
-                </div>
-                <app-payment-input
-                  [total]="d.subtotal"
-                  [methods]="methods"
-                  (changed)="setSplitPayment(d.participantId, $event)"
-                />
-              </div>
-            }
-          }
+          <app-payment-input
+            [total]="total()"
+            [methods]="methods"
+            (changed)="unifiedPayment.set($event)"
+          />
         </div>
 
         @if (error()) {
@@ -219,10 +156,8 @@ export class SessionBillPanelComponent implements OnChanges {
   private readonly api = inject(TableSessionService);
   private readonly toast = inject(ToastService);
 
-  readonly mode = signal<BillingMode>('unified');
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
-  readonly splits = signal<SplitDraft[]>([]);
 
   /**
    * Cómo se paga la cuenta única. **Es una señal**: `ready()` la lee, y un
@@ -242,23 +177,14 @@ export class SessionBillPanelComponent implements OnChanges {
 
   readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
 
-  /** Dividir solo tiene sentido si hay consumo de más de un comensal. */
-  readonly canSplit = computed(() => (this.currentBill()?.split.length ?? 0) > 1);
-
   /**
-   * Solo se cobra si **ningún** bloque tiene incidencia: método sin elegir,
-   * importe corto, o un cobro electrónico por encima de lo que se debe (eso
-   * descuadraría el efectivo esperado del turno).
+   * Solo se cobra si el bloque de pago no tiene incidencia: método sin
+   * elegir, importe corto, o un cobro electrónico por encima de lo que se
+   * debe (eso descuadraría el efectivo esperado del turno).
    */
-  readonly ready = computed(() => {
-    if (this.mode() === 'unified') {
-      return paymentIssue(this.unifiedPayment(), this.total(), this.methods) === null;
-    }
-    return (
-      this.splits().length > 0 &&
-      this.splits().every((s) => paymentIssue(s.payment, s.subtotal, this.methods) === null)
-    );
-  });
+  readonly ready = computed(
+    () => paymentIssue(this.unifiedPayment(), this.total(), this.methods) === null,
+  );
 
   /**
    * Resetea el pago **solo cuando cambia la cuenta**, no ante cualquier `@Input`.
@@ -280,26 +206,11 @@ export class SessionBillPanelComponent implements OnChanges {
     this.error.set(null);
     this.currentBill.set(this.bill);
     this.unifiedPayment.set(emptyPaymentDraft());
-    this.splits.set(
-      (this.bill?.split ?? []).map((l) => ({
-        participantId: l.participant_id,
-        label: this.lineLabel(l.display_label),
-        subtotal: Number(l.subtotal),
-        payment: emptyPaymentDraft(),
-      })),
-    );
-    if (!this.canSplit()) this.mode.set('unified');
   }
 
   /** Los ítems sin comensal los añadió el mesero. */
   lineLabel(label: string | null): string {
     return label ?? 'Sin asignar (mesero)';
-  }
-
-  setSplitPayment(participantId: string | null, payment: PaymentDraft): void {
-    this.splits.update((list) =>
-      list.map((s) => (s.participantId === participantId ? { ...s, payment } : s)),
-    );
   }
 
   async charge(): Promise<void> {
@@ -330,47 +241,28 @@ export class SessionBillPanelComponent implements OnChanges {
    * En efectivo se manda **lo que entregó el cliente**, no el importe justo: el
    * backend deriva de ahí `paid_amount` y `change_given`, y sin eso el vuelto no
    * se descuenta del efectivo esperado del turno.
+   *
+   * Spec 046 (FR-005): "Dividir por comensal" se retiró — el cierre siempre
+   * cobra la cuenta completa (`billing_mode: 'unified'`) con un único método.
    */
   private buildPayload(cashShiftId: string): CloseSessionPayload {
-    if (this.mode() === 'unified') {
-      const payments: PaymentLine[] = paymentLines(this.unifiedPayment());
-      const nombre = this.customerName.trim();
-      return {
-        cash_shift_id: cashShiftId,
-        billing_mode: 'unified',
-        payments,
-        // Vacío no se manda: el backend cae a los comensales o a la mesa.
-        ...(nombre ? { customer_name: nombre } : {}),
-      };
-    }
-    // En `split` cada venta va a nombre de su comensal, no del campo Cliente.
-    const splits: SplitPayment[] = this.splits().map((s) => ({
-      participant_id: s.participantId,
-      payments: paymentLines(s.payment),
-    }));
-    return { cash_shift_id: cashShiftId, billing_mode: 'split', splits };
+    const payments: PaymentLine[] = paymentLines(this.unifiedPayment());
+    const nombre = this.customerName.trim();
+    return {
+      cash_shift_id: cashShiftId,
+      billing_mode: 'unified',
+      payments,
+      // Vacío no se manda: el backend cae a los comensales o a la mesa.
+      ...(nombre ? { customer_name: nombre } : {}),
+    };
   }
 
-  /**
-   * Los rechazos al cerrar son accionables, no genéricos: o falta confirmar
-   * pedidos, o hay comida sin terminar, o el split deja comensales sin cubrir.
-   */
+  /** Los rechazos al cerrar son accionables, no genéricos: o falta confirmar
+   *  pedidos, o hay comida sin terminar. */
   private showChargeError(err: unknown): void {
     const blocked = this.api.closeBlocked(err);
     if (blocked) {
       this.error.set(blocked.error);
-      return;
-    }
-    const incomplete = this.api.splitIncomplete(err);
-    if (incomplete) {
-      const missing = this.splits()
-        .filter((s) => (incomplete.participant_ids ?? []).includes(s.participantId ?? ''))
-        .map((s) => s.label);
-      this.error.set(
-        missing.length > 0
-          ? `Falta asignar el pago de: ${missing.join(', ')}.`
-          : incomplete.error,
-      );
       return;
     }
     this.error.set(this.api.extractError(err, 'No se pudo cobrar la mesa.'));

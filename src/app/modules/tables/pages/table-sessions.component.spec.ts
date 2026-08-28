@@ -6,6 +6,7 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { TableSessionsComponent } from './table-sessions.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
+import { DiningOrder } from '../interfaces/dining.interface';
 
 /** Spec 029, Historia 2: el atajo F4 (descuento manual) se retiró por
  *  completo — presionarlo ya no dispara ninguna acción. No se llama
@@ -147,5 +148,108 @@ describe('TableSessionsComponent — atajo F3 navega a la vista de armado de ped
     fixture.componentInstance.onKey(event);
 
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec 048: cuando la mesa tiene a la vez un pago pendiente de confirmar y
+ * un pedido pagado/activo, el encabezado del panel central ofrece dos
+ * pestañas para alternar entre ambos, en vez de mostrar solo el pago
+ * pendiente (que dejaba el pedido pagado inalcanzable).
+ */
+describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y pedido pagado (spec 048)', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  const tabButtons = (): HTMLButtonElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
+      ['🔔 Pagos por confirmar', 'Pedido de la mesa'].includes(
+        (b as HTMLButtonElement).textContent?.trim() ?? '',
+      ),
+    ) as HTMLButtonElement[];
+
+  const pagadaOrder: DiningOrder = {
+    id: 'o1',
+    channel: 'counter',
+    status: 'pagada',
+    version: 1,
+    dining_table_id: 't1',
+    customer_name: null,
+    created_at: '2026-08-28T10:00:00',
+    paid: true,
+    items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '4000', estado_cocina: 'listo' }],
+  } as DiningOrder;
+
+  const pendienteOrder: DiningOrder = {
+    id: 'o2',
+    channel: 'qr',
+    status: 'recibida',
+    version: 1,
+    dining_table_id: 't1',
+    customer_name: null,
+    created_at: '2026-08-28T10:05:00',
+    items: [],
+  } as DiningOrder;
+
+  it('con ambos tipos de pedido en la mesa, aparecen las dos pestañas y se puede alternar entre ambos bloques', () => {
+    store.orders.set([pagadaOrder, pendienteOrder]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const botones = tabButtons();
+    expect(botones.map((b) => b.textContent?.trim())).toEqual([
+      '🔔 Pagos por confirmar',
+      'Pedido de la mesa',
+    ]);
+    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeFalsy();
+
+    botones.find((b) => b.textContent?.includes('Pedido de la mesa'))!.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeFalsy();
+
+    tabButtons()
+      .find((b) => b.textContent?.includes('Pagos por confirmar'))!
+      .click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
+  });
+
+  it('con solo un pago pendiente (sin pedido pagado), no aparecen pestañas', () => {
+    store.orders.set([pendienteOrder]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(tabButtons()).toHaveLength(0);
+    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
+  });
+
+  it('con solo un pedido pagado (sin nada pendiente), no aparecen pestañas', () => {
+    store.orders.set([pagadaOrder]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(tabButtons()).toHaveLength(0);
+    expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
   });
 });

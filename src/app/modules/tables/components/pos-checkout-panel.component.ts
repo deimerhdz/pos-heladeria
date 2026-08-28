@@ -8,9 +8,8 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
-import { DiningOrder, SessionBill, getSidebarMode } from '../interfaces/dining.interface';
+import { getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
-import { SplitBillPanelComponent } from './split-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
 import {
   PaymentDraft,
@@ -42,7 +41,7 @@ import {
 @Component({
   selector: 'app-pos-checkout-panel',
   standalone: true,
-  imports: [SessionBillPanelComponent, SplitBillPanelComponent, PaymentInputComponent],
+  imports: [SessionBillPanelComponent, PaymentInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -94,14 +93,6 @@ import {
             productos que sigan sin marcar como listos antes de cobrar.
           -->
           <div class="flex flex-col h-full">
-            @if (store.sessionBill(); as bill) {
-              <button
-                (click)="splitOpen.set(true)"
-                class="w-full mb-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
-              >
-                Dividir la cuenta entre varias personas
-              </button>
-            }
             <app-session-bill-panel
               [bill]="store.sessionBill()"
               [methods]="store.paymentMethodsAvailable()"
@@ -130,17 +121,6 @@ import {
             <h2 class="text-base font-bold text-gray-900 mb-3">
               {{ store.selectedOrder() ? 'Cobrar pedido' : 'Pedido de mostrador' }}
             </h2>
-
-            @if (store.sessionBill(); as bill) {
-              <!-- Sin esto, una mesa donde pidió una sola persona no se puede dividir:
-                   el desglose tendría una única línea y el modo split queda bloqueado. -->
-              <button
-                (click)="splitOpen.set(true)"
-                class="w-full mb-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
-              >
-                Dividir la cuenta entre varias personas
-              </button>
-            }
 
             @if (!store.selectedOrder()) {
               <!-- Spec 045: único contenido de este panel sin pedido -- ya no
@@ -224,33 +204,31 @@ import {
               🧾 Imprimir Factura
             </button>
           }
-          <button
-            (click)="store.releaseTable()"
-            [disabled]="store.submitting()"
-            class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
-          >
-            🔓 Liberar Mesa
-          </button>
+          @if (store.centralState() !== 'validar-pago') {
+            <!--
+              Spec 046, FR-001/FR-002: mientras la mesa tenga al menos un pago
+              QR pendiente de confirmar (centralState() === 'validar-pago',
+              mismo computed que decide el panel central), "Liberar Mesa" no
+              se muestra -- evita liberar la mesa antes de validar que el
+              dinero/comprobante corresponde. Reaparece solo (reactivo) en
+              cuanto se confirma/aprueba el pago, sin código adicional.
+            -->
+            <button
+              (click)="store.releaseTable()"
+              [disabled]="store.submitting()"
+              class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              🔓 Liberar Mesa
+            </button>
+          }
         </div>
       }
     </div>
-
-    @if (splitOpen() && store.sessionBill(); as bill) {
-      <app-split-bill-panel
-        [sessionId]="bill.table_session_id"
-        [tableLabel]="tableLabel()"
-        [orders]="sessionOrders(bill)"
-        [categories]="store.categories()"
-        (saved)="onSplitSaved($event)"
-        (close)="splitOpen.set(false)"
-      />
-    }
   `,
 })
 export class PosCheckoutPanelComponent {
   readonly store = inject(PosTerminalStore);
   private readonly router = inject(Router);
-  readonly splitOpen = signal(false);
 
   /**
    * Spec 045: mesa destino del botón fijo "+ Crear pedido nuevo" -- la mesa
@@ -308,30 +286,5 @@ export class PosCheckoutPanelComponent {
   async checkout(): Promise<void> {
     if (this.issue()) return;
     await this.store.checkoutAndSend(paymentLines(this.paymentDraft()));
-  }
-
-  /**
-   * Los pedidos de ESTA sesión.
-   *
-   * `store.orders()` trae los de todas las mesas (`listOrders()` no filtra), así que
-   * pasarlo crudo hacía que el reparto listara productos de otras mesas y dejara sus
-   * selectores en blanco. `bill.order_ids` sale de la misma `compute_bill` que produce
-   * el desglose, así que lo que se reparte y lo que se cobra no pueden discrepar.
-   */
-  sessionOrders(bill: SessionBill): DiningOrder[] {
-    const ids = new Set(bill.order_ids);
-    return this.store.orders().filter((o) => ids.has(o.id));
-  }
-
-  /** "Mesa 1", para que se vea de qué mesa es la lista sin tener que deducirlo. */
-  tableLabel(): string {
-    const t = this.store.selectedTable();
-    return t ? `Mesa ${t.number}` : '';
-  }
-
-  /** El reparto devuelve la cuenta ya recalculada: se aprovecha en vez de repedirla. */
-  onSplitSaved(bill: SessionBill): void {
-    this.store.sessionBill.set(bill);
-    this.store.billStale.set(false);
   }
 }

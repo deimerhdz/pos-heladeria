@@ -97,16 +97,49 @@ import { PaymentValidationBlockComponent } from '../components/payment-validatio
 
             <div class="flex-1 flex flex-col min-h-0 bg-white">
               <!--
-                Sin pestañas (feature 028): la columna central se decide sola
-                según store.centralState(). El botón de silenciar la campana
-                vive aquí porque tiene que verse pase lo que pase en el centro.
+                Sin pestañas propias (feature 028): la columna central se
+                decide sola según store.centralState() -- salvo que la mesa
+                tenga a la vez un pago pendiente y un pedido pagado/activo
+                (spec 048), caso en el que sí aparecen dos pestañas para que
+                el cajero pueda alternar entre ambos sin perder ninguno. El
+                botón de silenciar la campana vive aquí porque tiene que
+                verse pase lo que pase en el centro.
               -->
               <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-gray-200 shrink-0">
                 <span class="text-sm font-semibold text-gray-500">
-                  @switch (store.centralState()) {
-                    @case ('validar-pago') { 🔔 Pagos por confirmar }
-                    @case ('mesa-libre') { Mesa libre }
-                    @default { Pedido de la mesa }
+                  @if (store.hasPendingAndActiveOrders()) {
+                    <div class="flex items-center gap-1">
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('validar-pago')"
+                        class="px-2 py-1 rounded-lg transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'validar-pago'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-gray-500 hover:bg-gray-100'
+                        "
+                      >
+                        🔔 Pagos por confirmar
+                      </button>
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('pedido')"
+                        class="px-2 py-1 rounded-lg transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'pedido'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-gray-500 hover:bg-gray-100'
+                        "
+                      >
+                        Pedido de la mesa
+                      </button>
+                    </div>
+                  } @else {
+                    @switch (store.centralState()) {
+                      @case ('validar-pago') { 🔔 Pagos por confirmar }
+                      @case ('mesa-libre') { Mesa libre }
+                      @default { Pedido de la mesa }
+                    }
                   }
                 </span>
                 <button
@@ -122,7 +155,7 @@ import { PaymentValidationBlockComponent } from '../components/payment-validatio
                 </button>
               </div>
 
-              @switch (store.centralState()) {
+              @switch (store.effectiveCentralView()) {
                 @case ('validar-pago') {
                   <div class="flex-1 overflow-y-auto p-4">
                     <app-payment-validation-block

@@ -191,13 +191,11 @@ describe('SessionBillPanelComponent', () => {
     expect(panel.ready()).toBe(false);
   });
 
-  it('reevalúa si la cuenta se puede dividir al cambiar de mesa', () => {
-    expect(panel.canSplit()).toBe(false);
-
+  it('spec 046, FR-005/SC-004: no ofrece ningún modo "Dividir por comensal", ni siquiera con más de un comensal con consumo', () => {
     setBill(splitBill);
 
-    // Antes `canSplit` no leía ninguna señal: se quedaba congelado en el primer valor.
-    expect(panel.canSplit()).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir por comensal');
+    expect(fixture.nativeElement.textContent).not.toContain('Cuenta única');
   });
 
   // ── Efectivo: monto recibido y vuelto ────────────────────────────────────
@@ -228,40 +226,11 @@ describe('SessionBillPanelComponent', () => {
     expect(chargeButton().disabled).toBe(true);
   });
 
-  // ── Pago mixto ────────────────────────────────────────────────────────────
-
-  /** Marca la casilla «Combinar con otro método». */
-  async function combine(): Promise<void> {
-    const box = combineBox()!;
-    box.checked = true;
-    box.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    fixture.detectChanges();
-  }
-
-  it('cobra con dos métodos y reparte el resto en el segundo', async () => {
+  it('spec 046, FR-004/FR-007/SC-002: no ofrece ninguna opción de combinar método de pago', async () => {
     await chooseMethod('pm1');
-    await fill(amounts()[0], '5000');
-    await combine();
-    await fill(selects()[1], 'pm2');
 
-    // El segundo método cubre lo que falta sin que el cajero tenga que restar.
-    expect(panel.unifiedPayment().secondAmount).toBe(7000);
-    expect(panel.ready()).toBe(true);
-
-    expect((await charge()).payments).toEqual([
-      { payment_method_id: 'pm1', amount: 5000 },
-      { payment_method_id: 'pm2', amount: 7000 },
-    ]);
-  });
-
-  it('no ofrece dos veces el mismo método', async () => {
-    await chooseMethod('pm1');
-    await combine();
-
-    const opciones = Array.from(selects()[1].options).map((o) => o.value);
-    expect(opciones).not.toContain('pm1');
-    expect(opciones).toContain('pm2');
+    expect(combineBox()).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Combinar con otro método');
   });
 
   // ── Nombre de la factura ──────────────────────────────────────────────────
@@ -281,19 +250,14 @@ describe('SessionBillPanelComponent', () => {
     expect((await charge()).customer_name).toBeUndefined();
   });
 
-  it('exige que cada comensal cubra su parte', () => {
+  it('spec 046, FR-005/SC-004: el cobro de una cuenta con varios comensales sigue construyendo billing_mode "unified"', async () => {
     setBill(splitBill);
-    panel.mode.set('split');
-    // Antes de asignar los pagos: al montarse, cada control emite su estado
-    // vacío y pisaría lo que se pusiera antes.
-    fixture.detectChanges();
+    await chooseMethod('pm2');
 
-    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 12000 });
-    panel.setSplitPayment('p2', { ...emptyPaymentDraft(), methodId: 'pm2', amount: 8000 });
-
-    expect(panel.ready()).toBe(true);
-
-    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 5000 });
-    expect(panel.ready()).toBe(false);
+    const done = panel.charge();
+    const req = http.expectOne(`${API}/table-sessions/ts2/close`);
+    expect((req.request.body as CloseSessionPayload).billing_mode).toBe('unified');
+    req.flush({ table_session: {}, sale_ids: ['s1'] });
+    await done;
   });
 });

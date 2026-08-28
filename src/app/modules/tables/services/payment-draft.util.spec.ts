@@ -17,35 +17,10 @@ function draft(patch: Partial<PaymentDraft> = {}): PaymentDraft {
 }
 
 describe('paymentLines', () => {
-  it('manda una sola línea sin combinar', () => {
+  it('manda una sola línea con el método elegido', () => {
     expect(paymentLines(draft({ methodId: 'efectivo', amount: 35000 }))).toEqual([
       { payment_method_id: 'efectivo', amount: 35000 },
     ]);
-  });
-
-  it('manda las dos líneas al combinar métodos', () => {
-    const lines = paymentLines(
-      draft({
-        methodId: 'efectivo',
-        amount: 20000,
-        combined: true,
-        secondMethodId: 'tarjeta',
-        secondAmount: 15000,
-      }),
-    );
-
-    expect(lines).toEqual([
-      { payment_method_id: 'efectivo', amount: 20000 },
-      { payment_method_id: 'tarjeta', amount: 15000 },
-    ]);
-  });
-
-  it('ignora el segundo método si aún no se eligió', () => {
-    const lines = paymentLines(
-      draft({ methodId: 'efectivo', amount: 35000, combined: true, secondAmount: 5000 }),
-    );
-
-    expect(lines.length).toBe(1);
   });
 });
 
@@ -64,19 +39,6 @@ describe('paymentIssue', () => {
     expect(issue).toContain('15.000');
   });
 
-  it('acepta el pago mixto que cubre la cuenta', () => {
-    const mixto = draft({
-      methodId: 'efectivo',
-      amount: 20000,
-      combined: true,
-      secondMethodId: 'tarjeta',
-      secondAmount: 15000,
-    });
-
-    expect(paymentIssue(mixto, 35000, methods)).toBeNull();
-    expect(changeDue(mixto, 35000)).toBe(0);
-  });
-
   it('rechaza que lo electrónico supere la cuenta', () => {
     // Es lo que protege el arqueo: `change_given` se descuenta del efectivo, así
     // que un exceso cobrado con tarjeta dejaría un faltante fantasma en el cajón.
@@ -89,16 +51,17 @@ describe('paymentIssue', () => {
     expect(issue).toContain('no pueden superar la cuenta');
   });
 
-  it('permite que el exceso venga del efectivo y lo devuelve como vuelto', () => {
-    const mixto = draft({
-      methodId: 'efectivo',
-      amount: 50000,
-      combined: true,
-      secondMethodId: 'tarjeta',
-      secondAmount: 15000,
-    });
+  it('spec 046, FR-003/FR-007: un único método, con el monto exacto, cubre la cuenta sin combinar nada', () => {
+    const pago = draft({ methodId: 'efectivo', amount: 35000 });
 
-    expect(paymentIssue(mixto, 35000, methods)).toBeNull();
-    expect(changeDue(mixto, 35000)).toBe(30000);
+    expect(paymentIssue(pago, 35000, methods)).toBeNull();
+    expect(changeDue(pago, 35000)).toBe(0);
+  });
+
+  it('permite que el exceso en efectivo se devuelva como vuelto, sin un segundo método', () => {
+    const pago = draft({ methodId: 'efectivo', amount: 50000 });
+
+    expect(paymentIssue(pago, 35000, methods)).toBeNull();
+    expect(changeDue(pago, 35000)).toBe(15000);
   });
 });

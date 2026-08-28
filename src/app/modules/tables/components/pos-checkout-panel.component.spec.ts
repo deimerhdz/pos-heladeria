@@ -173,6 +173,70 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(reprintButton()).toBeDefined();
   });
 
+  it('spec 046, FR-005/FR-006/SC-004: "Dividir la cuenta entre varias personas" ya no existe en el panel de mostrador', () => {
+    // Sin sessionBill: rama "+ Crear pedido nuevo" / cobro editable sin cuenta todavía.
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
+
+    // Con sessionBill: hoy ahí vivía el botón, junto a "Liberar Mesa"/"Imprimir Factura".
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [
+        { participant_id: 'p1', display_label: 'Ana', subtotal: '5000', items: [], discount: '0' },
+        { participant_id: 'p2', display_label: 'Luis', subtotal: '5000', items: [], discount: '0' },
+      ],
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
+  });
+
+  it('spec 046, FR-001/SC-001: "Liberar Mesa" no se muestra mientras la mesa tiene un pago pendiente de confirmar', () => {
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [],
+    });
+    // Pedido QR 'recibida' en la misma mesa: pone a centralState() en 'validar-pago'.
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'qr', status: 'recibida' }]);
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+    );
+    expect(button).toBeUndefined();
+  });
+
+  it('spec 046, FR-002/SC-003: "Liberar Mesa" reaparece de inmediato al confirmarse el pago pendiente', () => {
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [],
+    });
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'qr', status: 'recibida' }]);
+    fixture.detectChanges();
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+        (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+      ),
+    ).toBeUndefined();
+
+    // Confirmar el pago pendiente: la orden QR ya no queda 'recibida' para esa mesa.
+    store.orders.set([manualOrder()]);
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+    ) as HTMLButtonElement;
+    expect(button).toBeDefined();
+  });
+
   it('T035: "Liberar Mesa" pide la liberación y muestra el motivo del 409 si falla', async () => {
     store.sessionBill.set({
       table_session_id: 'ts1',
@@ -308,6 +372,10 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('Cobrar y cerrar mesa');
     expect(texto).not.toContain('Cobrar, Facturar y Enviar a Cocina');
+  });
+
+  it('spec 046, FR-005/FR-006/SC-004: no ofrece "Dividir la cuenta entre varias personas" en el cobro por sesión de mesa', () => {
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
   });
 
   it('al cobrar, llama primero a ensureReadyToCharge (beforeCharge conectado) y luego cierra la sesión', async () => {

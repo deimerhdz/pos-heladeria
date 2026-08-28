@@ -11,6 +11,7 @@ import {
   normalizeSearchTerm,
 } from './pos-terminal.store';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
+import { TableService } from './table.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PromotionService } from '../../promotions/services/promotion.service';
@@ -304,6 +305,124 @@ describe('PosTerminalStore.pendingOrders — solo canal qr', () => {
     ]);
 
     expect(store.pendingOrders().map((o) => o.id)).toEqual(['qr1']);
+  });
+});
+
+/**
+ * Bugfix (gap de spec 035, A-52): una orden `'pagada'` con toda la cocina en
+ * `'listo'` seguía contando como consumo vivo de la mesa antes del fix, pero
+ * `activeOrders`/`tableOrders` la excluían justo en ese momento -- la mesa se
+ * veía "libre" con la sesión todavía abierta. Ver spec 047.
+ */
+describe('PosTerminalStore — orden "pagada" ya lista sigue visible (gap spec 035, A-52)', () => {
+  let store: PosTerminalStore;
+  let tableService: TableService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    tableService = TestBed.inject(TableService);
+    tableService.tables.set([
+      { id: 't1', number: 3, name: null, qr_token: 'qr-t1', active: true, status: 'ocupada' },
+    ]);
+  });
+
+  it('centralState no cae a "mesa-libre" tras marcar listo un pedido de mostrador ya cobrado', () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['listo', 'listo'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    expect(store.centralState()).toBe('pedido');
+  });
+
+  it('tablesView pinta "Listo", no "Ocupada", para esa mesa', () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['listo', 'listo'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+
+    const fila = store.tablesView().find((t) => t.id === 't1');
+    expect(fila?.statusLabel).toBe('Listo');
+  });
+});
+
+/**
+ * Spec 048: cuando la mesa tiene a la vez un pago pendiente de confirmar y
+ * un pedido pagado/activo, el cajero necesita poder ver ambos -- antes de
+ * este fix, `centralState()` le daba prioridad absoluta al pago pendiente y
+ * el pedido pagado quedaba inalcanzable.
+ */
+describe('PosTerminalStore — pestañas cuando coexisten pago pendiente y pedido pagado (spec 048)', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('con una orden pagada y otra pendiente en la misma mesa, hasPendingAndActiveOrders() es true y effectiveCentralView() empieza en "validar-pago"', () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' },
+      { ...order('o2', 'recibida'), channel: 'qr', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    expect(store.hasPendingAndActiveOrders()).toBe(true);
+    expect(store.effectiveCentralView()).toBe('validar-pago');
+  });
+
+  it('al elegir la pestaña "pedido", effectiveCentralView() cambia sin tocar centralState()', () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' },
+      { ...order('o2', 'recibida'), channel: 'qr', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    store.centralPanelTab.set('pedido');
+
+    expect(store.effectiveCentralView()).toBe('pedido');
+    expect(store.centralState()).toBe('validar-pago');
+  });
+
+  it('con solo uno de los dos tipos de pedido, no hay pestañas y effectiveCentralView() coincide con centralState()', () => {
+    store.orders.set([{ ...order('o1', 'recibida'), channel: 'qr', dining_table_id: 't1' }]);
+    store.selectedTableId.set('t1');
+
+    expect(store.hasPendingAndActiveOrders()).toBe(false);
+    expect(store.effectiveCentralView()).toBe(store.centralState());
+  });
+
+  it('al seleccionar otra mesa, centralPanelTab() vuelve a "validar-pago"', () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' },
+      { ...order('o2', 'recibida'), channel: 'qr', dining_table_id: 't1' },
+      { ...order('o3', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't2' },
+    ]);
+    store.selectTable('t1');
+    store.centralPanelTab.set('pedido');
+    expect(store.centralPanelTab()).toBe('pedido');
+
+    store.selectTable('t2');
+
+    expect(store.centralPanelTab()).toBe('validar-pago');
   });
 });
 
@@ -692,6 +811,64 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
     await promise;
 
     expect(store.selectedOrder()?.id).toBe('o2');
+  });
+});
+
+/**
+ * Bugfix (gap de spec 035, A-52): `marcarListo()` llama a `reload()`, que
+ * dispara `resyncSelectedOrder()` -- antes del fix, un pedido `'pagada'`
+ * dejaba de aparecer en `ordersOfTable()` justo al terminar de cocinar, así
+ * que la selección se perdía en el mismo `reload()` que confirmaba el
+ * "Marcar pedido listo". Ver spec 047.
+ */
+describe('PosTerminalStore.marcarListo — pedido "pagada" no desaparece (gap spec 035, A-52)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('tras marcarListo(), el pedido pagado sigue seleccionado y centralState sigue en "pedido"', async () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['pendiente'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    expect(store.selectedOrderId()).toBe('o1');
+
+    const promise = store.marcarListo();
+
+    const readyReq = http.expectOne(`${API}/orders/o1/ready`);
+    readyReq.flush({ ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' });
+    await tick();
+
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http
+      .expectOne((r) => r.url === `${API}/orders`)
+      .flush([{ ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' }]);
+    await tick();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    await promise;
+
+    expect(store.selectedOrderId()).toBe('o1');
+    expect(store.centralState()).toBe('pedido');
   });
 });
 

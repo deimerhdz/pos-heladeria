@@ -122,6 +122,28 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     http.expectNone(`${API}/orders/payment-attempts/a1/confirm-cash`);
   });
 
+  it('spec 046, FR-003: un monto en efectivo menor al total no queda confirmado (el backend lo rechaza, sin combinar con otro método)', async () => {
+    const conCuenta = order('o1', [item('20000', 1)]); // total $20.000
+    await renderWith([attempt({ status: 'pendiente' })], conCuenta);
+
+    panel.cashShiftId = 'shift-1';
+    panel.amountReceived = 10000; // no cubre el total -- ni checkbox ni segundo método existen aquí
+    const done = panel.confirmCash(panel.current()!);
+
+    http
+      .expectOne((r) => r.url === `${API}/orders/payment-attempts/a1/confirm-cash`)
+      .flush(
+        { detail: 'El monto recibido (10000) es menor al total de la orden (20000)' },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    await done;
+    fixture.detectChanges();
+
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).not.toContain('Pago confirmado');
+    expect(texto).toContain('Pendiente de revisión');
+  });
+
   it('muestra una vista previa del cambio mientras escribe, antes de confirmar (feature 028)', async () => {
     const conCuenta = order('o1', [item('8000', 1)]); // total $8.000
     await renderWith([attempt({ status: 'pendiente' })], conCuenta);

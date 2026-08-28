@@ -31,7 +31,7 @@ import {
   PaymentLine,
   SessionBill,
 } from '../interfaces/dining.interface';
-import { KITCHEN_NOT_READY, hasPendingKitchenWork } from '../../orders/order-status.util';
+import { KITCHEN_NOT_READY } from '../../orders/order-status.util';
 import { ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
@@ -169,14 +169,15 @@ export function deriveTableStatus(
     // no basta con que cocina termine. La señal real sigue siendo
     // `order.paid` (D2 de research.md), no `status`: aunque desde spec 035
     // (A-52) los caminos QR/mostrador sí llegan a `status === 'pagada'` en
-    // cuanto se cobra, `tableOrders()` ya deja pasar esas órdenes mientras
-    // les quede comida en preparación (`hasPendingKitchenWork`), así que acá
-    // puede haber una orden `'pagada'` con ítems `'listo'` a medio camino de
-    // que el resto del pedido también quede `'listo'` — `paid` es la
-    // comprobación explícita y no depende de en qué momento cambió `status`.
-    // Mientras falte el pago, se muestra "Pago pendiente" — el mismo estado
-    // que ya usa la rama 'bloqueada' de arriba, para no inventar una
-    // insignia nueva casi idéntica.
+    // cuanto se cobra, `tableOrders()` incluye cualquier orden `'pagada'`
+    // sin importar en qué vaya su cocina (spec 047, gap de A-52) — así que
+    // acá puede llegar una orden `'pagada'` con ítems todavía sin todos
+    // `'listo'` (la rama de arriba ya la habría mandado a `'en_preparacion'`)
+    // o con todos `'listo'` — `paid` es la comprobación explícita y no
+    // depende de en qué momento cambió `status`. Mientras falte el pago, se
+    // muestra "Pago pendiente" — el mismo estado que ya usa la rama
+    // 'bloqueada' de arriba, para no inventar una insignia nueva casi
+    // idéntica.
     const conConsumo = orders.filter((o) =>
       (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'),
     );
@@ -373,13 +374,21 @@ export class PosTerminalStore {
    * `selectTable()` no auto-seleccionaba un pedido de mostrador recién creado
    * tras recargar la página (el store se recrea y pierde la selección en
    * memoria de `createManualOrderFromDraft()`).
+   *
+   * Bugfix (gap de spec 035, A-52): una orden `'pagada'` sigue contando como
+   * activa **sin importar en qué vaya la cocina**. Antes se excluía en cuanto
+   * `hasPendingKitchenWork(o)` se volvía `false` — o sea, justo al terminar de
+   * cocinar (`marcarListo()`) — lo que hacía desaparecer un pedido ya cobrado
+   * de mostrador mientras la sesión de mesa seguía abierta. Quién decide si el
+   * pedido ya "no está" es el backend: `reload()` siempre pide
+   * `GET /orders?active_sessions_only=true` (`dining-session.service.ts`), que
+   * solo deja de devolver la orden cuando `TableSession.status !== 'active'`
+   * (tras `Liberar Mesa`). No hace falta que el frontend repita ese criterio
+   * mirando cocina.
    */
   private readonly activeOrders = computed(() =>
     this.orders().filter(
-      (o) =>
-        o.status !== 'cancelada' &&
-        (o.status !== 'pagada' || hasPendingKitchenWork(o)) &&
-        (o.status !== 'recibida' || o.channel !== 'qr'),
+      (o) => o.status !== 'cancelada' && (o.status !== 'recibida' || o.channel !== 'qr'),
     ),
   );
 
@@ -393,17 +402,23 @@ export class PosTerminalStore {
    *
    * Es lo que alimenta el tablero: una mesa con un pedido del QR esperando
    * confirmación no está libre, y su consumo tampoco es cero. Desde spec 035
-   * (A-52), una orden `'pagada'` con ítems todavía sin terminar de preparar
-   * (se cobró antes de enviarla a cocina, spec 028) también sigue contando
-   * como consumo vivo — de lo contrario la mesa se vería libre con el pedido
-   * aún en preparación (`hasPendingKitchenWork`, `order-status.util.ts`).
+   * (A-52), una orden `'pagada'` (se cobró antes de enviarla a cocina, spec
+   * 028) también sigue contando como consumo vivo — sin importar si a la
+   * cocina ya le faltan ítems por terminar o no.
+   *
+   * Bugfix (gap de spec 035, A-52): antes solo contaba mientras
+   * `hasPendingKitchenWork(o)` fuera `true`, así que en cuanto cocina
+   * terminaba (`marcarListo()`) la orden `'pagada'` desaparecía de aquí — la
+   * mesa se veía "libre" con la sesión todavía abierta y nadie había tocado
+   * "Liberar Mesa". Una orden `'pagada'` solo deja de estar viva cuando el
+   * backend cierra su sesión (`TableSessionService.release()`); ese filtro ya
+   * lo aplica `reload()` al pedir `active_sessions_only=true`
+   * (`dining-session.service.ts`), así que no hace falta duplicarlo aquí
+   * mirando el estado de cocina.
    */
   private tableOrders(tableId: string): DiningOrder[] {
     return this.orders().filter(
-      (o) =>
-        o.dining_table_id === tableId &&
-        o.status !== 'cancelada' &&
-        (o.status !== 'pagada' || hasPendingKitchenWork(o)),
+      (o) => o.dining_table_id === tableId && o.status !== 'cancelada',
     );
   }
 
@@ -439,6 +454,37 @@ export class PosTerminalStore {
     }
     return 'pedido';
   });
+
+  /**
+   * Spec 048: cuál de las dos pestañas eligió el cajero cuando la mesa tiene
+   * a la vez un pago pendiente de confirmar y un pedido pagado/activo — la
+   * más urgente por defecto. Se reinicia en `resetTransient()` al cambiar de
+   * selección; `reload()` NO la toca, así que un pago nuevo que llegue
+   * mientras el cajero ya está viendo "Pedido de la mesa" no lo saca de ahí.
+   */
+  readonly centralPanelTab = signal<'validar-pago' | 'pedido'>('validar-pago');
+
+  /**
+   * ¿La mesa seleccionada tiene A LA VEZ algún pago pendiente de confirmar y
+   * algún pedido pagado/activo? (spec 048, FR-001). `ordersOfTable` ya
+   * excluye exactamente lo que hay en `pendingOfSelectedTable` (misma
+   * frontera `recibida`+`qr`), así que basta con combinar ambos.
+   */
+  readonly hasPendingAndActiveOrders = computed(() => {
+    const tableId = this.selectedTableId();
+    if (!tableId) return false;
+    return this.pendingOfSelectedTable().length > 0 && this.ordersOfTable(tableId).length > 0;
+  });
+
+  /**
+   * Qué debe renderizar el panel central (spec 048, FR-002/FR-003/FR-005):
+   * la pestaña elegida por el cajero cuando hay ambos tipos de pedido a la
+   * vez, o `centralState()` sin cambios en cualquier otro caso — mismo tipo
+   * de valor que ya consume el `@switch` de la plantilla.
+   */
+  readonly effectiveCentralView = computed<'validar-pago' | 'mesa-libre' | 'pedido'>(() =>
+    this.hasPendingAndActiveOrders() ? this.centralPanelTab() : this.centralState(),
+  );
 
   readonly selectedTable = computed<Table | null>(
     () => this.tables().find((t) => t.id === this.selectedTableId()) ?? null,
@@ -938,6 +984,7 @@ export class PosTerminalStore {
     this.configuringProduct.set(null);
     this.error.set(null);
     this.billingCustomerName.set('Consumidor Final');
+    this.centralPanelTab.set('validar-pago');
   }
 
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
