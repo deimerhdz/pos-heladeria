@@ -11,6 +11,8 @@ import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
+import { DiningSessionService } from '../services/dining-session.service';
+import { DiningOrder } from '../interfaces/dining.interface';
 
 const API = environment.apiBaseUrl;
 
@@ -85,6 +87,30 @@ describe('ManualOrderPageComponent', () => {
 
   function opcionesMesas(): HTMLLIElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('app-searchable-select li')) as HTMLLIElement[];
+  }
+
+  /** Helpers para el campo "Cliente" (spec 054). */
+  function clienteHeading(): HTMLElement {
+    return Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === 'Cliente',
+    ) as HTMLElement;
+  }
+
+  function campoCliente(): HTMLInputElement {
+    return clienteHeading().nextElementSibling!.querySelector('input') as HTMLInputElement;
+  }
+
+  function botonEditarCliente(): HTMLButtonElement {
+    return clienteHeading().nextElementSibling!.querySelector('button') as HTMLButtonElement;
+  }
+
+  function editarCliente(texto: string): void {
+    botonEditarCliente().click();
+    fixture.detectChanges();
+    const input = campoCliente();
+    input.value = texto;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
   }
 
   function buscarEnSelectorMesas(texto: string): void {
@@ -481,4 +507,165 @@ describe('ManualOrderPageComponent', () => {
     expect(createSpy).not.toHaveBeenCalled();
   });
 
+  it('el campo Cliente muestra "Consumidor final" por defecto, en solo lectura (spec 054, US1, FR-001/FR-002)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const input = campoCliente();
+    expect(input.value).toBe('Consumidor final');
+    expect(input.readOnly).toBe(true);
+  });
+
+  it('el botón de edición vuelve editable el campo Cliente (spec 054, US2, FR-003)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    botonEditarCliente().click();
+    fixture.detectChanges();
+
+    expect(campoCliente().readOnly).toBe(false);
+  });
+
+  it('editar y perder el foco actualiza el nombre del cliente y cierra la edición (spec 054, US2, FR-004)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    editarCliente('María Pérez');
+    campoCliente().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    expect(campoCliente().value).toBe('María Pérez');
+    expect(campoCliente().readOnly).toBe(true);
+  });
+
+  it('si se deja vacío al perder el foco, el campo Cliente vuelve a "Consumidor final" (spec 054, US2, FR-005)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    editarCliente('');
+    campoCliente().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    expect(campoCliente().value).toBe('Consumidor final');
+    expect(campoCliente().readOnly).toBe(true);
+  });
+
+  it('al confirmar sin editar, se envía "Consumidor final" como customer_name (spec 054, US3, FR-006)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    const diningSessionService = TestBed.inject(DiningSessionService);
+    const createSpy = vi
+      .spyOn(diningSessionService, 'createManualOrder')
+      .mockResolvedValue({ id: 'o9' } as DiningOrder);
+    vi.spyOn(store, 'reload').mockResolvedValue(undefined);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+    ) as HTMLButtonElement;
+    confirmButton.click();
+    await Promise.resolve();
+
+    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Consumidor final' }));
+  });
+
+  it('al confirmar tras editar, se envía el nombre editado como customer_name (spec 054, US3, FR-006)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    editarCliente('María Pérez');
+    campoCliente().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    const diningSessionService = TestBed.inject(DiningSessionService);
+    const createSpy = vi
+      .spyOn(diningSessionService, 'createManualOrder')
+      .mockResolvedValue({ id: 'o9' } as DiningOrder);
+    vi.spyOn(store, 'reload').mockResolvedValue(undefined);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+    ) as HTMLButtonElement;
+    confirmButton.click();
+    await Promise.resolve();
+
+    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'María Pérez' }));
+  });
+
+  it('confirmar con el campo Cliente vacío en modo edición (sin perder el foco) igual envía "Consumidor final" (spec 054, US3, FR-005)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    editarCliente('');
+    // Sin blur: el mesero confirma mientras el campo sigue en modo edición y vacío.
+
+    const diningSessionService = TestBed.inject(DiningSessionService);
+    const createSpy = vi
+      .spyOn(diningSessionService, 'createManualOrder')
+      .mockResolvedValue({ id: 'o9' } as DiningOrder);
+    vi.spyOn(store, 'reload').mockResolvedValue(undefined);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+    ) as HTMLButtonElement;
+    confirmButton.click();
+    await Promise.resolve();
+
+    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Consumidor final' }));
+  });
 });

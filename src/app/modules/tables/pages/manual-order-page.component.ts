@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -143,6 +143,30 @@ import {
               [ngModel]="store.selectedTableId()"
               (ngModelChange)="selectTable($event)"
             />
+
+            <!-- Cliente de la orden: "Consumidor final" por defecto (spec
+                 054), editable con el botón ✏️; nunca se guarda vacío. -->
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
+            <div class="relative">
+              <input
+                type="text"
+                [value]="store.customerName()"
+                [readOnly]="!editandoCliente()"
+                (input)="store.customerName.set($any($event.target).value)"
+                (blur)="onClienteBlur()"
+                class="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                [class.bg-gray-50]="!editandoCliente()"
+                [class.text-gray-500]="!editandoCliente()"
+              />
+              <button
+                type="button"
+                (click)="toggleEditarCliente()"
+                title="Editar cliente"
+                class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ✏️
+              </button>
+            </div>
           </div>
 
           <div class="p-4 border-b border-gray-100 shrink-0">
@@ -227,10 +251,15 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
     })),
   );
 
+  /** Modo de edición del campo "Cliente" (spec 054) — estado puramente de
+   *  interacción de esta pantalla, no vive en el store. */
+  readonly editandoCliente = signal(false);
+
   async ngOnInit(): Promise<void> {
     await this.store.init();
     const tableId = this.route.snapshot.paramMap.get('tableId');
     if (tableId) this.store.selectTable(tableId);
+    this.applyDefaultCustomerName();
   }
 
   ngOnDestroy(): void {
@@ -239,6 +268,23 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   selectTable(id: string): void {
     this.store.selectTable(id);
+    this.applyDefaultCustomerName();
+  }
+
+  toggleEditarCliente(): void {
+    this.editandoCliente.set(true);
+  }
+
+  onClienteBlur(): void {
+    this.editandoCliente.set(false);
+    this.applyDefaultCustomerName();
+  }
+
+  /** Spec 054, FR-005: el nombre de cliente nunca se guarda vacío. */
+  private applyDefaultCustomerName(): void {
+    if (!this.store.customerName().trim()) {
+      this.store.customerName.set('Consumidor final');
+    }
   }
 
   backToTerminal(): void {
@@ -250,6 +296,7 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
   }
 
   async confirm(): Promise<void> {
+    this.applyDefaultCustomerName();
     const ok = await this.store.createManualOrderFromDraft();
     if (ok) {
       await this.router.navigate(['/dashboard/mesas-sesiones']);
