@@ -42,7 +42,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
               @if (store.selectedTableStatusMeta(); as meta) {
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium" [class]="meta.chip">{{ meta.label }}</span>
               }
-              <span class="text-sm text-gray-500">{{ store.customerName() || store.customerPlaceholder() }}</span>
+              <span class="text-sm font-semibold text-gray-700">{{ store.customerName() || store.customerPlaceholder() }}</span>
             </div>
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
           </div>
@@ -99,7 +99,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                         }
                       </div>
                       @for (b of it.bullets; track $index) {
-                        <div class="text-xs text-gray-500 pl-1">• {{ b }}</div>
+                        <div class="text-sm font-medium text-gray-700 pl-1">• {{ b }}</div>
                       }
                       <span class="text-xs text-gray-400">{{ store.fmt(it.unitPrice) }} c/u</span>
                     </div>
@@ -141,7 +141,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                 <span class="font-bold text-gray-900 text-sm">{{ store.fmt(it.subtotal) }}</span>
               </div>
               @for (b of it.bullets; track $index) {
-                <div class="text-xs text-gray-500 pl-1">• {{ b }}</div>
+                <div class="text-sm font-medium text-gray-700 pl-1">• {{ b }}</div>
               }
               <div class="flex items-center justify-between pt-1">
                 @if (it.kind === 'draft') {

@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DinerService } from '../../services/diner.service';
+import { DiningCartService } from '../../services/dining-cart.service';
 import { DiningOrder } from '../../interfaces/dining.interface';
 import { orderStatusClass, orderStatusLabel } from '../../../orders/order-status.util';
 import { IconComponent } from '../../../../shared/icon/icon.component';
@@ -10,6 +11,19 @@ import { CheckoutProgressStore } from './checkout-progress.store';
  * Paso 4 — confirmación del pedido ya creado (spec 034, FR-008). Solo se
  * llega aquí con un pedido que **ya existe**: `checkoutHydrationGuard` es
  * quien decide entrar acá en vez de a la revisión.
+ *
+ * `checkoutHydrationGuard` aterriza aquí en dos casos muy distintos que esta
+ * vista debe distinguir (bug reportado: el segundo caso se veía idéntico al
+ * primero, como si el pedido nuevo se hubiera enviado):
+ * 1. El comensal de verdad acaba de enviar este pedido (o perdió la
+ *    respuesta) — su carrito ya quedó vacío (`submit_cart` lo borra). Se
+ *    muestra el "¡Pedido enviado!" de siempre.
+ *  2. El comensal ya tenía un pedido sin confirmar y agregó productos nuevos
+ *    al carrito antes de volver a "Enviar pedido" — el backend nunca llegó a
+ *    intentar crear ese segundo pedido (`cart/service.py` rechaza una
+ *    segunda orden activa por comensal, spec 024 FR-005); el carrito sigue
+ *    con esos productos. Se muestra una advertencia en su lugar, sin tocar
+ *    el carrito, para que el comensal entienda por qué no se envió.
  */
 @Component({
   selector: 'app-confirmation-step',
@@ -18,9 +32,19 @@ import { CheckoutProgressStore } from './checkout-progress.store';
   template: `
     <div class="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 text-center">
       @if (order(); as o) {
-        <span class="w-14 h-14 text-emerald-600 mb-4"><app-icon name="check-circle" /></span>
-        <h1 class="text-xl font-bold text-gray-900 mb-1">¡Pedido enviado!</h1>
-        <p class="text-sm text-gray-500 mb-4">El personal lo atenderá pronto.</p>
+        @if (cart.isEmpty()) {
+          <span class="w-14 h-14 text-emerald-600 mb-4"><app-icon name="check-circle" /></span>
+          <h1 class="text-xl font-bold text-gray-900 mb-1">¡Pedido enviado!</h1>
+          <p class="text-sm text-gray-500 mb-4">El personal lo atenderá pronto.</p>
+        } @else {
+          <span class="w-14 h-14 text-amber-500 mb-4"><app-icon name="alert-circle" /></span>
+          <h1 class="text-xl font-bold text-gray-900 mb-1">Todavía no se pudo enviar</h1>
+          <p class="text-sm text-gray-500 mb-4">
+            Tienes una cuenta pendiente por verificar — no se puede completar el pedido nuevo hasta
+            que el personal confirme el pago de este. Lo que agregaste sigue guardado en tu
+            carrito.
+          </p>
+        }
 
         <div class="w-full max-w-sm bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left space-y-2">
           <div class="flex items-center justify-between">
@@ -55,6 +79,7 @@ export class ConfirmationStepComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly api = inject(DinerService);
   private readonly progress = inject(CheckoutProgressStore);
+  readonly cart = inject(DiningCartService);
 
   private readonly token = this.route.snapshot.paramMap.get('token') ?? '';
 
