@@ -19,10 +19,10 @@ import {
  * ya existentes en el store, y "Confirmar y Enviar" lo crea
  * (`createManualOrderFromDraft()`, sin cambios) y vuelve a la terminal.
  *
- * Las pestañas "Para Llevar"/"Domicilio" se muestran deshabilitadas: no
- * existe hoy ningún campo de backend para persistir el tipo de orden fuera
- * de "En Mesa" (spec 036, Clarifications/Out of Scope) — mismo criterio ya
- * usado por las pestañas equivalentes de `pos-tables-panel.component.ts`.
+ * "Para Llevar" ya está habilitada (spec 055): comparte `store.orderTypeTab`
+ * con `pos-tables-panel.component.ts` (spec 036), pero esta vista tiene su
+ * propia instancia de store, así que no hay ningún efecto cruzado entre
+ * ambas pantallas. "Domicilio" se mantiene deshabilitada — spec 055, FR-012.
  *
  * Provee su propia instancia de `PosTerminalStore` (no es singleton,
  * `@Injectable()` sin `providedIn`) porque esta vista vive en una ruta
@@ -111,15 +111,25 @@ import {
             <div class="flex gap-1.5 flex-wrap">
               <button
                 type="button"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-indigo-500 bg-indigo-50 text-indigo-700"
+                (click)="setOrderTypeTab('mesas')"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                [class]="
+                  store.orderTypeTab() === 'mesas'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                "
               >
                 🍽️ En Mesa
               </button>
               <button
                 type="button"
-                disabled
-                title="Todavía no disponible — requiere un cambio de backend"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
+                (click)="setOrderTypeTab('para-llevar')"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                [class]="
+                  store.orderTypeTab() === 'para-llevar'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                "
               >
                 🛍️ Para Llevar
               </button>
@@ -133,19 +143,22 @@ import {
               </button>
             </div>
 
-            <!-- Solo las mesas libres se pueden elegir: esta vista arma un
-                 pedido nuevo, no edita una mesa ya ocupada (spec 053: mesas
-                 ocupadas siguen visibles en el select, no seleccionables). -->
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
-            <app-searchable-select
-              placeholder="Buscar mesa…"
-              [options]="mesaOptions()"
-              [ngModel]="store.selectedTableId()"
-              (ngModelChange)="selectTable($event)"
-            />
+            @if (store.orderTypeTab() === 'mesas') {
+              <!-- Solo las mesas libres se pueden elegir: esta vista arma un
+                   pedido nuevo, no edita una mesa ya ocupada (spec 053: mesas
+                   ocupadas siguen visibles en el select, no seleccionables). -->
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
+              <app-searchable-select
+                placeholder="Buscar mesa…"
+                [options]="mesaOptions()"
+                [ngModel]="store.selectedTableId()"
+                (ngModelChange)="selectTable($event)"
+              />
+            }
 
             <!-- Cliente de la orden: "Consumidor final" por defecto (spec
-                 054), editable con el botón ✏️; nunca se guarda vacío. -->
+                 054; también para "Para Llevar", spec 055 FR-010), editable
+                 con el botón ✏️; nunca se guarda vacío. -->
             <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
             <div class="relative">
               <input
@@ -172,7 +185,11 @@ import {
           <div class="p-4 border-b border-gray-100 shrink-0">
             <h3 class="text-base font-bold text-gray-900">Nueva orden</h3>
             <p class="text-xs text-gray-400 mt-0.5">
-              {{ store.selectedTable() ? 'Mesa ' + store.selectedTable()!.number : 'Selecciona una mesa libre' }}
+              @if (store.orderTypeTab() === 'para-llevar') {
+                Para llevar
+              } @else {
+                {{ store.selectedTable() ? 'Mesa ' + store.selectedTable()!.number : 'Selecciona una mesa libre' }}
+              }
             </p>
           </div>
 
@@ -214,7 +231,11 @@ import {
 
             <button
               (click)="confirm()"
-              [disabled]="store.cartEmpty() || store.submitting() || !store.selectedTableId()"
+              [disabled]="
+                store.cartEmpty() ||
+                store.submitting() ||
+                (store.orderTypeTab() === 'mesas' && !store.selectedTableId())
+              "
               class="w-full py-3 mt-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
               {{ store.submitting() ? 'Guardando…' : '➤ Confirmar y Enviar' }}
@@ -268,6 +289,14 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   selectTable(id: string): void {
     this.store.selectTable(id);
+    this.applyDefaultCustomerName();
+  }
+
+  /** Spec 055: cambiar a "Para Llevar" también diligencia "Cliente" por
+   *  defecto — a diferencia de `selectTable()`, aquí no hay ningún cambio de
+   *  mesa que dispare `applyDefaultCustomerName()` por su cuenta. */
+  setOrderTypeTab(tab: 'mesas' | 'para-llevar'): void {
+    this.store.setOrderTypeTab(tab);
     this.applyDefaultCustomerName();
   }
 

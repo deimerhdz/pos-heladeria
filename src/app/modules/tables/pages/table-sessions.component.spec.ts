@@ -187,7 +187,7 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
 
   const pagadaOrder: DiningOrder = {
     id: 'o1',
-    channel: 'counter',
+    channel: 'POS',
     status: 'pagada',
     version: 1,
     dining_table_id: 't1',
@@ -199,7 +199,7 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
 
   const pendienteOrder: DiningOrder = {
     id: 'o2',
-    channel: 'qr',
+    channel: 'QR_MENU',
     status: 'recibida',
     version: 1,
     dining_table_id: 't1',

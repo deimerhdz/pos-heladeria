@@ -199,7 +199,7 @@ describe('PosTablesPanelComponent', () => {
     store.orders.set([
       {
         id: 'o1',
-        channel: 'waiter',
+        channel: 'POS',
         status: 'abierta',
         dining_table_id: 't1',
         created_at: '2026-08-21T10:00:00',

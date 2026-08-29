@@ -133,7 +133,19 @@ describe('ManualOrderPageComponent', () => {
     expect(texto).toContain('Mesa 3');
   });
 
-  it('solo "En Mesa" está habilitada — "Para Llevar"/"Domicilio" son placeholders deshabilitados', async () => {
+  // ── spec 055: "Para Llevar" habilitada, "Domicilio" sigue deshabilitada ───
+
+  function botonTipoOrden(texto: string): HTMLButtonElement {
+    return Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes(texto),
+    ) as HTMLButtonElement;
+  }
+
+  function botonConfirmar(): HTMLButtonElement {
+    return botonTipoOrden('Confirmar y Enviar');
+  }
+
+  it('"Para Llevar" ya no es un placeholder deshabilitado; "Domicilio" sigue siéndolo (FR-008, FR-012)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -141,11 +153,79 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
-    const paraLlevar = buttons.find((b) => b.textContent?.includes('Para Llevar'));
-    const domicilio = buttons.find((b) => b.textContent?.includes('Domicilio'));
-    expect(paraLlevar?.disabled).toBe(true);
-    expect(domicilio?.disabled).toBe(true);
+    expect(botonTipoOrden('Para Llevar').disabled).toBe(false);
+    expect(botonTipoOrden('Domicilio').disabled).toBe(true);
+  });
+
+  it('al seleccionar "Para Llevar", el bloque "Mesas" desaparece (FR-009)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    botonTipoOrden('Para Llevar').click();
+    fixture.detectChanges();
+
+    expect(clienteHeading()).toBeTruthy();
+    const mesasHeading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === 'Mesas',
+    );
+    expect(mesasHeading).toBeUndefined();
+    expect(fixture.nativeElement.querySelector('app-searchable-select')).toBeNull();
+  });
+
+  it('con "Para Llevar" y el carrito no vacío, "Confirmar y Enviar" se habilita sin ninguna mesa seleccionada (FR-009)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    botonTipoOrden('Para Llevar').click();
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    expect(store.selectedTableId()).toBeNull();
+    expect(botonConfirmar().disabled).toBe(false);
+  });
+
+  it('con "En Mesa" y ninguna mesa seleccionada, "Confirmar y Enviar" sigue deshabilitado aunque haya productos (FR-009, no regresión)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    expect(store.orderTypeTab()).toBe('mesas');
+    expect(botonConfirmar().disabled).toBe(true);
+  });
+
+  it('al seleccionar "Para Llevar", el campo Cliente muestra "Consumidor final" por defecto (FR-010)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    botonTipoOrden('Para Llevar').click();
+    fixture.detectChanges();
+
+    expect(campoCliente().value).toBe('Consumidor final');
+    expect(campoCliente().readOnly).toBe(true);
   });
 
   it('el listado de mesas tiene un título propio "Mesas", distinguible del encabezado "Tipo de Orden" (US3, FR-004/FR-005)', async () => {
@@ -301,7 +381,7 @@ describe('ManualOrderPageComponent', () => {
     store.orders.set([
       {
         id: 'o1',
-        channel: 'waiter',
+        channel: 'POS',
         status: 'abierta',
         dining_table_id: 't3',
         created_at: '2026-08-21T10:00:00',

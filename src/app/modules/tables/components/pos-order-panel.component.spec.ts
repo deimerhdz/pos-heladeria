@@ -20,7 +20,7 @@ const API = environment.apiBaseUrl;
 function orderConItemListo(paid: boolean): DiningOrder {
   return {
     id: 'o1',
-    channel: 'waiter',
+    channel: 'POS',
     status: 'abierta',
     version: 1,
     dining_table_id: 't1',
@@ -191,7 +191,7 @@ describe('PosOrderPanelComponent — encabezado de tres estados (spec 029)', () 
   function orderCon(estado: 'pendiente' | 'listo', paid: boolean): DiningOrder {
     return {
       id: 'o1',
-      channel: 'waiter',
+      channel: 'POS',
       status: 'abierta',
       version: 1,
       dining_table_id: 't1',
@@ -245,7 +245,7 @@ describe('PosOrderPanelComponent — encabezado de tres estados (spec 029)', () 
 
 /** Pedido sin ítems, origen mesero, todavía sin cocina — mesa ocupada
  *  "armando pedido" (spec 036, Historia 2). */
-function orderVacio(channel: DiningOrder['channel'] = 'waiter', paid = false): DiningOrder {
+function orderVacio(channel: DiningOrder['channel'] = 'POS', paid = false): DiningOrder {
   return {
     id: 'o1',
     channel,
@@ -364,7 +364,7 @@ describe('PosOrderPanelComponent — sin catálogo para una orden QR de solo lec
     // la muestra (estado 'pedido'), pero es de solo lectura (getSidebarMode).
     return {
       id: 'o1',
-      channel: 'qr',
+      channel: 'QR_MENU',
       status: 'pagada',
       version: 1,
       dining_table_id: 't1',
@@ -412,7 +412,7 @@ function table(partial: Partial<Table>): Table {
 function pendingOrder(id: string, tableId: string): DiningOrder {
   return {
     id,
-    channel: 'qr',
+    channel: 'QR_MENU',
     status: 'recibida',
     dining_table_id: tableId,
     customer_name: null,
@@ -468,7 +468,7 @@ describe('PosOrderPanelComponent — placeholder cuando no hay mesa seleccionada
     store.orders.set([
       {
         id: 'o2',
-        channel: 'waiter',
+        channel: 'POS',
         status: 'abierta',
         dining_table_id: 't1',
         customer_name: null,
@@ -500,7 +500,7 @@ describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
   ): DiningOrder {
     return {
       id,
-      channel: 'waiter',
+      channel: 'POS',
       status: 'abierta',
       dining_table_id: 't1',
       customer_name: customerName,

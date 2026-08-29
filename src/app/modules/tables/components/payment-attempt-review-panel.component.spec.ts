@@ -13,7 +13,7 @@ const API = environment.apiBaseUrl;
 function order(id = 'o1', items: DiningOrderItem[] = []): DiningOrder {
   return {
     id,
-    channel: 'qr',
+    channel: 'QR_MENU',
     status: 'recibida',
     created_at: '2026-08-18T23:09:00',
     items,

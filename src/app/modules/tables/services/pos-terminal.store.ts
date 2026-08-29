@@ -159,7 +159,7 @@ export function deriveTableStatus(
   // pedido de mostrador `hold_for_payment` también vive en `recibida` mientras
   // se arma, y ese no es un pago por confirmar — es el cajero armando su
   // propio pedido, y mostrarlo como "Por confirmar" sería una falsa alarma.
-  if (orders.some((o) => o.status === 'recibida' && o.channel === 'qr')) return 'por_confirmar';
+  if (orders.some((o) => o.status === 'recibida' && o.channel === 'QR_MENU')) return 'por_confirmar';
   if (orders.some((o) => o.status === 'bloqueada')) return 'pago_pendiente';
 
   const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
@@ -422,14 +422,14 @@ export class PosTerminalStore {
    * bloque de validación de pagos.
    */
   readonly pendingOrders = computed(() =>
-    this.orders().filter((o) => o.status === 'recibida' && o.channel === 'qr'),
+    this.orders().filter((o) => o.status === 'recibida' && o.channel === 'QR_MENU'),
   );
 
   /**
    * Órdenes activas por mesa: ni terminales ni QR sin confirmar. Un pedido de
    * mostrador `hold_for_payment` también vive en `'recibida'` mientras se arma
    * (ver `pendingOrders` arriba) pero SÍ es editable/seleccionable — solo el
-   * canal `qr` necesita `confirmOrder()` antes de entrar aquí. Sin esto,
+   * canal `QR_MENU` necesita `confirmOrder()` antes de entrar aquí. Sin esto,
    * `selectTable()` no auto-seleccionaba un pedido de mostrador recién creado
    * tras recargar la página (el store se recrea y pierde la selección en
    * memoria de `createManualOrderFromDraft()`).
@@ -447,7 +447,7 @@ export class PosTerminalStore {
    */
   private readonly activeOrders = computed(() =>
     this.orders().filter(
-      (o) => o.status !== 'cancelada' && (o.status !== 'recibida' || o.channel !== 'qr'),
+      (o) => o.status !== 'cancelada' && (o.status !== 'recibida' || o.channel !== 'QR_MENU'),
     ),
   );
 
@@ -1054,8 +1054,11 @@ export class PosTerminalStore {
    * inventario hasta que se cobre con `checkoutAndSend()`.
    */
   async createManualOrderFromDraft(): Promise<boolean> {
+    // spec 055: "Para Llevar" no exige mesa (FR-009) — solo "En Mesa" (tab
+    // 'mesas') sigue exigiéndola.
+    const esParaLlevar = this.orderTypeTab() === 'para-llevar';
     const tableId = this.selectedTableId();
-    if (!tableId || this.draftLines().length === 0) return false;
+    if ((!esParaLlevar && !tableId) || this.draftLines().length === 0) return false;
     this.submitting.set(true);
     this.error.set(null);
     try {
@@ -1070,8 +1073,9 @@ export class PosTerminalStore {
             },
       );
       const order = await this.api.createManualOrder({
-        channel: 'counter',
-        dining_table_id: tableId,
+        channel: 'POS',
+        order_type: esParaLlevar ? 'TAKEAWAY' : 'DINE_IN',
+        dining_table_id: esParaLlevar ? null : tableId,
         customer_name: this.customerName().trim() || null,
         items,
         hold_for_payment: true,

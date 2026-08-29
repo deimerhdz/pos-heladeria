@@ -24,7 +24,7 @@ const API = environment.apiBaseUrl;
 function manualOrder(): DiningOrder {
   return {
     id: 'o1',
-    channel: 'counter',
+    channel: 'POS',
     status: 'recibida',
     version: 1,
     dining_table_id: 't1',
@@ -202,7 +202,7 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       split: [],
     });
     // Pedido QR 'recibida' en la misma mesa: pone a centralState() en 'validar-pago'.
-    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'qr', status: 'recibida' }]);
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'QR_MENU', status: 'recibida' }]);
     fixture.detectChanges();
 
     const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
@@ -219,7 +219,7 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       order_ids: ['o1'],
       split: [],
     });
-    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'qr', status: 'recibida' }]);
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'QR_MENU', status: 'recibida' }]);
     fixture.detectChanges();
     expect(
       Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
@@ -313,7 +313,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
   function abiertaOrder(estado: 'listo' | 'pendiente' = 'listo'): DiningOrder {
     return {
       id: 'o1',
-      channel: 'waiter',
+      channel: 'POS',
       status: 'abierta',
       version: 1,
       dining_table_id: 't1',
