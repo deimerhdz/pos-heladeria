@@ -1076,6 +1076,104 @@ describe('PosTerminalStore.createManualOrderFromDraft', () => {
 
     expect(await promise).toBe(true);
   });
+
+  // ── spec 056: "Domicilio" no exige mesa, exige cliente/dirección/valor ───
+
+  it('con "domicilios" y sin cliente/dirección/valor del domicilio, no crea nada (FR-007, segunda capa de protección)', async () => {
+    store.setOrderTypeTab('domicilios');
+    const ok = await store.createManualOrderFromDraft();
+    expect(ok).toBe(false);
+  });
+
+  it('con "domicilios" y los tres campos obligatorios, sin mesa, envía order_type DELIVERY con los datos de entrega (FR-010)', async () => {
+    store.setOrderTypeTab('domicilios');
+    store.customerName.set('Ana Torres');
+    store.deliveryAddress.set('Cra 45 #12-30, apto 301');
+    store.deliveryPhone.set('3011234567');
+    store.deliveryFee.set(6000);
+    const promise = store.createManualOrderFromDraft();
+
+    const req = http.expectOne(`${API}/orders`);
+    expect(req.request.body).toEqual(
+      expect.objectContaining({
+        channel: 'POS',
+        order_type: 'DELIVERY',
+        dining_table_id: null,
+        customer_name: 'Ana Torres',
+        delivery_address: 'Cra 45 #12-30, apto 301',
+        delivery_phone: '3011234567',
+        delivery_fee: 6000,
+      }),
+    );
+    req.flush({ id: 'o1', channel: 'POS', order_type: 'DELIVERY', status: 'recibida', created_at: '2026-08-29' });
+
+    expect(await promise).toBe(true);
+  });
+
+  it('con "domicilios" y teléfono vacío, envía delivery_phone null (FR-008)', async () => {
+    store.setOrderTypeTab('domicilios');
+    store.customerName.set('Ana Torres');
+    store.deliveryAddress.set('Cra 45 #12-30');
+    store.deliveryFee.set(0);
+    const promise = store.createManualOrderFromDraft();
+
+    const req = http.expectOne(`${API}/orders`);
+    expect(req.request.body).toEqual(
+      expect.objectContaining({ delivery_phone: null, delivery_fee: 0 }),
+    );
+    req.flush({ id: 'o1', channel: 'POS', order_type: 'DELIVERY', status: 'recibida', created_at: '2026-08-29' });
+
+    expect(await promise).toBe(true);
+  });
+});
+
+// ── spec 056: totals() suma deliveryFee solo con "domicilios" ──────────────
+describe('PosTerminalStore.totals — deliveryFee (spec 056, FR-009/FR-012)', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+  });
+
+  it('con "domicilios" y un valor de domicilio, lo suma al total', () => {
+    store.setOrderTypeTab('domicilios');
+    store.deliveryFee.set(6000);
+    expect(store.totals()).toEqual(
+      expect.objectContaining({ subtotal: 5000, deliveryFee: 6000, total: 11000 }),
+    );
+  });
+
+  it('con "domicilios" y ningún valor escrito (null), no suma nada', () => {
+    store.setOrderTypeTab('domicilios');
+    expect(store.totals()).toEqual(
+      expect.objectContaining({ deliveryFee: 0, total: 5000 }),
+    );
+  });
+
+  it('con "mesas" o "para-llevar", ignora deliveryFee aunque tenga un valor residual (FR-012, no afecta otros tipos de orden)', () => {
+    store.deliveryFee.set(6000);
+    expect(store.totals()).toEqual(expect.objectContaining({ deliveryFee: 0, total: 5000 }));
+
+    store.setOrderTypeTab('para-llevar');
+    expect(store.totals()).toEqual(expect.objectContaining({ deliveryFee: 0, total: 5000 }));
+  });
 });
 
 // ── spec 036, FR-007: buscador por nombre del catálogo embebido ────────────

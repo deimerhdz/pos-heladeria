@@ -21,6 +21,16 @@ const bill: SessionBill = {
   split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' }],
 };
 
+/** Ítems agregados por el mesero sin asignarlos a ningún comensal
+ *  (`display_label: null`) — spec 057, línea "Sin asignar (mesero)". */
+const billMesero: SessionBill = {
+  table_session_id: 'ts4',
+  dining_table_id: 't4',
+  total: '7500',
+  order_ids: ['o4'],
+  split: [{ participant_id: null, display_label: null, subtotal: '7500', items: [], discount: '0' }],
+};
+
 /** Dos comensales con consumo: habilita el modo dividido. */
 const splitBill: SessionBill = {
   table_session_id: 'ts2',
@@ -83,8 +93,12 @@ describe('SessionBillPanelComponent', () => {
   const selects = (): HTMLSelectElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('select'));
 
+  // `app-money-input` (spec 035) renderiza su <input> como
+  // `type="text" inputmode="decimal"` — no `type="number"` (selector
+  // obsoleto de antes de que ese componente reemplazara el campo de
+  // importe, spec 057 research.md Decisión 5).
   const amounts = (): HTMLInputElement[] =>
-    Array.from(fixture.nativeElement.querySelectorAll('input[type="number"]'));
+    Array.from(fixture.nativeElement.querySelectorAll('input[inputmode="decimal"]'));
 
   const combineBox = (): HTMLInputElement | null =>
     fixture.nativeElement.querySelector('input[type="checkbox"]');
@@ -147,7 +161,7 @@ describe('SessionBillPanelComponent', () => {
 
     it('no muestra el selector de método de pago', () => {
       expect(fixture.nativeElement.querySelectorAll('select').length).toBe(0);
-      expect(fixture.nativeElement.querySelectorAll('input[type="number"]').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('input[inputmode="decimal"]').length).toBe(0);
     });
 
     it('sigue mostrando el desglose de la cuenta (no se pierde información)', () => {
@@ -279,8 +293,55 @@ describe('SessionBillPanelComponent', () => {
   it('precarga el importe justo al elegir método', async () => {
     await chooseMethod('pm1');
 
-    expect(amounts()[0].value).toBe('12000');
+    // `app-money-input` agrupa la parte entera con Intl.NumberFormat('es-CO')
+    // (money-input.component.ts:119-125) — "12.000", no "12000" (el valor
+    // numérico real, sin formatear, es el que expone `unifiedPayment().amount`).
+    expect(amounts()[0].value).toBe('12.000');
     expect(panel.unifiedPayment().amount).toBe(12000);
+  });
+
+  // ── spec 057: importe fijo para métodos no efectivo ───────────────────────
+
+  it('con un método no efectivo, el importe queda deshabilitado en el total exacto y el botón de cobrar se habilita solo (FR-001, SC-002)', async () => {
+    await chooseMethod('pm2'); // Tarjeta, is_cash: false
+
+    expect(amounts()[0].disabled).toBe(true);
+    expect(amounts()[0].value).toBe('12.000');
+    expect(panel.ready()).toBe(true);
+    expect(chargeButton().disabled).toBe(false);
+  });
+
+  it('al volver de un método no efectivo a efectivo, el importe vuelve a ser editable (FR-004, no regresión)', async () => {
+    await chooseMethod('pm2');
+    expect(amounts()[0].disabled).toBe(true);
+
+    await chooseMethod('pm1'); // Efectivo
+    expect(amounts()[0].disabled).toBe(false);
+  });
+
+  // ── spec 057: nombre de cliente en vez de "Sin asignar (mesero)" ─────────
+
+  it('con customerName no vacío, la línea sin comensal asignado muestra el nombre del cliente (FR-005)', () => {
+    fixture.componentRef.setInput('customerName', 'Ana Torres');
+    setBill(billMesero);
+
+    expect(fixture.nativeElement.textContent).toContain('Ana Torres');
+    expect(fixture.nativeElement.textContent).not.toContain('Sin asignar (mesero)');
+  });
+
+  it('con customerName vacío, la línea sin comensal asignado sigue mostrando "Sin asignar (mesero)" (FR-006, no regresión)', () => {
+    fixture.componentRef.setInput('customerName', '');
+    setBill(billMesero);
+
+    expect(fixture.nativeElement.textContent).toContain('Sin asignar (mesero)');
+  });
+
+  it('una línea con comensal identificado no cambia, aunque customerName tenga valor (FR-007)', () => {
+    fixture.componentRef.setInput('customerName', 'Carlos Ruiz');
+    setBill(bill); // línea con display_label: 'Ana' (comensal real, no el mesero)
+
+    expect(fixture.nativeElement.textContent).toContain('Ana');
+    expect(fixture.nativeElement.textContent).not.toContain('Carlos Ruiz');
   });
 
   it('cobra enviando el efectivo recibido, no el total', async () => {

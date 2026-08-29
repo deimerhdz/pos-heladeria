@@ -145,7 +145,7 @@ describe('ManualOrderPageComponent', () => {
     return botonTipoOrden('Confirmar y Enviar');
   }
 
-  it('"Para Llevar" ya no es un placeholder deshabilitado; "Domicilio" sigue siéndolo (FR-008, FR-012)', async () => {
+  it('"Para Llevar" y "Domicilio" ya no son placeholders deshabilitados (spec 055 FR-008, spec 056 FR-001)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -154,7 +154,7 @@ describe('ManualOrderPageComponent', () => {
     fixture.detectChanges();
 
     expect(botonTipoOrden('Para Llevar').disabled).toBe(false);
-    expect(botonTipoOrden('Domicilio').disabled).toBe(true);
+    expect(botonTipoOrden('Domicilio').disabled).toBe(false);
   });
 
   it('al seleccionar "Para Llevar", el bloque "Mesas" desaparece (FR-009)', async () => {
@@ -226,6 +226,142 @@ describe('ManualOrderPageComponent', () => {
 
     expect(campoCliente().value).toBe('Consumidor final');
     expect(campoCliente().readOnly).toBe(true);
+  });
+
+  // ── spec 056: "Domicilio" habilitada con sus propios campos ──────────────
+
+  /** Los campos de "Domicilio" (a diferencia de "Cliente" en Mesa/Para
+   *  Llevar) no están envueltos en un `<div class="relative">`: el input es
+   *  el `nextElementSibling` directo del `<h3>` de su etiqueta. */
+  function campoDomicilio(etiqueta: string): HTMLInputElement {
+    const heading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === etiqueta,
+    ) as HTMLElement;
+    return heading.nextElementSibling as HTMLInputElement;
+  }
+
+  function seleccionarDomicilio(): void {
+    botonTipoOrden('Domicilio').click();
+    fixture.detectChanges();
+  }
+
+  it('al seleccionar "Domicilio", el bloque "Mesas" desaparece y no exige mesa (FR-002)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    seleccionarDomicilio();
+
+    const mesasHeading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === 'Mesas',
+    );
+    expect(mesasHeading).toBeUndefined();
+    expect(fixture.nativeElement.querySelector('app-searchable-select')).toBeNull();
+  });
+
+  it('al seleccionar "Domicilio", muestra Cliente/Dirección/Teléfono/Valor del domicilio vacíos, sin readOnly (FR-003, FR-004, FR-005, FR-006)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    seleccionarDomicilio();
+
+    expect(campoDomicilio('Cliente').value).toBe('');
+    expect(campoDomicilio('Cliente').readOnly).toBe(false);
+    expect(campoDomicilio('Dirección').value).toBe('');
+    expect(campoDomicilio('Teléfono').value).toBe('');
+    expect(campoDomicilio('Valor del domicilio').value).toBe('');
+  });
+
+  it('con "Domicilio", "Confirmar y Enviar" está deshabilitado si falta Cliente, Dirección, o el valor del domicilio (FR-007)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    seleccionarDomicilio();
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    // Sin nada diligenciado: deshabilitado.
+    expect(botonConfirmar().disabled).toBe(true);
+
+    store.customerName.set('Ana Torres');
+    fixture.detectChanges();
+    expect(botonConfirmar().disabled).toBe(true); // falta dirección y valor
+
+    store.deliveryAddress.set('Cra 45 #12-30');
+    fixture.detectChanges();
+    expect(botonConfirmar().disabled).toBe(true); // falta valor del domicilio
+
+    store.deliveryFee.set(6000);
+    fixture.detectChanges();
+    expect(botonConfirmar().disabled).toBe(false); // teléfono nunca es obligatorio (FR-008)
+  });
+
+  it('con "Domicilio" y los tres campos obligatorios diligenciados, el valor del domicilio se refleja en el total (FR-009)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    seleccionarDomicilio();
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    store.customerName.set('Ana Torres');
+    store.deliveryAddress.set('Cra 45 #12-30');
+    store.deliveryFee.set(6000);
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Domicilio');
+    expect(store.totals().total).toBe(11000);
+  });
+
+  it('"Domicilio" crea el pedido con order_type DELIVERY y los datos de entrega (FR-010)', async () => {
+    createComponent(null);
+    fixture.detectChanges();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    seleccionarDomicilio();
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    store.customerName.set('Ana Torres');
+    store.deliveryAddress.set('Cra 45 #12-30');
+    store.deliveryFee.set(6000);
+    fixture.detectChanges();
+
+    const createSpy = vi.spyOn(store, 'createManualOrderFromDraft').mockResolvedValue(true);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    botonConfirmar().click();
+    await Promise.resolve();
+
+    expect(createSpy).toHaveBeenCalled();
+    // El "Cliente" de Domicilio no debe quedar sobrescrito por el default de
+    // "Consumidor final" (research.md Decisión 8, applyDefaultCustomerName).
+    expect(store.customerName()).toBe('Ana Torres');
   });
 
   it('el listado de mesas tiene un título propio "Mesas", distinguible del encabezado "Tipo de Orden" (US3, FR-004/FR-005)', async () => {

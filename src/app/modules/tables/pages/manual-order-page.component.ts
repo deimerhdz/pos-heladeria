@@ -135,9 +135,13 @@ import {
               </button>
               <button
                 type="button"
-                disabled
-                title="Todavía no disponible — requiere un cambio de backend"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
+                (click)="setOrderTypeTab('domicilios')"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                [class]="
+                  store.orderTypeTab() === 'domicilios'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                "
               >
                 🛵 Domicilio
               </button>
@@ -156,30 +160,75 @@ import {
               />
             }
 
-            <!-- Cliente de la orden: "Consumidor final" por defecto (spec
-                 054; también para "Para Llevar", spec 055 FR-010), editable
-                 con el botón ✏️; nunca se guarda vacío. -->
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
-            <div class="relative">
+            @if (store.orderTypeTab() !== 'domicilios') {
+              <!-- Cliente de la orden: "Consumidor final" por defecto (spec
+                   054; también para "Para Llevar", spec 055 FR-010), editable
+                   con el botón ✏️; nunca se guarda vacío. -->
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
+              <div class="relative">
+                <input
+                  type="text"
+                  [value]="store.customerName()"
+                  [readOnly]="!editandoCliente()"
+                  (input)="store.customerName.set($any($event.target).value)"
+                  (blur)="onClienteBlur()"
+                  class="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  [class.bg-gray-50]="!editandoCliente()"
+                  [class.text-gray-500]="!editandoCliente()"
+                />
+                <button
+                  type="button"
+                  (click)="toggleEditarCliente()"
+                  title="Editar cliente"
+                  class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  ✏️
+                </button>
+              </div>
+            } @else {
+              <!-- "Domicilio" (spec 056): a diferencia de "En Mesa"/"Para
+                   Llevar", el cliente NO tiene valor por defecto — campo
+                   simple siempre editable, sin el toggle de solo-lectura
+                   (no hay nada que proteger, FR-003). Dirección y valor del
+                   domicilio son obligatorios (FR-004, FR-006); teléfono
+                   siempre opcional (FR-008). -->
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
               <input
                 type="text"
                 [value]="store.customerName()"
-                [readOnly]="!editandoCliente()"
                 (input)="store.customerName.set($any($event.target).value)"
-                (blur)="onClienteBlur()"
-                class="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                [class.bg-gray-50]="!editandoCliente()"
-                [class.text-gray-500]="!editandoCliente()"
+                placeholder="Nombre del cliente"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
-              <button
-                type="button"
-                (click)="toggleEditarCliente()"
-                title="Editar cliente"
-                class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                ✏️
-              </button>
-            </div>
+
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Dirección</h3>
+              <input
+                type="text"
+                [value]="store.deliveryAddress()"
+                (input)="store.deliveryAddress.set($any($event.target).value)"
+                placeholder="Dirección de entrega"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Teléfono</h3>
+              <input
+                type="text"
+                [value]="store.deliveryPhone()"
+                (input)="store.deliveryPhone.set($any($event.target).value)"
+                placeholder="Opcional"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Valor del domicilio</h3>
+              <input
+                type="number"
+                min="0"
+                [value]="store.deliveryFee()"
+                (input)="onDeliveryFeeInput($any($event.target).value)"
+                placeholder="$ 0"
+                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            }
           </div>
 
           <div class="p-4 border-b border-gray-100 shrink-0">
@@ -187,6 +236,8 @@ import {
             <p class="text-xs text-gray-400 mt-0.5">
               @if (store.orderTypeTab() === 'para-llevar') {
                 Para llevar
+              } @else if (store.orderTypeTab() === 'domicilios') {
+                Domicilio
               } @else {
                 {{ store.selectedTable() ? 'Mesa ' + store.selectedTable()!.number : 'Selecciona una mesa libre' }}
               }
@@ -226,6 +277,11 @@ import {
                    sin campo editable, sin excepción. -->
               <span>Impuesto</span><span>{{ store.fmt(0) }}</span>
             </div>
+            @if (store.orderTypeTab() === 'domicilios') {
+              <!-- spec 056, FR-009: el valor del domicilio se refleja de
+                   inmediato en el total mostrado en pantalla. -->
+              <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(tot.deliveryFee) }}</span></div>
+            }
             <div class="border-t border-gray-200 my-1"></div>
             <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
@@ -234,7 +290,10 @@ import {
               [disabled]="
                 store.cartEmpty() ||
                 store.submitting() ||
-                (store.orderTypeTab() === 'mesas' && !store.selectedTableId())
+                (store.orderTypeTab() === 'mesas' && !store.selectedTableId()) ||
+                (store.orderTypeTab() === 'domicilios' && (
+                  !store.customerName().trim() || !store.deliveryAddress().trim() || store.deliveryFee() == null
+                ))
               "
               class="w-full py-3 mt-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
             >
@@ -294,10 +353,17 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   /** Spec 055: cambiar a "Para Llevar" también diligencia "Cliente" por
    *  defecto — a diferencia de `selectTable()`, aquí no hay ningún cambio de
-   *  mesa que dispare `applyDefaultCustomerName()` por su cuenta. */
-  setOrderTypeTab(tab: 'mesas' | 'para-llevar'): void {
+   *  mesa que dispare `applyDefaultCustomerName()` por su cuenta. "Domicilio"
+   *  (spec 056, FR-003) hace lo opuesto: siempre limpia "Cliente" al entrar,
+   *  para que un "Consumidor final" heredado de "En Mesa"/"Para Llevar" no
+   *  quede colado como si fuera un valor válido ya diligenciado. */
+  setOrderTypeTab(tab: 'mesas' | 'para-llevar' | 'domicilios'): void {
     this.store.setOrderTypeTab(tab);
-    this.applyDefaultCustomerName();
+    if (tab === 'domicilios') {
+      this.store.customerName.set('');
+    } else {
+      this.applyDefaultCustomerName();
+    }
   }
 
   toggleEditarCliente(): void {
@@ -309,8 +375,12 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
     this.applyDefaultCustomerName();
   }
 
-  /** Spec 054, FR-005: el nombre de cliente nunca se guarda vacío. */
+  /** Spec 054, FR-005: el nombre de cliente nunca se guarda vacío — EXCEPTO
+   *  en "Domicilio" (spec 056, FR-003), donde el campo es obligatorio y sin
+   *  ningún valor por defecto: sin este corte, el propio `confirm()` lo
+   *  sobrescribiría en silencio justo antes de enviar (research.md D8). */
   private applyDefaultCustomerName(): void {
+    if (this.store.orderTypeTab() === 'domicilios') return;
     if (!this.store.customerName().trim()) {
       this.store.customerName.set('Consumidor final');
     }
@@ -322,6 +392,12 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   minPrice(p: { variants: { price: number }[] }): number {
     return p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : 0;
+  }
+
+  /** spec 056: `store.deliveryFee` nunca tiene valor por defecto — un campo
+   *  vacío queda `null` (faltante), no `0` implícito (FR-006, Edge Cases). */
+  onDeliveryFeeInput(value: string): void {
+    this.store.deliveryFee.set(value === '' ? null : Number(value));
   }
 
   async confirm(): Promise<void> {

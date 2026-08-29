@@ -32,11 +32,15 @@ import {
  *   error que el cajero no sabía interpretar).
  * - `'terminal-pos'` (canal `counter`/`waiter`, o mesa libre sin pedido
  *   todavía): panel editable — carrito + método de pago + nombre de
- *   facturación + un único botón "Cobrar, Facturar y Enviar a Cocina"
- *   (`POST /orders/{id}/checkout-and-send`, T024/T025). Es un pedido, no una
- *   sesión: no pasa por `TableSessionService.close()`.
+ *   facturación + un único botón "Cobrar" (`POST /orders/{id}/checkout-and-
+ *   send`, T024/T025). Es un pedido, no una sesión: no pasa por
+ *   `TableSessionService.close()`.
  *
- * "Imprimir Pre-cuenta" (T032) y "Liberar Mesa" (T035) se ven en ambos modos.
+ * "Imprimir Pre-cuenta" (T032) se ve en ambos modos. "Imprimir Factura" y
+ * "Liberar Mesa" (T035) también, salvo mientras el pedido de `terminal-pos`
+ * sigue con el cobro pendiente (`pendingCheckout()`, spec 058, FR-007) — son
+ * acciones post-cobro, no tiene sentido ofrecerlas antes de que el pedido se
+ * facture.
  */
 @Component({
   selector: 'app-pos-checkout-panel',
@@ -143,13 +147,27 @@ import {
                 <label class="block text-sm font-medium text-gray-600 mb-1"
                   >Facturar a nombre de</label
                 >
-                <input
-                  type="text"
-                  [value]="store.billingCustomerName()"
-                  (input)="store.billingCustomerName.set($any($event.target).value)"
-                  placeholder="Consumidor Final"
-                  class="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                />
+                <div class="relative">
+                  <input
+                    type="text"
+                    [value]="store.billingCustomerName()"
+                    [readOnly]="!editandoFacturacion()"
+                    (input)="store.billingCustomerName.set($any($event.target).value)"
+                    (blur)="onFacturacionBlur()"
+                    placeholder="Consumidor Final"
+                    class="w-full min-h-11 px-3 py-2 pr-9 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    [class.bg-gray-50]="!editandoFacturacion()"
+                    [class.text-gray-500]="!editandoFacturacion()"
+                  />
+                  <button
+                    type="button"
+                    (click)="toggleEditarFacturacion()"
+                    title="Editar nombre de facturación"
+                    class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    ✏️
+                  </button>
+                </div>
               </div>
 
               <app-payment-input
@@ -169,9 +187,7 @@ import {
                 [disabled]="store.checkoutSubmitting() || issue() !== null"
                 class="w-full min-h-11 py-2.5 mt-3 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {{
-                  store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar, Facturar y Enviar a Cocina'
-                }}
+                {{ store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar' }}
               </button>
 
               <!-- Spec 029, hotfix #4: alternativa a cobrar, sin venta ni movimiento de caja. -->
@@ -188,42 +204,50 @@ import {
       </div>
 
       @if (store.sessionBill(); as bill) {
-        <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
-          @if (store.selectedOrder(); as order) {
-            <!--
-              FR-001/FR-002 (spec 029, Historia 4): única acción de impresión
-              tras el pago — reimprime la factura de CUALQUIER pedido ya
-              facturado, sea QR o de mostrador, sin importar quién lo cobró
-              ni en qué pestaña (con lookup al backend — ver
-              PosTerminalStore.printOrderInvoice). Reemplaza el botón del
-              diálogo de éxito para el caso de un solo comprobante, que
-              duplicaba esta misma acción.
-            -->
-            <button
-              (click)="store.printOrderInvoice(order.id)"
-              class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              🧾 Imprimir Factura
-            </button>
-          }
-          @if (store.centralState() !== 'validar-pago') {
-            <!--
-              Spec 046, FR-001/FR-002: mientras la mesa tenga al menos un pago
-              QR pendiente de confirmar (centralState() === 'validar-pago',
-              mismo computed que decide el panel central), "Liberar Mesa" no
-              se muestra -- evita liberar la mesa antes de validar que el
-              dinero/comprobante corresponde. Reaparece solo (reactivo) en
-              cuanto se confirma/aprueba el pago, sin código adicional.
-            -->
-            <button
-              (click)="store.releaseTable()"
-              [disabled]="store.submitting()"
-              class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
-            >
-              🔓 Liberar Mesa
-            </button>
-          }
-        </div>
+        <!--
+          Spec 058, FR-007: "Imprimir Factura" y "Liberar Mesa" son acciones
+          post-cobro -- no se muestran mientras este mismo pedido sigue en la
+          rama de cobro pendiente (pendingCheckout()). Reaparecen en los demás
+          modos del panel (resumen QR, showSessionCharge) sin cambios (FR-008).
+        -->
+        @if (!pendingCheckout()) {
+          <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
+            @if (store.selectedOrder(); as order) {
+              <!--
+                FR-001/FR-002 (spec 029, Historia 4): única acción de impresión
+                tras el pago — reimprime la factura de CUALQUIER pedido ya
+                facturado, sea QR o de mostrador, sin importar quién lo cobró
+                ni en qué pestaña (con lookup al backend — ver
+                PosTerminalStore.printOrderInvoice). Reemplaza el botón del
+                diálogo de éxito para el caso de un solo comprobante, que
+                duplicaba esta misma acción.
+              -->
+              <button
+                (click)="store.printOrderInvoice(order.id)"
+                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                🧾 Imprimir Factura
+              </button>
+            }
+            @if (store.centralState() !== 'validar-pago') {
+              <!--
+                Spec 046, FR-001/FR-002: mientras la mesa tenga al menos un pago
+                QR pendiente de confirmar (centralState() === 'validar-pago',
+                mismo computed que decide el panel central), "Liberar Mesa" no
+                se muestra -- evita liberar la mesa antes de validar que el
+                dinero/comprobante corresponde. Reaparece solo (reactivo) en
+                cuanto se confirma/aprueba el pago, sin código adicional.
+              -->
+              <button
+                (click)="store.releaseTable()"
+                [disabled]="store.submitting()"
+                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+              >
+                🔓 Liberar Mesa
+              </button>
+            }
+          </div>
+        }
       }
     </div>
   `,
@@ -269,8 +293,29 @@ export class PosCheckoutPanelComponent {
     return !!order && order.status !== 'recibida';
   });
 
+  /** Spec 058, FR-007: mismo estado que decide la rama "Cobrar pedido"/"Pedido de
+   *  mostrador" (única rama con un pedido seleccionado cuyo cobro aún no se ha
+   *  efectuado) — usado para ocultar el footer "Imprimir Factura"/"Liberar Mesa",
+   *  acciones que solo aplican después del cobro. */
+  readonly pendingCheckout = computed(
+    () => this.sidebarMode() === 'terminal-pos' && !!this.store.selectedOrder() && !this.showSessionCharge(),
+  );
+
   /** Cómo paga el cajero el pedido de mostrador que se está cobrando (T024/T025). */
   readonly paymentDraft = signal<PaymentDraft>(emptyPaymentDraft());
+
+  /** Spec 058: modo edición de "Facturar a nombre de" — solo lectura por defecto, mismo
+   *  patrón que `editandoCliente` en `manual-order-page.component.ts` (spec 054). Estado
+   *  puramente de interacción de este componente, no vive en el store. */
+  readonly editandoFacturacion = signal(false);
+
+  toggleEditarFacturacion(): void {
+    this.editandoFacturacion.set(true);
+  }
+
+  onFacturacionBlur(): void {
+    this.editandoFacturacion.set(false);
+  }
 
   readonly issue = computed(() =>
     paymentIssue(this.paymentDraft(), this.store.totals().total, this.store.paymentMethodsAvailable()),
@@ -282,6 +327,7 @@ export class PosCheckoutPanelComponent {
     effect(() => {
       this.store.selectedOrderId();
       this.paymentDraft.set(emptyPaymentDraft());
+      this.editandoFacturacion.set(false);
     });
   }
 

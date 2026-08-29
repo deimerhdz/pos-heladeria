@@ -52,6 +52,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
         <app-money-input
           [ngModel]="draft().amount"
           (ngModelChange)="setAmount($event ?? 0)"
+          [disabled]="!isCash(draft().methodId)"
           sizeClass="min-h-11 px-3 py-2 rounded-lg text-base"
         />
       }

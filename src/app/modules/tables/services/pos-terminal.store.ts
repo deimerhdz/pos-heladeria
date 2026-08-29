@@ -312,6 +312,11 @@ export class PosTerminalStore {
   readonly selectedOrderId = signal<string | null>(null);
   readonly draftLines = signal<DraftLine[]>([]);
   readonly customerName = signal('');
+  /** Datos de entrega del borrador "Domicilio" (spec 056) — solo relevantes
+   *  con `orderTypeTab() === 'domicilios'`. Sin valor por defecto. */
+  readonly deliveryAddress = signal('');
+  readonly deliveryPhone = signal('');
+  readonly deliveryFee = signal<number | null>(null);
 
   readonly search = signal('');
   readonly filter = signal<TableFilter>('todas');
@@ -796,8 +801,12 @@ export class PosTerminalStore {
     // `cartView()` (`discountedUnitPrice`), no como un monto aparte aquí.
     const discount = 0;
     const tax = 0; // Impuestos deprecado: se guarda/calcula siempre en 0.
-    const total = Math.max(0, Math.round(subtotal - discount + tax));
-    return { subtotal, discount, tax, total };
+    // Spec 056, FR-009/FR-012: el valor del domicilio se suma al total en
+    // pantalla solo con "Domicilio" seleccionado — 0 para cualquier otro
+    // tipo de orden, sin afectar su total.
+    const deliveryFee = this.orderTypeTab() === 'domicilios' ? (this.deliveryFee() ?? 0) : 0;
+    const total = Math.max(0, Math.round(subtotal - discount + tax + deliveryFee));
+    return { subtotal, discount, tax, deliveryFee, total };
   });
 
   /** ¿Todos los ítems persistidos están listos para cobrar? */
@@ -1055,10 +1064,16 @@ export class PosTerminalStore {
    */
   async createManualOrderFromDraft(): Promise<boolean> {
     // spec 055: "Para Llevar" no exige mesa (FR-009) — solo "En Mesa" (tab
-    // 'mesas') sigue exigiéndola.
+    // 'mesas') sigue exigiéndola. spec 056: "Domicilio" tampoco exige mesa,
+    // pero sí exige cliente/dirección/valor del domicilio (FR-007) — segunda
+    // capa de protección, además del botón deshabilitado del componente.
     const esParaLlevar = this.orderTypeTab() === 'para-llevar';
+    const esDomicilio = this.orderTypeTab() === 'domicilios';
     const tableId = this.selectedTableId();
-    if ((!esParaLlevar && !tableId) || this.draftLines().length === 0) return false;
+    if ((!esParaLlevar && !esDomicilio && !tableId) || this.draftLines().length === 0) return false;
+    if (esDomicilio && (
+      !this.customerName().trim() || !this.deliveryAddress().trim() || this.deliveryFee() == null
+    )) return false;
     this.submitting.set(true);
     this.error.set(null);
     try {
@@ -1074,9 +1089,12 @@ export class PosTerminalStore {
       );
       const order = await this.api.createManualOrder({
         channel: 'POS',
-        order_type: esParaLlevar ? 'TAKEAWAY' : 'DINE_IN',
-        dining_table_id: esParaLlevar ? null : tableId,
+        order_type: esDomicilio ? 'DELIVERY' : esParaLlevar ? 'TAKEAWAY' : 'DINE_IN',
+        dining_table_id: (esParaLlevar || esDomicilio) ? null : tableId,
         customer_name: this.customerName().trim() || null,
+        delivery_address: esDomicilio ? this.deliveryAddress().trim() : null,
+        delivery_phone: esDomicilio ? (this.deliveryPhone().trim() || null) : null,
+        delivery_fee: esDomicilio ? this.deliveryFee() : null,
         items,
         hold_for_payment: true,
       });

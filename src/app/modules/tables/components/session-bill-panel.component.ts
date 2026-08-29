@@ -267,9 +267,13 @@ export class SessionBillPanelComponent implements OnChanges {
     this.unifiedPayment.set(emptyPaymentDraft());
   }
 
-  /** Los ítems sin comensal los añadió el mesero. */
+  /** Los ítems sin comensal los añadió el mesero — spec 057, FR-005/FR-006:
+   *  se prioriza el nombre de cliente de la orden (ya disponible en
+   *  `customerName`, el mismo que se envía como `customer_name` al cobrar)
+   *  por encima de la etiqueta genérica, cuando existe. */
   lineLabel(label: string | null): string {
-    return label ?? 'Sin asignar (mesero)';
+    if (label) return label;
+    return this.customerName.trim() || 'Sin asignar (mesero)';
   }
 
   async charge(): Promise<void> {

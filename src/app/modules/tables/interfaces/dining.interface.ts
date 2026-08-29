@@ -53,6 +53,10 @@ export interface OrderCreatePayload {
   dining_session_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;
+  /** Solo aplican con `order_type: 'DELIVERY'` (spec 056). */
+  delivery_address?: string | null;
+  delivery_phone?: string | null;
+  delivery_fee?: number | null;
   notes?: string | null;
   items: OrderItemPayload[];
   /**
@@ -200,6 +204,10 @@ export interface DiningOrder {
   participant_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;
+  /** Solo presentes cuando `order_type === 'DELIVERY'` (spec 056). */
+  delivery_address?: string | null;
+  delivery_phone?: string | null;
+  delivery_fee?: number | null;
   notes?: string | null;
   created_at: string;
   items?: DiningOrderItem[];
