@@ -3,6 +3,7 @@ import { DecimalPipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ProductSelectComponent } from '../components/product-select.component';
+import { IconComponent } from '../../../shared/icon/icon.component';
 
 /**
  * Vista dedicada para armar un pedido de mostrador nuevo (ajuste posterior a
@@ -26,7 +27,7 @@ import { ProductSelectComponent } from '../components/product-select.component';
   selector: 'app-manual-order-page',
   standalone: true,
   providers: [PosTerminalStore],
-  imports: [DecimalPipe, ProductSelectComponent],
+  imports: [DecimalPipe, ProductSelectComponent, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-[calc(100dvh-57px)] -m-4 md:-m-6 bg-gray-50">
@@ -71,6 +72,7 @@ import { ProductSelectComponent } from '../components/product-select.component';
 
         <!-- Solo las mesas libres se pueden elegir: esta vista arma un
              pedido nuevo, no edita una mesa ya ocupada. -->
+        <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
         <div class="flex gap-2 overflow-x-auto pb-1">
           @for (t of store.tablesView(); track t.id) {
             <button
@@ -126,13 +128,22 @@ import { ProductSelectComponent } from '../components/product-select.component';
               <button
                 type="button"
                 (click)="store.openConfig(p)"
-                class="relative text-left bg-white rounded-xl border border-gray-200 p-3 hover:border-indigo-300 transition-colors"
+                class="text-left bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-indigo-300 transition-colors"
               >
-                @if (store.productDiscountBadges().get(p.id); as badge) {
-                  <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ badge }}</span>
-                }
-                <div class="font-semibold text-gray-900 text-sm">{{ p.name }}</div>
-                <div class="text-sm font-bold text-gray-900 mt-1">Desde $ {{ minPrice(p) | number: '1.0-0' }}</div>
+                <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center overflow-hidden">
+                  @if (store.productDiscountBadges().get(p.id); as badge) {
+                    <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ badge }}</span>
+                  }
+                  @if (p.image_url) {
+                    <img [src]="p.image_url" [alt]="p.name" class="w-full h-full object-cover" />
+                  } @else {
+                    <span class="w-10 h-10 text-gray-300"><app-icon name="image-off" /></span>
+                  }
+                </div>
+                <div class="p-3">
+                  <div class="font-semibold text-gray-900 text-sm">{{ p.name }}</div>
+                  <div class="text-sm font-bold text-gray-900 mt-1">Desde $ {{ minPrice(p) | number: '1.0-0' }}</div>
+                </div>
               </button>
             }
             @if (store.catalogProductsFiltered().length === 0) {

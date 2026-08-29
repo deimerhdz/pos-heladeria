@@ -9,11 +9,31 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
+import { MenuService } from '../../../core/services/menu.service';
+import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
 
 const API = environment.apiBaseUrl;
 
 function table(partial: Partial<Table>): Table {
   return { id: 't1', number: 1, name: null, qr_token: 'tok', active: true, status: 'libre', ...partial };
+}
+
+/** Producto de catálogo mínimo para spec 051 (imagen en tarjeta/detalle). */
+function menuProduct(partial: Partial<MenuProduct>): MenuProduct {
+  return {
+    id: 'p1',
+    name: 'Producto Test',
+    description: null,
+    image_url: null,
+    variants: [{ id: 'v1', name: 'Único', price: 4000 } as MenuProduct['variants'][number]],
+    option_groups: [],
+    available: true,
+    ...partial,
+  };
+}
+
+function menuCategory(products: MenuProduct[]): MenuCategory {
+  return { id: 'c1', name: 'Categoría Test', products };
 }
 
 /** Vista dedicada de armado de pedido nuevo (ajuste posterior a spec 036).
@@ -82,6 +102,104 @@ describe('ManualOrderPageComponent', () => {
     const domicilio = buttons.find((b) => b.textContent?.includes('Domicilio'));
     expect(paraLlevar?.disabled).toBe(true);
     expect(domicilio?.disabled).toBe(true);
+  });
+
+  it('el listado de mesas tiene un título propio "Mesas", distinguible del encabezado "Tipo de Orden" (US3, FR-004/FR-005)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const tipoOrdenHeading = fixture.nativeElement.querySelector('h2') as HTMLElement | null;
+    expect(tipoOrdenHeading?.textContent).toContain('Tipo de Orden');
+
+    const mesasHeading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === 'Mesas',
+    ) as HTMLElement | undefined;
+    expect(mesasHeading).toBeTruthy();
+    expect(mesasHeading!.tagName).not.toBe(tipoOrdenHeading!.tagName);
+  });
+
+  it('la tarjeta de catálogo muestra la imagen del producto cuando tiene image_url (US1, FR-001)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([
+      menuCategory([menuProduct({ id: 'p1', name: 'Fresa Salvaje', image_url: 'https://cdn.test/fresa.jpg' })]),
+    ]);
+    store.setCatalogCategory('c1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const img = fixture.nativeElement.querySelector('img[alt="Fresa Salvaje"]') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img!.src).toContain('fresa.jpg');
+  });
+
+  it('la tarjeta de catálogo muestra un ícono de respaldo cuando el producto no tiene image_url (US1, FR-002)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([menuCategory([menuProduct({ id: 'p1', name: 'Sin Foto', image_url: null })])]);
+    store.setCatalogCategory('c1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('img')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-icon[name="image-off"]')).toBeTruthy();
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Sin Foto');
+  });
+
+  it('al seleccionar un producto con imagen desde el catálogo, el detalle también la muestra (US2, FR-003)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([
+      menuCategory([menuProduct({ id: 'p1', name: 'Fresa Salvaje', image_url: 'https://cdn.test/fresa.jpg' })]),
+    ]);
+    store.setCatalogCategory('c1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const card = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Fresa Salvaje'),
+    ) as HTMLButtonElement;
+    card.click();
+    fixture.detectChanges();
+
+    const modalImg = fixture.nativeElement.querySelector('app-product-select img') as HTMLImageElement | null;
+    expect(modalImg).toBeTruthy();
+    expect(modalImg!.src).toContain('fresa.jpg');
+  });
+
+  it('al seleccionar un producto sin imagen desde el catálogo, el detalle se abre sin imagen rota (US2)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([menuCategory([menuProduct({ id: 'p1', name: 'Sin Foto', image_url: null })])]);
+    store.setCatalogCategory('c1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const card = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Sin Foto'),
+    ) as HTMLButtonElement;
+    card.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-product-select')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-product-select img')).toBeNull();
   });
 
   it('el selector de mesas permite cambiar a otra mesa libre, pero no a una ocupada', async () => {
