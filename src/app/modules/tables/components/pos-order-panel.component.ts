@@ -32,44 +32,100 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
       </div>
     } @else {
       <div class="flex-1 flex flex-col min-h-0">
-        <!-- Header -->
+        <!-- Header: mesa + estado + cliente en una sola fila, siempre de solo
+             lectura (spec 049, FR-006/FR-008) — el nombre ya no se edita
+             desde aquí. -->
         <div class="p-4 border-b border-gray-100 space-y-2 shrink-0">
-          <div class="flex items-start justify-between">
-            <div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <h3 class="text-lg font-bold text-gray-900">Mesa {{ store.selectedTable()?.number }}</h3>
-              <p class="text-xs text-gray-400 mt-0.5">
-                {{ store.selectedOrder() ? ('Pedido · ' + headerStatusText()) : 'Pedido nuevo sin guardar' }}
-              </p>
+              @if (store.selectedTableStatusMeta(); as meta) {
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium" [class]="meta.chip">{{ meta.label }}</span>
+              }
+              <span class="text-sm text-gray-500">{{ store.customerName() || store.customerPlaceholder() }}</span>
             </div>
-            <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">← Volver</button>
+            <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
           </div>
 
-          <div>
-            <label class="block text-[11px] font-medium text-gray-500 mb-1">Cliente</label>
-            <input
-              type="text"
-              [value]="store.customerName()"
-              [placeholder]="store.customerPlaceholder()"
-              (input)="store.customerName.set($any($event.target).value)"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
+          @if (!store.showAllOrders()) {
+            <p class="text-xs text-gray-400">
+              {{ store.selectedOrder() ? ('Pedido · ' + headerStatusText()) : 'Pedido nuevo sin guardar' }}
+            </p>
+          }
 
           @if (store.orderTabs().length > 0) {
+            <!-- Spec 049, FR-009: "Todos los pedidos" agrupa las tarjetas de
+                 todos los pedidos de la mesa; cada "Pedido N" enfoca una sola.
+                 Sin "+ Nuevo pedido" (FR-001, spec 049 — retirado sin
+                 reemplazo en este panel). -->
             <div class="flex gap-2 flex-wrap">
+              <button
+                (click)="store.showAllOrders.set(true)"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                [class]="store.showAllOrders() ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+              >Todos los pedidos ({{ store.orderTabs().length }})</button>
               @for (ot of store.orderTabs(); track ot.id) {
                 <button
-                  (click)="store.selectOrder(ot.id)"
+                  (click)="selectOrderTab(ot.id)"
                   class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
-                  [class]="store.selectedOrderId() === ot.id ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                  [class]="!store.showAllOrders() && store.selectedOrderId() === ot.id ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
                 >{{ ot.label }}</button>
               }
-              <button (click)="store.newOrderOnTable()" class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700">+ Nuevo pedido</button>
             </div>
           }
         </div>
 
-        @if (showCatalog()) {
+        @if (store.showAllOrders() && store.orderTabs().length > 0) {
+          <!-- Vista agregada: una tarjeta por pedido, sin edición (spec 049,
+               D5) — agregar productos exige elegir antes una pestaña
+               individual, sin ambigüedad de a cuál pedido se le agrega. -->
+          <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            @for (card of store.ordersView(); track card.order.id) {
+              <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-gray-400">{{ card.createdAtLabel }}</span>
+                  <span
+                    class="px-2 py-0.5 rounded-full text-xs font-medium"
+                    [class]="card.pending ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'"
+                  >{{ card.pending ? 'Pendiente' : 'Listo' }}</span>
+                </div>
+                @for (it of card.items; track it.key) {
+                  <div class="flex items-start justify-between gap-2 pt-1 border-t border-gray-50 first:border-t-0 first:pt-0">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold text-gray-900 text-sm">{{ it.qty }}x {{ it.name }}</span>
+                        @if (it.kitchenStatus; as estado) {
+                          <span class="px-2 py-0.5 rounded-full text-xs" [class]="statusClass(estado)">{{ statusLabel(estado) }}</span>
+                        }
+                      </div>
+                      @for (b of it.bullets; track $index) {
+                        <div class="text-xs text-gray-500 pl-1">• {{ b }}</div>
+                      }
+                      <span class="text-xs text-gray-400">{{ store.fmt(it.unitPrice) }} c/u</span>
+                    </div>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                      <span class="font-bold text-gray-900 text-sm">{{ store.fmt(it.subtotal) }}</span>
+                      @if (!it.ready) {
+                        <button
+                          (click)="store.avanzarItem(it.key)"
+                          [disabled]="store.submitting()"
+                          class="text-xs font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
+                        >✓ Listo</button>
+                      }
+                    </div>
+                  </div>
+                }
+                @if (card.pending) {
+                  <button
+                    (click)="store.marcarListo(card.order.id)"
+                    [disabled]="store.submitting()"
+                    class="w-full py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  >Marcar pedido listo</button>
+                }
+              </div>
+            }
+          </div>
+        } @else if (showCatalog()) {
           <!-- Catálogo embebido (spec 036, FR-006/FR-007): reemplaza la lista
                de ítems mientras se agrega un producto, sin overlay de
                pantalla completa — "← Volver" del catálogo regresa aquí sin
@@ -138,21 +194,11 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
               class="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1"
             >＋ Agregar producto</button>
           }
-        </div>
 
-        <!-- Totales -->
-        <div class="border-t border-gray-100 p-4 space-y-2 bg-gray-50 shrink-0 relative">
-          @let tot = store.totals();
-          <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(tot.subtotal) }}</span></div>
-          <div class="flex justify-between text-sm">
-            <!-- Spec 029, Historia 2: sin control de descuento manual — el
-                 único descuento posible es el automático por promoción. -->
-            <span>Descuento</span>
-            <span>{{ tot.discount > 0 ? '- ' + store.fmt(tot.discount) : store.fmt(0) }}</span>
-          </div>
-          <div class="border-t border-gray-200 my-1"></div>
-          <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
-
+          <!-- Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró
+               de este panel — vive ahora en session-bill-panel.component.ts
+               ("Cuenta de la mesa"). Estas dos acciones no son de cobro, así
+               que se quedan aquí, solo sin el contenedor de totales alrededor. -->
           <div class="flex gap-2 pt-1">
             @if (store.hasDraft()) {
               <button (click)="store.saveOrder()" [disabled]="store.submitting()"
@@ -186,6 +232,13 @@ export class PosOrderPanelComponent {
    *  solo lectura, aunque `catalogOpen()` hubiera quedado en `true` de una
    *  orden distinta seleccionada antes en la misma mesa. */
   readonly showCatalog = computed(() => this.store.catalogOpen() && !this.readOnly());
+
+  /** Elegir una pestaña "Pedido N" sale de la vista agregada y enfoca ese
+   *  pedido (spec 049, D5) — reusa `selectOrder()` tal cual. */
+  selectOrderTab(orderId: string): void {
+    this.store.showAllOrders.set(false);
+    this.store.selectOrder(orderId);
+  }
 
   /**
    * Spec 029, Historia 3: "listo para cobrar" exige pago Y cocina, las dos a

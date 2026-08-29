@@ -78,6 +78,7 @@ import {
             [cashShiftId]="store.cashShiftId()"
             [customerName]="store.customerName()"
             [orphan]="store.billOrphan()"
+            [paidSummary]="store.selectedTablePaidSummary()"
             [readOnly]="true"
           />
         } @else if (showSessionCharge()) {
@@ -99,6 +100,7 @@ import {
               [cashShiftId]="store.cashShiftId()"
               [customerName]="store.customerName()"
               [orphan]="store.billOrphan()"
+              [paidSummary]="store.selectedTablePaidSummary()"
               [beforeCharge]="store.ensureReadyToCharge"
               (charged)="store.onCharged($event)"
             />

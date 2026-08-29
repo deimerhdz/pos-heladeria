@@ -44,6 +44,31 @@ import { ToastService } from '../../../shared/feedback/toast.service';
     <div class="flex flex-col h-full">
       <h2 class="text-base font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
 
+      @if (paidSummary; as pagado) {
+        <!-- Bugfix reportado sobre spec 049: la mesa puede tener pedidos ya
+             cobrados (p. ej. mostrador pagado por adelantado) que el
+             desglose de abajo no incluye a propósito (evita cobrar dos
+             veces) — este bloque muestra ese consumo ya pagado aparte, sin
+             mezclarlo con lo pendiente. -->
+        <div class="mb-3 pb-3 border-b border-gray-100 space-y-1">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ya pagado</p>
+          <div class="flex items-center justify-between text-sm text-gray-600">
+            <span>Subtotal</span>
+            <span>$ {{ pagado.subtotal | number: '1.2-2' }}</span>
+          </div>
+          @if (pagado.discount > 0) {
+            <div class="flex items-center justify-between text-sm text-emerald-700">
+              <span>Descuento</span>
+              <span>- $ {{ pagado.discount | number: '1.2-2' }}</span>
+            </div>
+          }
+          <div class="flex items-center justify-between text-sm font-semibold text-gray-800">
+            <span>Total pagado</span>
+            <span>$ {{ pagado.total | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      }
+
       @if (!bill) {
         @if (orphan) {
           <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-1">
@@ -80,7 +105,20 @@ import { ToastService } from '../../../shared/feedback/toast.service';
               }
             </div>
           }
-          <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+          @let summary = billSummary();
+          @if (summary) {
+            <div class="flex items-center justify-between pt-2 border-t border-gray-100 text-sm text-gray-600">
+              <span>Subtotal</span>
+              <span>$ {{ summary.subtotal | number: '1.2-2' }}</span>
+            </div>
+            @if (summary.discount > 0) {
+              <div class="flex items-center justify-between text-sm text-emerald-700">
+                <span>Descuento</span>
+                <span>- $ {{ summary.discount | number: '1.2-2' }}</span>
+              </div>
+            }
+          }
+          <div class="flex items-center justify-between pt-2" [class.border-t]="!summary" [class.border-gray-100]="!summary">
             <span class="text-base font-semibold text-gray-800">Total</span>
             <span class="text-lg font-bold text-gray-900">
               $ {{ +bill.total | number: '1.2-2' }}
@@ -137,6 +175,12 @@ export class SessionBillPanelComponent implements OnChanges {
   /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
   @Input() orphan = false;
   /**
+   * Consumo ya cobrado de la mesa (pedidos `paid`), sumado desde las ventas
+   * reales — independiente de `bill` (que a propósito excluye lo ya pagado).
+   * `null` sin nada pagado. Ver `PosTerminalStore.selectedTablePaidSummary`.
+   */
+  @Input() paidSummary: { subtotal: number; discount: number; total: number } | null = null;
+  /**
    * Feature 028 (T004/T009): `true` cuando el pedido activo es de canal `qr`
    * — el comensal ya pagó a distancia. Oculta el selector de método y el
    * botón "Cobrar y cerrar mesa"; solo queda el desglose de lectura.
@@ -176,6 +220,21 @@ export class SessionBillPanelComponent implements OnChanges {
   private readonly currentBill = signal<SessionBill | null>(null);
 
   readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
+
+  /**
+   * Subtotal/descuento agregados de toda la cuenta, sumando las mismas
+   * columnas que ya trae `bill.split` por comensal (spec 049, FR-003/FR-004).
+   * `bill.total` no cambia: esto solo agrega dos filas encima, sin recalcular
+   * nada que el backend no haya entregado ya.
+   */
+  readonly billSummary = computed(() => {
+    const bill = this.currentBill();
+    if (!bill) return null;
+    return {
+      subtotal: bill.split.reduce((s, l) => s + Number(l.subtotal), 0),
+      discount: bill.split.reduce((s, l) => s + Number(l.discount), 0),
+    };
+  });
 
   /**
    * Solo se cobra si el bloque de pago no tiene incidencia: método sin

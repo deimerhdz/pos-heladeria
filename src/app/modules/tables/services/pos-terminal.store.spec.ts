@@ -850,12 +850,20 @@ describe('PosTerminalStore.marcarListo — pedido "pagada" no desaparece (gap sp
     ]);
     store.selectTable('t1');
     http.expectOne(`${API}/table-sessions`).flush([]);
+    // `selectTable()` de una mesa con un pedido `paid` precarga su venta real
+    // (bugfix "Ya pagado" en Cuenta de la mesa) — sin sale encontrada aquí,
+    // que es justo lo que este test no necesita.
+    http.expectOne((r) => r.url === `${API}/invoices`).flush([]);
     expect(store.selectedOrderId()).toBe('o1');
 
     const promise = store.marcarListo();
 
-    const readyReq = http.expectOne(`${API}/orders/o1/ready`);
-    readyReq.flush({ ...order('o1', 'pagada', ['listo'], true), channel: 'counter', dining_table_id: 't1' });
+    // PATCH por ítem, no `POST /orders/{id}/ready` — ese endpoint rechaza con
+    // 409 justo cuando `status === 'pagada'` (A-16), que es el caso de este
+    // test (pedido de mostrador cobrado por adelantado).
+    const kitchenReq = http.expectOne(`${API}/orders/items/o1-i0/kitchen`);
+    expect(kitchenReq.request.method).toBe('PATCH');
+    kitchenReq.flush({ id: 'o1-i0', estado_cocina: 'listo' });
     await tick();
 
     http.expectOne(`${API}/orders/tables`).flush([]);
@@ -869,6 +877,30 @@ describe('PosTerminalStore.marcarListo — pedido "pagada" no desaparece (gap sp
 
     expect(store.selectedOrderId()).toBe('o1');
     expect(store.centralState()).toBe('pedido');
+  });
+
+  it('marcarListo() no llama a "ready" y en cambio hace PATCH por cada ítem pendiente, sin chocar con el 409 de A-16', async () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['pendiente', 'pendiente'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    const promise = store.marcarListo();
+
+    http.expectOne(`${API}/orders/items/o1-i0/kitchen`).flush({ id: 'o1-i0', estado_cocina: 'listo' });
+    await tick();
+    http.expectOne(`${API}/orders/items/o1-i1/kitchen`).flush({ id: 'o1-i1', estado_cocina: 'listo' });
+    await tick();
+
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http.expectOne((r) => r.url === `${API}/orders`).flush([]);
+    await tick();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    await promise;
+
+    http.expectNone(`${API}/orders/o1/ready`);
   });
 });
 
@@ -1069,5 +1101,210 @@ describe('normalizeSearchTerm', () => {
 
   it('recorta espacios en los extremos', () => {
     expect(normalizeSearchTerm('  helado  ')).toBe('helado');
+  });
+});
+
+/**
+ * Spec 049: cabecera + pestañas del nuevo panel de pedido. `showAllOrders`,
+ * `ordersView` y `selectedTableStatusMeta` se prueban aquí directo sobre el
+ * store, sin pasar por `selectTable()` (evita mockear `GET /table-sessions`
+ * cuando no aporta nada a lo que se está probando) — mismo criterio que
+ * `describe('PosTerminalStore — pestañas cuando coexisten...')` (spec 048).
+ */
+describe('PosTerminalStore — cabecera y pestañas del panel de pedido (spec 049)', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('orderTabs() rotula "Pedido 1"/"Pedido 2" por posición, no por nombre de cliente', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1', customer_name: 'Ana' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1', customer_name: 'Luis' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    expect(store.orderTabs()).toEqual([
+      { id: 'o1', label: 'Pedido 1' },
+      { id: 'o2', label: 'Pedido 2' },
+    ]);
+  });
+
+  it('ordersView() devuelve una tarjeta por pedido, con sus ítems y si le falta algo por preparar', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['listo']), channel: 'waiter', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    const cards = store.ordersView();
+    expect(cards.length).toBe(2);
+    expect(cards[0].order.id).toBe('o1');
+    expect(cards[0].pending).toBe(false);
+    expect(cards[0].items.length).toBe(1);
+    expect(cards[1].order.id).toBe('o2');
+    expect(cards[1].pending).toBe(true);
+  });
+
+  it('selectedTableStatusMeta() es null sin mesa seleccionada', () => {
+    expect(store.selectedTableStatusMeta()).toBeNull();
+  });
+
+  it('marcarListo(orderId) opera sobre ese pedido aunque no sea el seleccionado', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    // Se corta con un error antes del reload (fuera de alcance de este test,
+    // ver describe de marcarListo/gap spec 035 para ese flujo completo) — lo
+    // único que interesa aquí es a qué pedido apuntó la petición (PATCH por
+    // ítem, no "ready" — ver bugfix del botón "Marcar pedido listo", A-16).
+    const promise = store.marcarListo('o2');
+    http.expectOne(`${API}/orders/items/o2-i0/kitchen`).flush({ detail: 'boom' }, { status: 500, statusText: 'Error' });
+    await promise;
+
+    http.verify();
+  });
+
+  it('avanzarItem busca la línea en cualquier pedido de la mesa, no solo en el seleccionado', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    store.orders.set([
+      { ...order('o1', 'abierta', ['listo']), channel: 'waiter', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    const itemId = store.ordersView()[1].items[0].key;
+    const promise = store.avanzarItem(itemId);
+    http
+      .expectOne(`${API}/orders/items/${itemId}/kitchen`)
+      .flush({ detail: 'boom' }, { status: 500, statusText: 'Error' });
+    await promise;
+
+    http.verify();
+  });
+
+  it('voidPersistedCombo busca el pedido dueño del combo aunque no sea el seleccionado', async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const confirm = TestBed.inject(ConfirmService);
+    const conItemDeCombo: DiningOrder = {
+      ...order('o2', 'abierta', []),
+      channel: 'waiter',
+      dining_table_id: 't1',
+      items: [
+        { id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '4000', estado_cocina: 'pendiente', combo_id: 'c1' },
+      ] as DiningOrderItem[],
+    };
+    store.orders.set([
+      { ...order('o1', 'abierta', ['listo']), channel: 'waiter', dining_table_id: 't1' },
+      conItemDeCombo,
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    const promise = store.voidPersistedCombo('c1');
+    confirm.respond(true);
+    await Promise.resolve();
+    http.expectOne(`${API}/orders/items/i1/void`).flush({ detail: 'boom' }, { status: 500, statusText: 'Error' });
+    await promise;
+
+    http.verify();
+  });
+});
+
+/**
+ * Bugfix reportado sobre spec 049: "Cuenta de la mesa" mostraba Subtotal y
+ * Total en $0, sin fila de Descuento, cuando el único pedido de la mesa ya
+ * estaba pagado (`bill.split` del backend excluye a propósito lo ya
+ * cobrado — evita facturarlo dos veces al cerrar la sesión). Este bloque
+ * cubre el resumen aparte de "Ya pagado" que se agrega para ese caso.
+ */
+describe('PosTerminalStore.selectedTablePaidSummary — "Ya pagado" (bugfix spec 049)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('null sin mesa seleccionada o sin ningún pedido pagado', () => {
+    expect(store.selectedTablePaidSummary()).toBeNull();
+
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'waiter', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+    expect(store.selectedTablePaidSummary()).toBeNull();
+  });
+
+  it('selectTable() de una mesa con un pedido pagado precarga su venta real y la refleja en el resumen', async () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['pendiente'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    expect(store.selectedTablePaidSummary()).toBeNull(); // aún sin cargar
+
+    http
+      .expectOne((r) => r.url === `${API}/invoices`)
+      .flush([{ sale_id: 's1' }]);
+    await tick();
+    http
+      .expectOne(`${API}/sales/s1`)
+      .flush({ id: 's1', subtotal: '8000', discount: '1000', total: '7000' });
+    await tick();
+
+    expect(store.selectedTablePaidSummary()).toEqual({ subtotal: 8000, discount: 1000, total: 7000 });
+  });
+
+  it('no reintenta ni repite la búsqueda al volver a seleccionar la misma mesa', async () => {
+    store.orders.set([
+      { ...order('o1', 'pagada', ['pendiente'], true), channel: 'counter', dining_table_id: 't1' },
+    ]);
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    http.expectOne((r) => r.url === `${API}/invoices`).flush([{ sale_id: 's1' }]);
+    await tick();
+    http.expectOne(`${API}/sales/s1`).flush({ id: 's1', subtotal: '8000', discount: '0', total: '8000' });
+    await tick();
+
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    // Sin una segunda petición a /invoices — ya se intentó para ese pedido.
+
+    expect(store.selectedTablePaidSummary()).toEqual({ subtotal: 8000, discount: 0, total: 8000 });
   });
 });

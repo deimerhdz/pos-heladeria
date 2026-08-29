@@ -33,6 +33,18 @@ const splitBill: SessionBill = {
   ],
 };
 
+/** Dos comensales, uno con descuento aplicado. */
+const billWithDiscount: SessionBill = {
+  table_session_id: 'ts3',
+  dining_table_id: 't3',
+  total: '18000',
+  order_ids: ['o3'],
+  split: [
+    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '2000' },
+    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000', items: [], discount: '0' },
+  ],
+};
+
 const methods = [
   { id: 'pm1', name: 'Efectivo', type: 'cash', is_cash: true, active: true },
   { id: 'pm2', name: 'Tarjeta', type: 'card', is_cash: false, active: true },
@@ -196,6 +208,70 @@ describe('SessionBillPanelComponent', () => {
 
     expect(fixture.nativeElement.textContent).not.toContain('Dividir por comensal');
     expect(fixture.nativeElement.textContent).not.toContain('Cuenta única');
+  });
+
+  // ── Resumen agregado Subtotal/Descuento (spec 049, FR-003/FR-004) ────────
+  describe('resumen agregado Subtotal/Descuento', () => {
+    it('muestra "Subtotal" con la suma de subtotal de todas las líneas, sin ninguna fila "Descuento" cuando ninguna línea tiene descuento', () => {
+      setBill(splitBill);
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(panel.billSummary()).toEqual({ subtotal: 20000, discount: 0 });
+      expect(texto).toContain('Subtotal');
+      expect(texto).not.toContain('Descuento');
+    });
+
+    it('muestra "Descuento" con la suma de descuento de todas las líneas cuando al menos una lo tiene', () => {
+      setBill(billWithDiscount);
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(panel.billSummary()).toEqual({ subtotal: 20000, discount: 2000 });
+      expect(texto).toContain('Subtotal');
+      expect(texto).toContain('Descuento');
+    });
+
+    it('billSummary() es null sin ninguna cuenta cargada', () => {
+      fixture.componentRef.setInput('bill', null);
+      fixture.componentRef.setInput('orphan', true);
+      fixture.detectChanges();
+
+      expect(panel.billSummary()).toBeNull();
+    });
+  });
+
+  // ── "Ya pagado" (bugfix spec 049: mesa con pedido ya cobrado, bill=$0) ────
+  describe('resumen "Ya pagado" (paidSummary)', () => {
+    it('sin paidSummary no muestra ninguna sección "Ya pagado"', () => {
+      expect(fixture.nativeElement.textContent).not.toContain('Ya pagado');
+    });
+
+    it('con paidSummary muestra su Subtotal/Descuento/Total, aparte del desglose pendiente', () => {
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 1000, total: 7000 });
+      fixture.detectChanges();
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(texto).toContain('Ya pagado');
+      expect(texto).toContain('7,000.00');
+      expect(texto).toContain('1,000.00');
+    });
+
+    it('se muestra incluso sin ninguna cuenta pendiente (bill=null, mesa ya toda pagada)', () => {
+      fixture.componentRef.setInput('bill', null);
+      fixture.componentRef.setInput('orphan', true);
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 0, total: 8000 });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('Ya pagado');
+    });
+
+    it('sin descuento en lo pagado, no muestra la fila "Descuento" de esa sección', () => {
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 0, total: 8000 });
+      fixture.detectChanges();
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(texto).toContain('Ya pagado');
+      expect(texto).not.toContain('Descuento');
+    });
   });
 
   // ── Efectivo: monto recibido y vuelto ────────────────────────────────────

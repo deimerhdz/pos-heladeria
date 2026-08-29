@@ -31,7 +31,7 @@ import {
   PaymentLine,
   SessionBill,
 } from '../interfaces/dining.interface';
-import { KITCHEN_NOT_READY } from '../../orders/order-status.util';
+import { KITCHEN_NOT_READY, hasPendingKitchenWork } from '../../orders/order-status.util';
 import { ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
@@ -246,6 +246,65 @@ export class PosTerminalStore {
       this.pollHandle?.setPeriod(abierto ? ORDERS_POLL_SSE_MS : ORDERS_POLL_MS);
     });
   }
+
+  /** IDs de pedido ya intentados (con éxito o no) — evita reintentar y volver
+   *  a mostrar un toast de error cada vez que se reselecciona la mesa. */
+  private readonly saleFetchAttempted = new Set<string>();
+
+  /**
+   * Precarga en segundo plano la venta de cada pedido ya pagado de una mesa,
+   * para poder mostrar en "Cuenta de la mesa" el consumo ya cobrado (bugfix
+   * reportado sobre spec 049): reutiliza `resolveSaleForOrder` (T033, ya
+   * usado para reimprimir factura) en vez de recalcular subtotal/descuento
+   * en el frontend — esa cuenta ya la hizo el backend al cobrar.
+   *
+   * Se llama explícitamente desde `selectTable()` (no un `effect()` global
+   * sobre `selectedTableId()`/`orders()`): un efecto así dispara este fetch
+   * en **cualquier** test que arme un `PosTerminalStore` con un pedido
+   * `paid`, sin que ese test lo espere ni lo mockee — rompía decenas de
+   * specs ajenos a esta pantalla. Llamarlo solo al seleccionar una mesa
+   * acota el efecto a quien realmente navega a "Cuenta de la mesa".
+   */
+  private prefetchPaidOrderSales(tableId: string): void {
+    for (const order of this.tableOrders(tableId)) {
+      if (!order.paid || this.saleFetchAttempted.has(order.id)) continue;
+      this.saleFetchAttempted.add(order.id);
+      this.api
+        .findSaleForOrder(order.id)
+        .then((found) => {
+          if (found) this.checkoutSaleByOrderId.update((m) => ({ ...m, [order.id]: found }));
+        })
+        .catch(() => {
+          // Precarga silenciosa: un pedido pagado sin venta encontrada (o un
+          // error de red) no debe interrumpir al cajero con un toast — solo
+          // deja de sumar su parte en el resumen de "Ya pagado".
+        });
+    }
+  }
+
+  /**
+   * Resumen de lo ya cobrado de la mesa seleccionada, sumando las ventas
+   * reales de sus pedidos `paid` (mismos datos que ya usa "Imprimir
+   * Factura", T033) — no un recálculo propio de descuento por
+   * promoción/combo, que solo el backend conoce con certeza al cobrar.
+   * `null` sin mesa seleccionada, sin ningún pedido pagado, o mientras las
+   * ventas todavía se están precargando.
+   */
+  readonly selectedTablePaidSummary = computed(() => {
+    const tableId = this.selectedTableId();
+    if (!tableId) return null;
+    const cache = this.checkoutSaleByOrderId();
+    const sales = this.tableOrders(tableId)
+      .filter((o) => o.paid)
+      .map((o) => cache[o.id])
+      .filter((s): s is Sale => !!s);
+    if (sales.length === 0) return null;
+    return {
+      subtotal: sales.reduce((s, sale) => s + Number(sale.subtotal), 0),
+      discount: sales.reduce((s, sale) => s + Number(sale.discount), 0),
+      total: sales.reduce((s, sale) => s + Number(sale.total), 0),
+    };
+  });
 
   // ─── Estado ────────────────────────────────────────────────────────────────
   readonly orders = signal<DiningOrder[]>([]);
@@ -496,14 +555,65 @@ export class PosTerminalStore {
 
   readonly hasActiveOrder = computed(() => !!this.selectedTableId());
 
-  /** Pestañas de pedido (cuando la mesa tiene >1 orden activa). */
+  /**
+   * Pestañas de pedido (cuando la mesa tiene >1 orden activa). Rotuladas
+   * "Pedido N" por posición (spec 049, FR-009) — el nombre del cliente ya se
+   * muestra una sola vez en la cabecera, no repetido por pestaña.
+   */
   readonly orderTabs = computed(() => {
     const t = this.selectedTableId();
     if (!t) return [];
     const list = this.ordersOfTable(t);
-    return list.length > 1
-      ? list.map((o) => ({ id: o.id, label: o.customer_name || 'Pedido' }))
-      : [];
+    return list.length > 1 ? list.map((o, i) => ({ id: o.id, label: `Pedido ${i + 1}` })) : [];
+  });
+
+  /**
+   * Vista "Todos los pedidos" activa (spec 049, FR-009/FR-011): por defecto
+   * cuando la mesa tiene más de un pedido — coincide con el mockup, donde esa
+   * pestaña ya viene activa. Se reinicia junto al resto del estado transitorio
+   * de la selección en `selectTable()`.
+   */
+  readonly showAllOrders = signal(false);
+
+  /**
+   * Una tarjeta por pedido de la mesa seleccionada (spec 049, D4/D5): sus
+   * ítems ya persistidos (sin draft, que solo aplica al pedido en edición),
+   * la hora de creación y si le falta algo por preparar.
+   */
+  readonly ordersView = computed(() => {
+    const t = this.selectedTableId();
+    if (!t) return [];
+    return this.ordersOfTable(t).map((order) => ({
+      order,
+      items: this.persistedItemsView(order),
+      createdAtLabel: new Date(order.created_at).toLocaleTimeString('es-CO', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      pending: hasPendingKitchenWork(order),
+    }));
+  });
+
+  /**
+   * Todas las líneas persistidas de la mesa seleccionada, cada una con el id
+   * de su pedido de origen — usado por `avanzarItem` para encontrar un ítem
+   * aunque su tarjeta no sea la del pedido seleccionado (spec 049, D6).
+   */
+  private readonly tableItemsView = computed(() =>
+    this.ordersView().flatMap((card) => card.items.map((item) => ({ ...item, orderId: card.order.id }))),
+  );
+
+  /**
+   * Chip de estado de la mesa seleccionada (spec 049, D7) — mismo par
+   * `STATUS_META`/`deriveTableStatus` que ya usa `tablesView()`, pero
+   * calculado directo sobre la mesa seleccionada, sin depender del
+   * filtro/búsqueda de la grilla (que podría excluirla de `tablesView()`).
+   */
+  readonly selectedTableStatusMeta = computed(() => {
+    const table = this.selectedTable();
+    if (!table) return null;
+    const status = deriveTableStatus(this.tableOrders(table.id), table.status);
+    return STATUS_META[status];
   });
 
   readonly tablesView = computed(() => {
@@ -552,8 +662,15 @@ export class PosTerminalStore {
 
   readonly noTablesFound = computed(() => this.tablesView().length === 0);
 
-  /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
-  readonly cartView = computed(() => {
+  /**
+   * Líneas de los ítems ya persistidos de **un** pedido (sin el draft nuevo,
+   * que solo tiene sentido para el pedido seleccionado) — extraído de
+   * `cartView()` (spec 049, D4) para poder construir tanto el carrito del
+   * pedido seleccionado como una tarjeta por cada pedido de la mesa
+   * (`ordersView`), reutilizando la misma lógica de combos/descuento por
+   * promoción en vez de duplicarla.
+   */
+  private persistedItemsView(order: DiningOrder | null) {
     const lk = this.lookup();
     const syncedNow = currentNow(this.promotionService);
     // A-09: sin hora sincronizada aún, sin descuento de previsualización —
@@ -561,7 +678,6 @@ export class PosTerminalStore {
     // sin tocar `now` (el placeholder nunca se evalúa contra ninguna promo).
     const now = syncedNow ?? new Date(0);
     const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
-    const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
 
     const plainItems = items.filter((i) => !i.combo_id);
@@ -616,6 +732,17 @@ export class PosTerminalStore {
       };
     });
 
+    return [...persistedPlain, ...persistedCombos];
+  }
+
+  /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
+  readonly cartView = computed(() => {
+    const lk = this.lookup();
+    const syncedNow = currentNow(this.promotionService);
+    const now = syncedNow ?? new Date(0);
+    const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
+    const persisted = this.persistedItemsView(this.selectedOrder());
+
     const draft = this.draftLines().map((l) => {
       if (l.kind === 'combo') {
         return {
@@ -654,7 +781,7 @@ export class PosTerminalStore {
         pendingItemIds: [] as string[],
       };
     });
-    return [...persistedPlain, ...persistedCombos, ...draft];
+    return [...persisted, ...draft];
   });
 
   readonly cartEmpty = computed(() => this.cartView().length === 0);
@@ -896,7 +1023,11 @@ export class PosTerminalStore {
     const list = this.ordersOfTable(tableId);
     this.selectedTableId.set(tableId);
     void this.loadSessionBill(tableId);
+    this.prefetchPaidOrderSales(tableId);
     this.resetTransient();
+    // Spec 049, D5: "Todos los pedidos" activa por defecto cuando hay más de
+    // un pedido — coincide con el mockup de referencia.
+    this.showAllOrders.set(list.length > 1);
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
@@ -913,12 +1044,6 @@ export class PosTerminalStore {
     this.selectedOrderId.set(orderId);
     this.customerName.set(this.selectedOrder()?.customer_name || '');
     this.draftLines.set([]);
-  }
-
-  newOrderOnTable(): void {
-    this.selectedOrderId.set(null);
-    this.draftLines.set([]);
-    this.customerName.set('');
   }
 
   /**
@@ -985,6 +1110,7 @@ export class PosTerminalStore {
     this.error.set(null);
     this.billingCustomerName.set('Consumidor Final');
     this.centralPanelTab.set('validar-pago');
+    this.showAllOrders.set(false);
   }
 
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
@@ -1191,9 +1317,15 @@ export class PosTerminalStore {
     }
   }
 
-  /** Anula todos los componentes reales de un combo agrupado en una sola acción. */
+  /**
+   * Anula todos los componentes reales de un combo agrupado en una sola
+   * acción. Busca el pedido dueño recorriendo `orders()` en vez de asumir
+   * `selectedOrder()` (spec 049, D6): en la vista "Todos los pedidos" el
+   * combo puede pertenecer a una tarjeta distinta de la seleccionada, y un
+   * `combo_id` es único dentro de su pedido.
+   */
   async voidPersistedCombo(comboId: string): Promise<void> {
-    const order = this.selectedOrder();
+    const order = this.orders().find((o) => (o.items ?? []).some((i) => i.combo_id === comboId));
     if (!order) return;
     const ids = (order.items ?? [])
       .filter((i) => i.combo_id === comboId && i.estado_cocina !== 'anulado')
@@ -1236,18 +1368,34 @@ export class PosTerminalStore {
   }
 
   /**
-   * Marca listo el pedido entero, en una sola petición.
+   * Marca listo todo lo que le falte por preparar al pedido entero.
    *
-   * Antes recorría los ítems encadenando dos PATCH por cada uno para respetar
-   * el paso intermedio; ahora `POST /orders/{id}/ready` lo resuelve del lado
-   * del servidor y emite sus eventos.
+   * PATCH por ítem (`updateItemKitchen`), igual que el botón "✓ Listo" de
+   * cada línea (`avanzarItem`) — no `POST /orders/{id}/ready`
+   * (`markOrderReady`): ese endpoint rechaza con 409 en cuanto
+   * `order.status === 'pagada'` (registro-de-anomalias.md, A-16), que es
+   * justo el caso normal de un pedido de mostrador cobrado por adelantado
+   * (`hold_for_payment`, spec 028) cuya cocina todavía no termina — el mismo
+   * pedido donde este botón hace más falta. El PATCH por ítem no mira el
+   * status del pedido, así que no choca con esa restricción.
+   *
+   * `orderId` opcional (spec 049, D6): sin argumento preserva el
+   * comportamiento actual (`selectedOrder()`); con un id, opera sobre ese
+   * pedido — lo usa el botón "Marcar pedido listo" de cada tarjeta en la
+   * vista "Todos los pedidos", que no depende de cuál esté seleccionada.
    */
-  async marcarListo(): Promise<void> {
-    const order = this.selectedOrder();
+  async marcarListo(orderId?: string): Promise<void> {
+    const order = orderId ? this.orders().find((o) => o.id === orderId) : this.selectedOrder();
     if (!order) return;
+    const pendingIds = (order.items ?? [])
+      .filter((i) => i.estado_cocina !== 'anulado' && KITCHEN_NOT_READY.includes(i.estado_cocina))
+      .map((i) => i.id);
+    if (pendingIds.length === 0) return;
     this.submitting.set(true);
     try {
-      await this.api.markOrderReady(order.id);
+      for (const id of pendingIds) {
+        await this.api.updateItemKitchen(id, 'listo');
+      }
       await this.reload();
     } catch (err) {
       this.toast.error(this.api.extractError(err, 'No se pudo marcar como listo.'));
@@ -1263,9 +1411,14 @@ export class PosTerminalStore {
    * se tocan los que siguen en curso: mandar un PATCH sobre uno ya `listo` lo
    * rechazaría el backend con un `409` y tumbaría el combo entero. El salto
    * directo desde `pendiente` es legal, así que es un PATCH por ítem y no dos.
+   *
+   * Busca la línea en `tableItemsView` (todos los pedidos de la mesa, spec
+   * 049, D6), no solo en `cartView()` (limitado al pedido seleccionado): en
+   * la vista "Todos los pedidos" el ítem puede pertenecer a una tarjeta
+   * distinta de la seleccionada.
    */
   async avanzarItem(key: string): Promise<void> {
-    const linea = this.cartView().find((l) => l.key === key);
+    const linea = this.tableItemsView().find((l) => l.key === key);
     if (!linea || linea.kind !== 'persisted') return;
     if (linea.pendingItemIds.length === 0) return;
     this.submitting.set(true);
