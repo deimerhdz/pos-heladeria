@@ -31,71 +31,19 @@ import { IconComponent } from '../../../shared/icon/icon.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-[calc(100dvh-57px)] -m-4 md:-m-6 bg-gray-50">
-      <!-- Tipo de orden + selector de mesa -->
-      <div class="bg-white border-b border-gray-200 px-4 py-3 space-y-3 shrink-0">
-        <div class="flex items-center justify-between gap-4 flex-wrap">
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              (click)="backToTerminal()"
-              class="min-h-9 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              ← Volver a la Terminal
-            </button>
-            <h2 class="text-base font-bold text-gray-900">Tipo de Orden</h2>
-          </div>
-          <div class="flex gap-1.5">
-            <button
-              type="button"
-              class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-indigo-500 bg-indigo-50 text-indigo-700"
-            >
-              🍽️ En Mesa
-            </button>
-            <button
-              type="button"
-              disabled
-              title="Todavía no disponible — requiere un cambio de backend"
-              class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
-            >
-              🛍️ Para Llevar
-            </button>
-            <button
-              type="button"
-              disabled
-              title="Todavía no disponible — requiere un cambio de backend"
-              class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
-            >
-              🛵 Domicilio
-            </button>
-          </div>
-        </div>
-
-        <!-- Solo las mesas libres se pueden elegir: esta vista arma un
-             pedido nuevo, no edita una mesa ya ocupada. -->
-        <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
-        <div class="flex gap-2 overflow-x-auto pb-1">
-          @for (t of store.tablesView(); track t.id) {
-            <button
-              type="button"
-              [disabled]="t.statusLabel !== 'Libre' && t.id !== store.selectedTableId()"
-              (click)="selectTable(t.id)"
-              class="shrink-0 w-20 text-center rounded-lg border p-2 transition-colors"
-              [class]="
-                t.id === store.selectedTableId()
-                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                  : t.statusLabel === 'Libre'
-                    ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                    : 'border-gray-100 text-gray-300 cursor-not-allowed'
-              "
-            >
-              <div class="text-sm font-bold">M{{ t.number }}</div>
-              <div class="text-[10px]">{{ t.id === store.selectedTableId() ? 'Seleccionada' : t.statusLabel }}</div>
-            </button>
-          }
-        </div>
+      <!-- Barra superior: solo volver (spec 052 — Tipo de Orden y Mesas se
+           unificaron en el panel derecho, junto a Nueva orden). -->
+      <div class="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+        <button
+          type="button"
+          (click)="backToTerminal()"
+          class="min-h-9 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+        >
+          ← Volver a la Terminal
+        </button>
       </div>
 
-      <!-- Catálogo (izquierda) + resumen del pedido (derecha) -->
+      <!-- Catálogo (izquierda) + panel de configuración y pedido (derecha) -->
       <div class="flex-1 flex min-h-0">
         <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto p-4 gap-3">
           <input
@@ -152,7 +100,59 @@ import { IconComponent } from '../../../shared/icon/icon.component';
           </div>
         </div>
 
-        <div class="w-full sm:w-[320px] shrink-0 flex flex-col min-h-0 border-l border-gray-200 bg-white">
+        <div class="w-full sm:w-[400px] shrink-0 flex flex-col min-h-0 border-l border-gray-200 bg-white">
+          <div class="p-4 border-b border-gray-100 shrink-0 space-y-3">
+            <h2 class="text-base font-bold text-gray-900">Tipo de Orden</h2>
+            <div class="flex gap-1.5 flex-wrap">
+              <button
+                type="button"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-indigo-500 bg-indigo-50 text-indigo-700"
+              >
+                🍽️ En Mesa
+              </button>
+              <button
+                type="button"
+                disabled
+                title="Todavía no disponible — requiere un cambio de backend"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
+              >
+                🛍️ Para Llevar
+              </button>
+              <button
+                type="button"
+                disabled
+                title="Todavía no disponible — requiere un cambio de backend"
+                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 text-gray-400 cursor-not-allowed"
+              >
+                🛵 Domicilio
+              </button>
+            </div>
+
+            <!-- Solo las mesas libres se pueden elegir: esta vista arma un
+                 pedido nuevo, no edita una mesa ya ocupada. -->
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
+            <div class="grid grid-cols-4 gap-2">
+              @for (t of store.tablesView(); track t.id) {
+                <button
+                  type="button"
+                  [disabled]="t.statusLabel !== 'Libre' && t.id !== store.selectedTableId()"
+                  (click)="selectTable(t.id)"
+                  class="text-center rounded-lg border p-2 transition-colors"
+                  [class]="
+                    t.id === store.selectedTableId()
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : t.statusLabel === 'Libre'
+                        ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                        : 'border-gray-100 text-gray-300 cursor-not-allowed'
+                  "
+                >
+                  <div class="text-sm font-bold">M{{ t.number }}</div>
+                  <div class="text-[10px]">{{ t.id === store.selectedTableId() ? 'Seleccionada' : t.statusLabel }}</div>
+                </button>
+              }
+            </div>
+          </div>
+
           <div class="p-4 border-b border-gray-100 shrink-0">
             <h3 class="text-base font-bold text-gray-900">Nueva orden</h3>
             <p class="text-xs text-gray-400 mt-0.5">

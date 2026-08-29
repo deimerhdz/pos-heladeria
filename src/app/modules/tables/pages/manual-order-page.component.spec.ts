@@ -122,6 +122,51 @@ describe('ManualOrderPageComponent', () => {
     expect(mesasHeading!.tagName).not.toBe(tipoOrdenHeading!.tagName);
   });
 
+  it('la barra superior solo contiene "Volver a la Terminal", sin "Tipo de Orden" (spec 052, US1, FR-005)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const backButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Volver a la Terminal'),
+    ) as HTMLButtonElement;
+    const topBar = backButton.closest('div') as HTMLElement;
+    expect(topBar.textContent).not.toContain('Tipo de Orden');
+  });
+
+  it('"Tipo de Orden", "Mesas" y "Nueva orden" viven en el mismo panel derecho (spec 052, US1, FR-001/FR-002/FR-006)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const rightPanel = fixture.nativeElement.querySelector('.border-l.bg-white') as HTMLElement | null;
+    expect(rightPanel).toBeTruthy();
+    expect(rightPanel!.textContent).toContain('Tipo de Orden');
+    expect(rightPanel!.textContent).toContain('Mesas');
+    expect(rightPanel!.textContent).toContain('Nueva orden');
+    expect(rightPanel!.textContent).toContain('Confirmar y Enviar');
+    expect(rightPanel!.textContent).not.toContain('Volver a la Terminal');
+  });
+
+  it('el panel derecho es más ancho que antes (spec 052, US2, FR-007)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const rightPanel = fixture.nativeElement.querySelector('.border-l.bg-white') as HTMLElement;
+    expect(rightPanel.classList.contains('sm:w-[400px]')).toBe(true);
+    expect(rightPanel.classList.contains('sm:w-[320px]')).toBe(false);
+  });
+
   it('la tarjeta de catálogo muestra la imagen del producto cuando tiene image_url (US1, FR-001)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
