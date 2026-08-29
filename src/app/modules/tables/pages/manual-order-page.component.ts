@@ -1,9 +1,14 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ProductSelectComponent } from '../components/product-select.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import {
+  SearchableSelectComponent,
+  SearchableSelectOption,
+} from '../../../shared/searchable-select/searchable-select.component';
 
 /**
  * Vista dedicada para armar un pedido de mostrador nuevo (ajuste posterior a
@@ -27,7 +32,7 @@ import { IconComponent } from '../../../shared/icon/icon.component';
   selector: 'app-manual-order-page',
   standalone: true,
   providers: [PosTerminalStore],
-  imports: [DecimalPipe, ProductSelectComponent, IconComponent],
+  imports: [DecimalPipe, FormsModule, ProductSelectComponent, IconComponent, SearchableSelectComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-[calc(100dvh-57px)] -m-4 md:-m-6 bg-gray-50">
@@ -129,28 +134,15 @@ import { IconComponent } from '../../../shared/icon/icon.component';
             </div>
 
             <!-- Solo las mesas libres se pueden elegir: esta vista arma un
-                 pedido nuevo, no edita una mesa ya ocupada. -->
+                 pedido nuevo, no edita una mesa ya ocupada (spec 053: mesas
+                 ocupadas siguen visibles en el select, no seleccionables). -->
             <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
-            <div class="grid grid-cols-4 gap-2">
-              @for (t of store.tablesView(); track t.id) {
-                <button
-                  type="button"
-                  [disabled]="t.statusLabel !== 'Libre' && t.id !== store.selectedTableId()"
-                  (click)="selectTable(t.id)"
-                  class="text-center rounded-lg border p-2 transition-colors"
-                  [class]="
-                    t.id === store.selectedTableId()
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : t.statusLabel === 'Libre'
-                        ? 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                        : 'border-gray-100 text-gray-300 cursor-not-allowed'
-                  "
-                >
-                  <div class="text-sm font-bold">M{{ t.number }}</div>
-                  <div class="text-[10px]">{{ t.id === store.selectedTableId() ? 'Seleccionada' : t.statusLabel }}</div>
-                </button>
-              }
-            </div>
+            <app-searchable-select
+              placeholder="Buscar mesa…"
+              [options]="mesaOptions()"
+              [ngModel]="store.selectedTableId()"
+              (ngModelChange)="selectTable($event)"
+            />
           </div>
 
           <div class="p-4 border-b border-gray-100 shrink-0">
@@ -221,6 +213,19 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
+  /** Opciones del select buscable de mesas (spec 053, corrección posterior:
+   *  el número de mesa es siempre parte de la etiqueta, no se reemplaza por
+   *  el nombre personalizado — "Mesa 1 - Terraza - Libre", no solo
+   *  "Terraza - Libre"). Mesas ocupadas visibles pero no seleccionables —
+   *  mismo criterio que tenía la rejilla de botones que reemplaza. */
+  readonly mesaOptions = computed<SearchableSelectOption[]>(() =>
+    this.store.tablesView().map((t) => ({
+      id: t.id,
+      label: `Mesa ${t.number}${t.name ? ` - ${t.name}` : ''} - ${t.statusLabel}`,
+      disabled: t.statusLabel !== 'Libre' && t.id !== this.store.selectedTableId(),
+    })),
+  );
 
   async ngOnInit(): Promise<void> {
     await this.store.init();

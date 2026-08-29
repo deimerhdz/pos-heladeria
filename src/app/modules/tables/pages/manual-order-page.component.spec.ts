@@ -76,6 +76,24 @@ describe('ManualOrderPageComponent', () => {
 
   afterEach(() => http.verify());
 
+  /** Helpers para el select buscable de mesas (spec 053). */
+  function abrirSelectorMesas(): void {
+    const boton = fixture.nativeElement.querySelector('app-searchable-select button') as HTMLButtonElement;
+    boton.click();
+    fixture.detectChanges();
+  }
+
+  function opcionesMesas(): HTMLLIElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('app-searchable-select li')) as HTMLLIElement[];
+  }
+
+  function buscarEnSelectorMesas(texto: string): void {
+    const input = fixture.nativeElement.querySelector('app-searchable-select input') as HTMLInputElement;
+    input.value = texto;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
   it('al iniciar, selecciona la mesa del parámetro de ruta', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
@@ -247,7 +265,7 @@ describe('ManualOrderPageComponent', () => {
     expect(fixture.nativeElement.querySelector('app-product-select img')).toBeNull();
   });
 
-  it('el selector de mesas permite cambiar a otra mesa libre, pero no a una ocupada', async () => {
+  it('el selector de mesas permite buscar y cambiar a otra mesa libre, pero no a una ocupada (spec 053, US1, FR-002/FR-005)', async () => {
     createComponent('t1');
     tableService.tables.set([
       table({ id: 't1', number: 1, status: 'libre' }),
@@ -269,15 +287,85 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
-    const m2 = buttons.find((b) => b.textContent?.includes('M2'));
-    const m3 = buttons.find((b) => b.textContent?.includes('M3'));
-    expect(m3?.disabled).toBe(true);
-    expect(m2?.disabled).toBe(false);
-
-    m2!.click();
+    abrirSelectorMesas();
+    buscarEnSelectorMesas('2');
+    const opcionM2 = opcionesMesas().find((li) => li.textContent?.includes('Mesa 2'));
+    opcionM2!.click();
+    fixture.detectChanges();
     http.expectOne(`${API}/table-sessions`).flush([]);
     expect(store.selectedTableId()).toBe('t2');
+
+    abrirSelectorMesas();
+    const opcionM3 = opcionesMesas().find((li) => li.textContent?.includes('Mesa 3'));
+    opcionM3!.click();
+    fixture.detectChanges();
+    expect(store.selectedTableId()).toBe('t2');
+  });
+
+  it('el listado de mesas ya no es una rejilla de botones, sino un select buscable (spec 053, US1, FR-001)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-searchable-select')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.grid-cols-4')).toBeNull();
+  });
+
+  it('el listado del select muestra el nombre y el estado de cada mesa (spec 053, US2, FR-003)', async () => {
+    createComponent('t1');
+    tableService.tables.set([
+      table({ id: 't1', number: 1, status: 'libre' }),
+      table({ id: 't3', number: 3, status: 'ocupada' }),
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    abrirSelectorMesas();
+    const opciones = opcionesMesas();
+    const libre = opciones.find((li) => li.textContent?.includes('Mesa 1'));
+    const ocupada = opciones.find((li) => li.textContent?.includes('Mesa 3'));
+    expect(libre?.textContent).toContain('Libre');
+    expect(ocupada?.textContent).toContain('Ocupada');
+  });
+
+  it('cuando la mesa tiene un nombre personalizado, el número sigue apareciendo en el listado (corrección posterior a spec 053)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 1, name: 'Terraza', status: 'libre' })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    abrirSelectorMesas();
+    const opcion = opcionesMesas().find((li) => li.textContent?.includes('Terraza'));
+    expect(opcion?.textContent).toContain('Mesa 1');
+    expect(opcion?.textContent).toContain('Terraza');
+    expect(opcion?.textContent).toContain('Libre');
+  });
+
+  it('hacer clic sobre una mesa ocupada no la selecciona ni cierra el listado (spec 053, US2, FR-004)', async () => {
+    createComponent('t1');
+    tableService.tables.set([
+      table({ id: 't1', number: 1, status: 'libre' }),
+      table({ id: 't3', number: 3, status: 'ocupada' }),
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    abrirSelectorMesas();
+    const ocupada = opcionesMesas().find((li) => li.textContent?.includes('Mesa 3'));
+    ocupada!.click();
+    fixture.detectChanges();
+
+    expect(store.selectedTableId()).toBe('t1');
+    expect(fixture.nativeElement.querySelector('app-searchable-select ul')).toBeTruthy();
   });
 
   it('agregar un producto al draft se refleja en el resumen, con Impuesto siempre en $0 (FR-011)', async () => {
@@ -392,4 +480,5 @@ describe('ManualOrderPageComponent', () => {
     expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones']);
     expect(createSpy).not.toHaveBeenCalled();
   });
+
 });
