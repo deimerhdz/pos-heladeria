@@ -74,6 +74,7 @@ interface VariantResponse {
   sku: string | null;
   price: string;
   active: boolean;
+  presentation_id?: string | null;
 }
 
 interface RecipeItemResponse {
@@ -303,6 +304,7 @@ export class ProductService {
       name: form.name,
       price: form.price,
       sku: form.sku,
+      presentation_id: form.presentation_id ?? null,
     };
     return this.run(() =>
       this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, payload),
@@ -408,6 +410,7 @@ export class ProductService {
         localId: v.id,
         name: v.name,
         price: v.price,
+        presentationId: v.presentation_id ?? null,
         recipe: recipe.map((r) => ({ ...r })),
         optionGroups,
       });
@@ -482,8 +485,8 @@ export class ProductService {
       const v = draft.variants[i];
       const variantId =
         i === 0 && autoId
-          ? (await this.patchVariant(autoId, { name: v.name, price: v.price })).id
-          : (await this.postVariant(productId, { name: v.name, price: v.price })).id;
+          ? (await this.patchVariant(autoId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id
+          : (await this.postVariant(productId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id;
       await this.saveVariantConfig(variantId, v);
     }
     return productId;
@@ -513,8 +516,8 @@ export class ProductService {
     const orderedIds: string[] = [];
     for (const v of draft.variants) {
       const variantId = v.id
-        ? (await this.patchVariant(v.id, { name: v.name, price: v.price })).id
-        : (await this.postVariant(productId, { name: v.name, price: v.price })).id;
+        ? (await this.patchVariant(v.id, { name: v.name, price: v.price, presentation_id: v.presentationId })).id
+        : (await this.postVariant(productId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id;
       orderedIds.push(variantId);
       await this.saveVariantConfig(variantId, v);
     }
@@ -558,7 +561,10 @@ export class ProductService {
    * importa —el nombre lo ocupa una presentación desactivada, que el editor no lista—
    * quedaba indistinguible de un duplicado a la vista del usuario.
    */
-  private async postVariant(productId: string, form: { name: string; price: number }) {
+  private async postVariant(
+    productId: string,
+    form: { name: string; price: number; presentation_id?: string | null },
+  ) {
     try {
       return await firstValueFrom(
         this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, form),
@@ -571,7 +577,10 @@ export class ProductService {
   }
 
   /** Renombrar al nombre de otra presentación choca igual que crearla: mismo trato. */
-  private async patchVariant(variantId: string, form: { name: string; price: number }) {
+  private async patchVariant(
+    variantId: string,
+    form: { name: string; price: number; presentation_id?: string | null },
+  ) {
     try {
       return await firstValueFrom(
         this.http.patch<VariantResponse>(`${this.variantsUrl}/${variantId}`, form),
@@ -691,6 +700,7 @@ export class ProductService {
       sku: v.sku,
       price: Number(v.price),
       active: v.active,
+      presentation_id: v.presentation_id ?? null,
     };
   }
 
