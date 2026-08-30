@@ -5,20 +5,22 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { environment } from '../../../../environments/environment';
 import { PosOrderPanelComponent } from './pos-order-panel.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
-import { environment } from '../../../../environments/environment';
+
+const API = environment.apiBaseUrl;
 
 /** Pedido con un solo ítem ya en cocina ('listo'), origen mesero. `paid` se
  *  fija por test (spec 029, Historia 1: "Anular" desaparece una vez pagado). */
 function orderConItemListo(paid: boolean): DiningOrder {
   return {
     id: 'o1',
-    channel: 'waiter',
+    channel: 'POS',
     status: 'abierta',
     version: 1,
     dining_table_id: 't1',
@@ -124,6 +126,60 @@ describe('PosOrderPanelComponent — sin descuento manual', () => {
   });
 });
 
+/** Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró de este
+ *  panel — vive ahora en session-bill-panel.component.ts ("Cuenta de la
+ *  mesa"). `store.totals()` en sí no cambia (sigue alimentando el panel de
+ *  cuenta indirectamente vía `bill.split`), solo deja de renderizarse aquí. */
+describe('PosOrderPanelComponent — sin resumen de totales (spec 049)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+    store.orders.set([orderConItemListo(false)]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  it('no muestra ninguna fila "Subtotal", "Descuento" ni "Total"', () => {
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).not.toContain('Subtotal');
+    expect(texto).not.toContain('Descuento');
+    expect(texto).not.toContain('Total');
+  });
+
+  it('conserva "Marcar pedido listo" fuera del contenedor de totales retirado', () => {
+    // orderConItemListo(false) ya tiene su único ítem 'listo': kitchenReady()
+    // es true y el botón no se muestra (comportamiento ya existente, sin
+    // relación con esta spec) — se necesita un ítem 'pendiente' para verlo.
+    store.orders.set([
+      { ...orderConItemListo(false), items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: 'pendiente' }] },
+    ]);
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Marcar pedido listo');
+  });
+});
+
 /** Spec 029, Historia 3 (FR-013): el encabezado del pedido distingue tres
  *  estados — "en preparación", "pago pendiente" y "listo para cobrar" —, ya
  *  no solo dos. */
@@ -135,7 +191,7 @@ describe('PosOrderPanelComponent — encabezado de tres estados (spec 029)', () 
   function orderCon(estado: 'pendiente' | 'listo', paid: boolean): DiningOrder {
     return {
       id: 'o1',
-      channel: 'waiter',
+      channel: 'POS',
       status: 'abierta',
       version: 1,
       dining_table_id: 't1',
@@ -189,7 +245,7 @@ describe('PosOrderPanelComponent — encabezado de tres estados (spec 029)', () 
 
 /** Pedido sin ítems, origen mesero, todavía sin cocina — mesa ocupada
  *  "armando pedido" (spec 036, Historia 2). */
-function orderVacio(channel: DiningOrder['channel'] = 'waiter', paid = false): DiningOrder {
+function orderVacio(channel: DiningOrder['channel'] = 'POS', paid = false): DiningOrder {
   return {
     id: 'o1',
     channel,
@@ -308,7 +364,7 @@ describe('PosOrderPanelComponent — sin catálogo para una orden QR de solo lec
     // la muestra (estado 'pedido'), pero es de solo lectura (getSidebarMode).
     return {
       id: 'o1',
-      channel: 'qr',
+      channel: 'QR_MENU',
       status: 'pagada',
       version: 1,
       dining_table_id: 't1',
@@ -356,7 +412,7 @@ function table(partial: Partial<Table>): Table {
 function pendingOrder(id: string, tableId: string): DiningOrder {
   return {
     id,
-    channel: 'qr',
+    channel: 'QR_MENU',
     status: 'recibida',
     dining_table_id: tableId,
     customer_name: null,
@@ -366,11 +422,11 @@ function pendingOrder(id: string, tableId: string): DiningOrder {
 }
 
 /**
- * Spec 036: "Pagos por confirmar" vive dentro de esta misma sección
- * (detalle del pedido), no debajo de la grilla de mesas — es el único
- * momento en que la columna central está libre (nada seleccionado).
+ * Spec 045: sin mesa seleccionada, este panel ya no muestra la sección
+ * global "Pagos por confirmar" (spec 036 FR-004, retirada) — solo un
+ * placeholder informativo único.
  */
-describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa seleccionada (spec 036)', () => {
+describe('PosOrderPanelComponent — placeholder cuando no hay mesa seleccionada (spec 045)', () => {
   let fixture: ComponentFixture<PosOrderPanelComponent>;
   let store: PosTerminalStore;
   let tableService: TableService;
@@ -397,18 +453,14 @@ describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa se
 
   afterEach(() => http.verify());
 
-  it('sin mesa seleccionada, muestra "Pagos por confirmar" dentro de la misma sección', () => {
+  it('sin mesa seleccionada, muestra un único placeholder informativo (sin "Pagos por confirmar")', () => {
     tableService.tables.set([table({ id: 't1', number: 4 })]);
     store.orders.set([pendingOrder('o1', 't1')]);
     fixture.detectChanges();
 
-    // El panel de revisión embebido (spec 036, T009) carga sus propios
-    // intentos de pago — se resuelve para no dejar la petición abierta.
-    http.expectOne(`${environment.apiBaseUrl}/orders/o1/payment-attempts`).flush([]);
-
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto).toContain('Pagos por confirmar');
-    expect(texto).toContain('Mesa 4');
+    expect(texto).not.toContain('Pagos por confirmar');
+    expect(texto).toContain('Selecciona una mesa');
   });
 
   it('con una mesa/pedido seleccionado, ya no muestra "Pagos por confirmar" (solo el detalle del pedido)', () => {
@@ -416,7 +468,7 @@ describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa se
     store.orders.set([
       {
         id: 'o2',
-        channel: 'waiter',
+        channel: 'POS',
         status: 'abierta',
         dining_table_id: 't1',
         customer_name: null,
@@ -431,5 +483,264 @@ describe('PosOrderPanelComponent — "Pagos por confirmar" cuando no hay mesa se
 
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(texto).not.toContain('Pagos por confirmar');
+  });
+});
+
+/** Spec 049: cabecera de solo lectura + pestañas "Todos los pedidos"/"Pedido N". */
+describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let tableService: TableService;
+  let http: HttpTestingController;
+
+  function ordenSimple(
+    id: string,
+    estado: 'pendiente' | 'listo',
+    customerName: string | null = 'Deimer Hernandez',
+  ): DiningOrder {
+    return {
+      id,
+      channel: 'POS',
+      status: 'abierta',
+      dining_table_id: 't1',
+      customer_name: customerName,
+      created_at: '2026-08-21T08:10:00',
+      paid: false,
+      items: [{ id: `${id}-i1`, product_variant_id: 'v1', quantity: 2, unit_price: '4000', estado_cocina: estado }],
+    } as DiningOrder;
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    tableService = TestBed.inject(TableService);
+    http = TestBed.inject(HttpTestingController);
+    tableService.tables.set([table({ id: 't1', number: 2, status: 'ocupada' })]);
+  });
+
+  afterEach(() => http.verify());
+
+  const findButton = (text: string): HTMLButtonElement | undefined =>
+    Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.trim() === text,
+    ) as HTMLButtonElement | undefined;
+
+  it('la cabecera muestra mesa, chip de estado y cliente como texto, sin ningún input editable', () => {
+    store.orders.set([ordenSimple('o1', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    // `selectedOrderId` se fija directo (patrón ya usado en este archivo);
+    // `customerName` normalmente lo copia `selectTable()`/`selectOrder()`
+    // desde `order.customer_name`, así que se fija igual aquí a propósito.
+    store.customerName.set('Deimer Hernandez');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Mesa 2');
+    // Con un ítem 'pendiente', el chip refleja el estado derivado real
+    // ("En preparación", `deriveTableStatus`), no el estado crudo de la mesa
+    // ("Ocupada") — mismo criterio ya usado por la grilla (`tablesView()`).
+    expect(el.textContent).toContain('En preparación');
+    expect(el.textContent).toContain('Deimer Hernandez');
+    expect(el.querySelector('input[type="text"]')).toBeNull();
+  });
+
+  it('con dos pedidos activos aparecen "Todos los pedidos (2)", "Pedido 1", "Pedido 2", con "Todos los pedidos" activa por defecto', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    store.showAllOrders.set(true);
+    fixture.detectChanges();
+
+    expect(findButton('Todos los pedidos (2)')).toBeDefined();
+    expect(findButton('Pedido 1')).toBeDefined();
+    expect(findButton('Pedido 2')).toBeDefined();
+    expect(store.showAllOrders()).toBe(true);
+  });
+
+  it('en "Todos los pedidos" se ven ambas tarjetas a la vez, cada una con su hora y su pastilla de estado', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    store.showAllOrders.set(true);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('2x');
+    expect(el.textContent).toContain('Listo');
+    expect(el.textContent).toContain('Pendiente');
+    // 2x por cada una de las dos tarjetas.
+    expect(el.textContent!.match(/2x/g)?.length).toBe(2);
+  });
+
+  it('elegir "Pedido 1" muestra solo esa tarjeta y oculta la de "Pedido 2"', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    store.showAllOrders.set(true);
+    fixture.detectChanges();
+
+    findButton('Pedido 1')!.click();
+    fixture.detectChanges();
+
+    expect(store.showAllOrders()).toBe(false);
+    expect(store.selectedOrderId()).toBe('o1');
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent!.match(/2x/g)?.length).toBe(1);
+  });
+
+  it('"+ Agregar producto" no aparece en "Todos los pedidos" pero sí dentro de una pestaña individual', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    store.showAllOrders.set(true);
+    fixture.detectChanges();
+    expect(findButton('＋ Agregar producto')).toBeUndefined();
+
+    findButton('Pedido 1')!.click();
+    fixture.detectChanges();
+    expect(findButton('＋ Agregar producto')).toBeDefined();
+  });
+
+  it('con un único pedido activo no aparece ningún selector de pestañas', () => {
+    store.orders.set([ordenSimple('o1', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Todos los pedidos');
+    expect(fixture.nativeElement.textContent).not.toContain('Pedido 1');
+  });
+
+  it('marcar listo desde una tarjeta que no es la seleccionada por defecto afecta al pedido correcto', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1'); // seleccionado: o1 (ya "listo", sin botón)
+    store.showAllOrders.set(true);
+    fixture.detectChanges();
+
+    // El único botón "Marcar pedido listo" visible es el de la tarjeta o2
+    // (la única "Pendiente"); confirma que apunta a ese pedido, no al
+    // seleccionado.
+    findButton('Marcar pedido listo')!.click();
+    // PATCH por ítem (bugfix A-16), no "ready" — ver marcarListo().
+    http.expectOne(`${API}/orders/items/o2-i1/kitchen`).flush({ detail: 'boom' }, { status: 500, statusText: 'Error' });
+  });
+
+  it('spec 049, FR-001: no existe ningún control "+ Nuevo pedido" con varios pedidos activos', () => {
+    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    expect(findButton('+ Nuevo pedido')).toBeUndefined();
+    expect(fixture.nativeElement.textContent).not.toContain('Nuevo pedido');
+  });
+});
+
+function standaloneOrder(orderType: 'TAKEAWAY' | 'DELIVERY', extra: Partial<DiningOrder> = {}): DiningOrder {
+  return {
+    id: 'o1',
+    channel: 'POS',
+    order_type: orderType,
+    status: 'abierta',
+    version: 1,
+    dining_table_id: null,
+    customer_name: 'María G.',
+    created_at: '2026-08-21T10:00:00',
+    paid: false,
+    items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: 'pendiente' }],
+    ...extra,
+  } as DiningOrder;
+}
+
+/** Spec 059, Historia 3 (FR-010/FR-012): un pedido de Domicilio/Para llevar
+ *  seleccionado sin mesa muestra su detalle, no el placeholder — mismo
+ *  panel que ya usa una mesa con pedido. */
+describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('muestra el detalle del pedido (no el placeholder) para un pedido "Para llevar" sin mesa', () => {
+    store.orders.set([standaloneOrder('TAKEAWAY')]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    // `customerName` lo llena `selectStandaloneOrder()` en el flujo real —
+    // se fija a mano aquí porque este test manipula la selección
+    // directamente, sin pasar por ese método (mismo patrón ya usado por el
+    // resto de este archivo para `selectedTableId`/`selectedOrderId`).
+    store.customerName.set('María G.');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Selecciona una mesa');
+    expect(text).toContain('Para llevar');
+    expect(text).toContain('María G.');
+  });
+
+  it('con order_type DELIVERY, el título es "Domicilio" y se ven dirección/teléfono/valor del domicilio', () => {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Cra 45 # 10-20',
+        delivery_phone: '3001234567',
+        delivery_fee: 5000,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Domicilio');
+    expect(text).toContain('Cra 45 # 10-20');
+    expect(text).toContain('3001234567');
+  });
+
+  it('sin teléfono (opcional), no muestra la línea de teléfono', () => {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Cra 45 # 10-20',
+        delivery_phone: null,
+        delivery_fee: 5000,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement.textContent as string)).not.toContain('📞');
   });
 });

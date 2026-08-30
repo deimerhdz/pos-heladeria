@@ -6,10 +6,10 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
-import { DiningOrder, SessionBill, getSidebarMode } from '../interfaces/dining.interface';
+import { getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
-import { SplitBillPanelComponent } from './split-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
 import {
   PaymentDraft,
@@ -32,16 +32,20 @@ import {
  *   error que el cajero no sabía interpretar).
  * - `'terminal-pos'` (canal `counter`/`waiter`, o mesa libre sin pedido
  *   todavía): panel editable — carrito + método de pago + nombre de
- *   facturación + un único botón "Cobrar, Facturar y Enviar a Cocina"
- *   (`POST /orders/{id}/checkout-and-send`, T024/T025). Es un pedido, no una
- *   sesión: no pasa por `TableSessionService.close()`.
+ *   facturación + un único botón "Cobrar" (`POST /orders/{id}/checkout-and-
+ *   send`, T024/T025). Es un pedido, no una sesión: no pasa por
+ *   `TableSessionService.close()`.
  *
- * "Imprimir Pre-cuenta" (T032) y "Liberar Mesa" (T035) se ven en ambos modos.
+ * "Imprimir Pre-cuenta" (T032) se ve en ambos modos. "Imprimir Factura" y
+ * "Liberar Mesa" (T035) también, salvo mientras el pedido de `terminal-pos`
+ * sigue con el cobro pendiente (`pendingCheckout()`, spec 058, FR-007) — son
+ * acciones post-cobro, no tiene sentido ofrecerlas antes de que el pedido se
+ * facture.
  */
 @Component({
   selector: 'app-pos-checkout-panel',
   standalone: true,
-  imports: [SessionBillPanelComponent, SplitBillPanelComponent, PaymentInputComponent],
+  imports: [SessionBillPanelComponent, PaymentInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -78,6 +82,7 @@ import {
             [cashShiftId]="store.cashShiftId()"
             [customerName]="store.customerName()"
             [orphan]="store.billOrphan()"
+            [paidSummary]="store.selectedTablePaidSummary()"
             [readOnly]="true"
           />
         } @else if (showSessionCharge()) {
@@ -93,20 +98,13 @@ import {
             productos que sigan sin marcar como listos antes de cobrar.
           -->
           <div class="flex flex-col h-full">
-            @if (store.sessionBill(); as bill) {
-              <button
-                (click)="splitOpen.set(true)"
-                class="w-full mb-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
-              >
-                Dividir la cuenta entre varias personas
-              </button>
-            }
             <app-session-bill-panel
               [bill]="store.sessionBill()"
               [methods]="store.paymentMethodsAvailable()"
               [cashShiftId]="store.cashShiftId()"
               [customerName]="store.customerName()"
               [orphan]="store.billOrphan()"
+              [paidSummary]="store.selectedTablePaidSummary()"
               [beforeCharge]="store.ensureReadyToCharge"
               (charged)="store.onCharged($event)"
             />
@@ -130,56 +128,46 @@ import {
               {{ store.selectedOrder() ? 'Cobrar pedido' : 'Pedido de mostrador' }}
             </h2>
 
-            @if (store.cartEmpty()) {
-              <p class="text-sm text-gray-400 py-6 text-center">
-                Agrega productos desde el catálogo para armar el pedido.
-              </p>
-            } @else {
-              <div class="space-y-1 mb-3">
-                @for (it of store.cartView(); track it.key) {
-                  <div class="flex items-center justify-between text-sm gap-2">
-                    <span class="text-gray-700 truncate">{{ it.qty }}× {{ it.name }}</span>
-                    <span class="text-gray-900 font-medium shrink-0">{{
-                      store.fmt(it.subtotal)
-                    }}</span>
-                  </div>
-                }
-              </div>
-              <div class="flex items-center justify-between pt-2 border-t border-gray-100 mb-3">
-                <span class="text-base font-semibold text-gray-800">Total</span>
-                <span class="text-lg font-bold text-gray-900">{{
-                  store.fmt(store.totals().total)
-                }}</span>
-              </div>
-            }
-
-            @if (store.sessionBill(); as bill) {
-              <!-- Sin esto, una mesa donde pidió una sola persona no se puede dividir:
-                   el desglose tendría una única línea y el modo split queda bloqueado. -->
-              <button
-                (click)="splitOpen.set(true)"
-                class="w-full mb-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium transition-colors"
-              >
-                Dividir la cuenta entre varias personas
-              </button>
-            }
-
             @if (!store.selectedOrder()) {
-              <p class="text-sm text-gray-400">
-                Crea el pedido (botón "Crear pedido" en el panel central) para poder cobrarlo.
-              </p>
+              <!-- Spec 045: único contenido de este panel sin pedido -- ya no
+                   arma un carrito propio aquí (ese flujo embebido se retiró,
+                   spec 036 nota posterior); crear un pedido nuevo se hace en
+                   la vista dedicada (manual-order-page.component.ts). -->
+              <button
+                type="button"
+                (click)="goToNewOrder()"
+                [disabled]="!newOrderTableId()"
+                [title]="!newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
+                class="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+              >
+                + Crear pedido nuevo
+              </button>
             } @else {
               <div class="mb-2">
                 <label class="block text-sm font-medium text-gray-600 mb-1"
                   >Facturar a nombre de</label
                 >
-                <input
-                  type="text"
-                  [value]="store.billingCustomerName()"
-                  (input)="store.billingCustomerName.set($any($event.target).value)"
-                  placeholder="Consumidor Final"
-                  class="w-full min-h-11 px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                />
+                <div class="relative">
+                  <input
+                    type="text"
+                    [value]="store.billingCustomerName()"
+                    [readOnly]="!editandoFacturacion()"
+                    (input)="store.billingCustomerName.set($any($event.target).value)"
+                    (blur)="onFacturacionBlur()"
+                    placeholder="Consumidor Final"
+                    class="w-full min-h-11 px-3 py-2 pr-9 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    [class.bg-gray-50]="!editandoFacturacion()"
+                    [class.text-gray-500]="!editandoFacturacion()"
+                  />
+                  <button
+                    type="button"
+                    (click)="toggleEditarFacturacion()"
+                    title="Editar nombre de facturación"
+                    class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    ✏️
+                  </button>
+                </div>
               </div>
 
               <app-payment-input
@@ -199,9 +187,7 @@ import {
                 [disabled]="store.checkoutSubmitting() || issue() !== null"
                 class="w-full min-h-11 py-2.5 mt-3 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                {{
-                  store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar, Facturar y Enviar a Cocina'
-                }}
+                {{ store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar' }}
               </button>
 
               <!-- Spec 029, hotfix #4: alternativa a cobrar, sin venta ni movimiento de caja. -->
@@ -218,50 +204,79 @@ import {
       </div>
 
       @if (store.sessionBill(); as bill) {
-        <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
-          @if (store.selectedOrder(); as order) {
-            <!--
-              FR-001/FR-002 (spec 029, Historia 4): única acción de impresión
-              tras el pago — reimprime la factura de CUALQUIER pedido ya
-              facturado, sea QR o de mostrador, sin importar quién lo cobró
-              ni en qué pestaña (con lookup al backend — ver
-              PosTerminalStore.printOrderInvoice). Reemplaza el botón del
-              diálogo de éxito para el caso de un solo comprobante, que
-              duplicaba esta misma acción.
-            -->
-            <button
-              (click)="store.printOrderInvoice(order.id)"
-              class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              🧾 Imprimir Factura
-            </button>
-          }
-          <button
-            (click)="store.releaseTable()"
-            [disabled]="store.submitting()"
-            class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
-          >
-            🔓 Liberar Mesa
-          </button>
-        </div>
+        <!--
+          Spec 058, FR-007: "Imprimir Factura" y "Liberar Mesa" son acciones
+          post-cobro -- no se muestran mientras este mismo pedido sigue en la
+          rama de cobro pendiente (pendingCheckout()). Reaparecen en los demás
+          modos del panel (resumen QR, showSessionCharge) sin cambios (FR-008).
+        -->
+        @if (!pendingCheckout()) {
+          <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
+            @if (store.selectedOrder(); as order) {
+              <!--
+                FR-001/FR-002 (spec 029, Historia 4): única acción de impresión
+                tras el pago — reimprime la factura de CUALQUIER pedido ya
+                facturado, sea QR o de mostrador, sin importar quién lo cobró
+                ni en qué pestaña (con lookup al backend — ver
+                PosTerminalStore.printOrderInvoice). Reemplaza el botón del
+                diálogo de éxito para el caso de un solo comprobante, que
+                duplicaba esta misma acción.
+              -->
+              <button
+                (click)="store.printOrderInvoice(order.id)"
+                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                🧾 Imprimir Factura
+              </button>
+            }
+            @if (store.centralState() !== 'validar-pago') {
+              <!--
+                Spec 046, FR-001/FR-002: mientras la mesa tenga al menos un pago
+                QR pendiente de confirmar (centralState() === 'validar-pago',
+                mismo computed que decide el panel central), "Liberar Mesa" no
+                se muestra -- evita liberar la mesa antes de validar que el
+                dinero/comprobante corresponde. Reaparece solo (reactivo) en
+                cuanto se confirma/aprueba el pago, sin código adicional.
+              -->
+              <button
+                (click)="store.releaseTable()"
+                [disabled]="store.submitting()"
+                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+              >
+                🔓 Liberar Mesa
+              </button>
+            }
+          </div>
+        }
       }
     </div>
-
-    @if (splitOpen() && store.sessionBill(); as bill) {
-      <app-split-bill-panel
-        [sessionId]="bill.table_session_id"
-        [tableLabel]="tableLabel()"
-        [orders]="sessionOrders(bill)"
-        [categories]="store.categories()"
-        (saved)="onSplitSaved($event)"
-        (close)="splitOpen.set(false)"
-      />
-    }
   `,
 })
 export class PosCheckoutPanelComponent {
   readonly store = inject(PosTerminalStore);
-  readonly splitOpen = signal(false);
+  private readonly router = inject(Router);
+
+  /**
+   * Spec 045: mesa destino del botón fijo "+ Crear pedido nuevo" -- la mesa
+   * libre ya seleccionada (estado informativo del panel central), o la
+   * primera mesa libre disponible si ninguna lo está. `null` (botón
+   * deshabilitado) si no hay ninguna mesa libre en absoluto.
+   */
+  readonly newOrderTableId = computed(
+    () =>
+      this.store.selectedTableId() ??
+      this.store.tablesView().find((t) => t.statusLabel === 'Libre')?.id ??
+      null,
+  );
+
+  /** Navega a la vista dedicada de armado de pedido nuevo
+   *  (manual-order-page.component.ts) -- mismo destino al que antes se
+   *  llegaba haciendo clic directo en una mesa libre. */
+  goToNewOrder(): void {
+    const tableId = this.newOrderTableId();
+    if (!tableId) return;
+    this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+  }
 
   /** T004: qué panel de cobro va según el origen del pedido activo. */
   readonly sidebarMode = computed(() => getSidebarMode(this.store.selectedOrder()));
@@ -278,8 +293,29 @@ export class PosCheckoutPanelComponent {
     return !!order && order.status !== 'recibida';
   });
 
+  /** Spec 058, FR-007: mismo estado que decide la rama "Cobrar pedido"/"Pedido de
+   *  mostrador" (única rama con un pedido seleccionado cuyo cobro aún no se ha
+   *  efectuado) — usado para ocultar el footer "Imprimir Factura"/"Liberar Mesa",
+   *  acciones que solo aplican después del cobro. */
+  readonly pendingCheckout = computed(
+    () => this.sidebarMode() === 'terminal-pos' && !!this.store.selectedOrder() && !this.showSessionCharge(),
+  );
+
   /** Cómo paga el cajero el pedido de mostrador que se está cobrando (T024/T025). */
   readonly paymentDraft = signal<PaymentDraft>(emptyPaymentDraft());
+
+  /** Spec 058: modo edición de "Facturar a nombre de" — solo lectura por defecto, mismo
+   *  patrón que `editandoCliente` en `manual-order-page.component.ts` (spec 054). Estado
+   *  puramente de interacción de este componente, no vive en el store. */
+  readonly editandoFacturacion = signal(false);
+
+  toggleEditarFacturacion(): void {
+    this.editandoFacturacion.set(true);
+  }
+
+  onFacturacionBlur(): void {
+    this.editandoFacturacion.set(false);
+  }
 
   readonly issue = computed(() =>
     paymentIssue(this.paymentDraft(), this.store.totals().total, this.store.paymentMethodsAvailable()),
@@ -291,36 +327,12 @@ export class PosCheckoutPanelComponent {
     effect(() => {
       this.store.selectedOrderId();
       this.paymentDraft.set(emptyPaymentDraft());
+      this.editandoFacturacion.set(false);
     });
   }
 
   async checkout(): Promise<void> {
     if (this.issue()) return;
     await this.store.checkoutAndSend(paymentLines(this.paymentDraft()));
-  }
-
-  /**
-   * Los pedidos de ESTA sesión.
-   *
-   * `store.orders()` trae los de todas las mesas (`listOrders()` no filtra), así que
-   * pasarlo crudo hacía que el reparto listara productos de otras mesas y dejara sus
-   * selectores en blanco. `bill.order_ids` sale de la misma `compute_bill` que produce
-   * el desglose, así que lo que se reparte y lo que se cobra no pueden discrepar.
-   */
-  sessionOrders(bill: SessionBill): DiningOrder[] {
-    const ids = new Set(bill.order_ids);
-    return this.store.orders().filter((o) => ids.has(o.id));
-  }
-
-  /** "Mesa 1", para que se vea de qué mesa es la lista sin tener que deducirlo. */
-  tableLabel(): string {
-    const t = this.store.selectedTable();
-    return t ? `Mesa ${t.number}` : '';
-  }
-
-  /** El reparto devuelve la cuenta ya recalculada: se aprovecha en vez de repedirla. */
-  onSplitSaved(bill: SessionBill): void {
-    this.store.sessionBill.set(bill);
-    this.store.billStale.set(false);
   }
 }

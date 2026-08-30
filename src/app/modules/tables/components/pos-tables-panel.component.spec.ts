@@ -9,6 +9,8 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
+import { PaymentMethodService } from '../../sales/services/payment-method.service';
+import { CashService } from '../../cash-register/services/cash.service';
 
 function table(partial: Partial<Table>): Table {
   return {
@@ -49,6 +51,18 @@ describe('PosTablesPanelComponent', () => {
             ready: () => false,
             now: () => new Date(),
           },
+        },
+        // Spec 059: seleccionar una mesa con pedido ahora dispara la carga
+        // diferida de datos de cobro (Historia 1) — mockeados como
+        // "ya cargados" para no ensuciar este archivo con peticiones ajenas
+        // a lo que prueba (mismo patrón que pos-terminal.store.spec.ts).
+        {
+          provide: PaymentMethodService,
+          useValue: { methods: () => [{ id: 'pm-cash' }], checkoutOptions: () => [{ id: 'pm-cash' }], load: () => Promise.resolve(), loadAvailableForCheckout: () => Promise.resolve() },
+        },
+        {
+          provide: CashService,
+          useValue: { shift: () => ({ id: 'shift-1' }), isOpen: () => true, restoreShift: () => Promise.resolve() },
         },
       ],
     });
@@ -179,7 +193,7 @@ describe('PosTablesPanelComponent', () => {
       (b as HTMLButtonElement).textContent?.includes(label),
     ) as HTMLButtonElement | undefined;
 
-  it('seleccionar una mesa libre navega a la vista dedicada de armado de pedido (ajuste posterior)', () => {
+  it('seleccionar una mesa libre solo la selecciona, sin navegar (spec 045: la tarjeta solo muestra el pedido)', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'libre' })]);
     fixture.detectChanges();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -187,8 +201,11 @@ describe('PosTablesPanelComponent', () => {
 
     tableCard('Mesa 3')!.click();
 
-    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
-    expect(selectSpy).not.toHaveBeenCalled();
+    expect(selectSpy).toHaveBeenCalledWith('t1');
+    expect(navigateSpy).not.toHaveBeenCalled();
+    // selectTable() dispara la carga de la cuenta de la mesa (comportamiento
+    // ya existente, sin cambios) — se resuelve para no dejar la petición abierta.
+    http.expectOne(`${environment.apiBaseUrl}/table-sessions`).flush([]);
   });
 
   it('seleccionar una mesa ocupada sigue llamando a store.selectTable() sin cambios (no navega)', () => {
@@ -196,7 +213,7 @@ describe('PosTablesPanelComponent', () => {
     store.orders.set([
       {
         id: 'o1',
-        channel: 'waiter',
+        channel: 'POS',
         status: 'abierta',
         dining_table_id: 't1',
         created_at: '2026-08-21T10:00:00',
@@ -214,5 +231,60 @@ describe('PosTablesPanelComponent', () => {
     // selectTable() dispara la carga de la cuenta de la mesa (comportamiento
     // ya existente, sin cambios) — se resuelve para no dejar la petición abierta.
     http.expectOne(`${environment.apiBaseUrl}/table-sessions`).flush([]);
+  });
+
+  function standaloneOrder(
+    id: string,
+    orderType: 'TAKEAWAY' | 'DELIVERY',
+    customerName: string | null = null,
+  ): ReturnType<PosTerminalStore['orders']>[number] {
+    return {
+      id,
+      channel: 'POS',
+      order_type: orderType,
+      status: 'abierta',
+      dining_table_id: null,
+      customer_name: customerName,
+      created_at: '2026-08-21T10:00:00',
+      items: [{ id: `${id}-i1`, product_variant_id: 'v1', quantity: 1, unit_price: '4000', estado_cocina: 'pendiente' }],
+    } as unknown as ReturnType<PosTerminalStore['orders']>[number];
+  }
+
+  it('"Para llevar" muestra una tarjeta por pedido pendiente de cobro, con el mismo formato que las mesas (spec 059, Historia 2)', () => {
+    store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
+    fixture.detectChanges();
+
+    tabButton('Para llevar')!.click();
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Para llevar');
+    expect(text).toContain('María G.');
+    // Ya no es el mensaje vacío fijo.
+    expect(text).not.toContain('pendiente de cobro');
+  });
+
+  it('"Domicilios" no mezcla pedidos de Para llevar, y sigue vacía si no hay ninguno DELIVERY', () => {
+    store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
+    fixture.detectChanges();
+
+    tabButton('Domicilios')!.click();
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('María G.');
+    expect(text.toLowerCase()).toContain('domicilio');
+  });
+
+  it('seleccionar una tarjeta de pedido "Para llevar" llama a store.selectStandaloneOrder() (spec 059, Historia 3)', () => {
+    store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
+    fixture.detectChanges();
+    tabButton('Para llevar')!.click();
+    fixture.detectChanges();
+    const selectSpy = vi.spyOn(store, 'selectStandaloneOrder');
+
+    tableCard('María G.')!.click();
+
+    expect(selectSpy).toHaveBeenCalledWith('o1');
   });
 });

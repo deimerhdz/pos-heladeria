@@ -14,6 +14,8 @@ import { normalizeText } from '../normalize-text';
 export interface SearchableSelectOption {
   id: string;
   label: string;
+  /** Visible en el listado pero no seleccionable (spec 053: mesas ocupadas). */
+  disabled?: boolean;
 }
 
 /**
@@ -54,8 +56,10 @@ export interface SearchableSelectOption {
           <ul class="max-h-48 overflow-y-auto py-1">
             @for (o of filteredOptions(); track o.id; let i = $index) {
               <li (click)="selectOption(o)" (mouseenter)="highlightedIndex.set(i)"
-                class="px-3 py-1.5 text-sm cursor-pointer"
-                [class]="i === highlightedIndex() ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50'">
+                class="px-3 py-1.5 text-sm"
+                [class]="o.disabled
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : i === highlightedIndex() ? 'cursor-pointer bg-indigo-50 text-indigo-700' : 'cursor-pointer hover:bg-gray-50'">
                 {{ o.label }}
               </li>
             } @empty {
@@ -123,6 +127,7 @@ export class SearchableSelectComponent implements ControlValueAccessor {
   }
 
   selectOption(opt: SearchableSelectOption): void {
+    if (opt.disabled) return;
     this.value.set(opt.id);
     this.onChange(opt.id);
     this.open.set(false);

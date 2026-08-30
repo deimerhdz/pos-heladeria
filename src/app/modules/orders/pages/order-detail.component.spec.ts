@@ -38,7 +38,7 @@ describe('OrderDetailComponent', () => {
     http.expectOne(`${API}/orders/tables`).flush([]);
     http.expectOne(`${API}/orders/o1`).flush({
       id: 'o1',
-      channel: 'qr',
+      channel: 'QR_MENU',
       status: 'abierta',
       paid: true,
       created_at: '2026-08-21T18:27:00',

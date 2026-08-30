@@ -90,7 +90,7 @@ describe('DinerService', () => {
       receipt_file_url: null,
     });
 
-    req.flush({ id: 'o1', status: 'recibida', channel: 'qr', created_at: '2026-07-28T10:00:00' });
+    req.flush({ id: 'o1', status: 'recibida', channel: 'QR_MENU', created_at: '2026-07-28T10:00:00' });
 
     const order = await promise;
     // Queda pendiente de que el personal lo acepte: aún no descontó inventario.
@@ -105,7 +105,7 @@ describe('DinerService', () => {
       receipt_file_url: 'https://example.invalid/a.jpg',
     });
 
-    req.flush({ id: 'o1', status: 'recibida', channel: 'qr', created_at: '2026-07-28T10:00:00' });
+    req.flush({ id: 'o1', status: 'recibida', channel: 'QR_MENU', created_at: '2026-07-28T10:00:00' });
     await promise;
   });
 
