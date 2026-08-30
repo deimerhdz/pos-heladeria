@@ -245,6 +245,7 @@ describe('discountedUnitPrice guardado por currentNow — A-09, patrón usado po
       min_qty: 1,
       targets: [],
       combo_items: [],
+      presentation_rules: [],
       ...overrides,
     };
   }
