@@ -109,6 +109,15 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
       {
+        // spec 040: catálogo de presentaciones compartido del tenant.
+        path: 'presentations',
+        loadComponent: () =>
+          import('../presentations/pages/presentations-page.component').then(
+            (m) => m.PresentationsPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
         path: 'products',
         loadComponent: () =>
           import('../products/pages/products-page.component').then((m) => m.ProductsPageComponent),
