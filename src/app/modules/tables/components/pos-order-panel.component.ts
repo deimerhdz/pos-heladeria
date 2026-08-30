@@ -22,7 +22,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
   // el carrito no puede tener su propio scroll (la página entera se estiraba).
   host: { class: 'flex-1 flex flex-col min-h-0' },
   template: `
-    @if (!store.hasActiveOrder()) {
+    @if (!store.hasActiveSelection()) {
       <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-6 gap-2">
         <div class="text-4xl">🍽️</div>
         <p class="text-sm max-w-xs">
@@ -38,7 +38,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
         <div class="p-4 border-b border-gray-100 space-y-2 shrink-0">
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center gap-2 flex-wrap">
-              <h3 class="text-lg font-bold text-gray-900">Mesa {{ store.selectedTable()?.number }}</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ headerTitle() }}</h3>
               @if (store.selectedTableStatusMeta(); as meta) {
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium" [class]="meta.chip">{{ meta.label }}</span>
               }
@@ -46,6 +46,19 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
             </div>
             <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
           </div>
+
+          <!-- Spec 059, Historia 3 (FR-012): datos propios de un pedido de
+               Domicilio, capturados al crearlo (spec 056) — solo aplica sin
+               mesa y con order_type DELIVERY. -->
+          @if (!store.selectedTable() && store.selectedOrder()?.order_type === 'DELIVERY') {
+            <div class="text-xs text-gray-500 space-y-0.5">
+              <p>📍 {{ store.selectedOrder()?.delivery_address }}</p>
+              @if (store.selectedOrder()?.delivery_phone; as phone) {
+                <p>📞 {{ phone }}</p>
+              }
+              <p>🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</p>
+            </div>
+          }
 
           @if (!store.showAllOrders()) {
             <p class="text-xs text-gray-400">
@@ -249,6 +262,17 @@ export class PosOrderPanelComponent {
   headerStatusText(): string {
     if (!this.store.kitchenReady()) return 'en preparación';
     return this.store.selectedOrder()?.paid ? 'listo para cobrar' : 'pago pendiente';
+  }
+
+  /**
+   * Spec 059, Historia 3: título de la cabecera — "Mesa N" con mesa
+   * seleccionada (sin cambios), o el tipo de pedido sin mesa
+   * ("Domicilio"/"Para llevar") cuando se seleccionó desde su tarjeta.
+   */
+  headerTitle(): string {
+    const table = this.store.selectedTable();
+    if (table) return 'Mesa ' + table.number;
+    return this.store.selectedOrder()?.order_type === 'DELIVERY' ? 'Domicilio' : 'Para llevar';
   }
 
   /** Las mismas etiquetas que ve el comensal en el menú del QR. */

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject, viewChild } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { OrderSummaryCardComponent } from './order-summary-card.component';
 
 /**
  * Franja superior de la terminal: pestañas de tipo de orden, buscador y
@@ -11,6 +12,7 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
   selector: 'app-pos-tables-panel',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [OrderSummaryCardComponent],
   template: `
     <div class="w-full min-w-0 flex flex-col bg-white">
       <div class="flex flex-wrap items-center gap-3 p-4 border-b border-gray-100">
@@ -72,26 +74,17 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 
           <div #carousel class="flex-1 min-w-0 flex gap-3 overflow-x-auto scroll-smooth">
             @for (t of store.tablesView(); track t.id) {
-              <button
-                (click)="store.selectTable(t.id)"
-                class="shrink-0 w-[calc((100%-2.25rem)/4)] text-left bg-white rounded-xl border p-3 space-y-2 min-h-11 transition-colors hover:border-indigo-300"
-                [class]="t.selected ? 'border-indigo-500 ring-1 ring-indigo-200' : 'border-gray-200'"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-lg font-bold text-gray-900">Mesa {{ t.number }}</span>
-                  <span class="text-sm font-semibold px-2 py-1 rounded-full" [class]="t.chipClass">{{ t.statusLabel }}</span>
-                </div>
-                <div class="flex items-center justify-between text-base text-gray-600">
-                  <span>{{ t.itemsLabel }}</span>
-                  <span>🕐 {{ t.elapsedLabel }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-lg font-bold text-gray-900">{{ t.totalLabel }}</span>
-                  @if (t.ordersCount > 1) {
-                    <span class="text-sm px-2 py-1 rounded-full bg-gray-100 text-gray-600">{{ t.ordersCount }} pedidos</span>
-                  }
-                </div>
-              </button>
+              <app-order-summary-card
+                [title]="'Mesa ' + t.number"
+                [statusLabel]="t.statusLabel"
+                [statusClass]="t.chipClass"
+                [secondaryLabel]="t.itemsLabel"
+                [elapsedLabel]="t.elapsedLabel"
+                [totalLabel]="t.totalLabel"
+                [ordersCount]="t.ordersCount"
+                [selected]="t.selected"
+                (select)="store.selectTable(t.id)"
+              />
             }
             @if (store.noTablesFound()) {
               <p class="shrink-0 text-base text-gray-400 py-8 px-4">Sin resultados</p>
@@ -107,14 +100,35 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
             class="shrink-0 w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
           >›</button>
         </div>
+      } @else if (store.ordersByType(store.orderTypeTab()).length > 0) {
+        <!-- Spec 059, Historia 2/3: pedidos Domicilio/Para llevar pendientes
+             de cobro, mismo formato de tarjeta que las mesas — seleccionar
+             una abre su detalle y su cobro (Historia 3). -->
+        <div class="flex items-center gap-2 min-w-0 px-2 py-4">
+          <div class="flex-1 min-w-0 flex flex-wrap gap-3 overflow-x-auto scroll-smooth">
+            @for (o of store.ordersByType(store.orderTypeTab()); track o.id) {
+              <app-order-summary-card
+                [title]="o.title"
+                [statusLabel]="o.statusLabel"
+                [statusClass]="o.statusClass"
+                [secondaryLabel]="o.secondaryLabel"
+                [elapsedLabel]="o.elapsedLabel"
+                [totalLabel]="o.totalLabel"
+                [selected]="o.id === store.selectedOrderId() && !store.selectedTableId()"
+                (select)="store.selectStandaloneOrder(o.id)"
+              />
+            }
+          </div>
+        </div>
       } @else {
-        <!-- FR-003: listado vacío con mensaje claro, no un error ni una
-             grilla en blanco sin explicación. -->
+        <!-- FR-003/FR-009: listado vacío con mensaje claro, no un error ni
+             una grilla en blanco sin explicación. -->
         <div class="flex flex-col items-center justify-center text-center text-gray-400 p-8 gap-3">
           <div class="text-4xl">🧾</div>
           <p class="text-sm max-w-xs">
-            Todavía no hay una forma de crear órdenes de
-            {{ store.orderTypeTab() === 'domicilios' ? 'domicilio' : 'para llevar' }}.
+            Todavía no hay ningún pedido de
+            {{ store.orderTypeTab() === 'domicilios' ? 'domicilio' : 'para llevar' }} pendiente de
+            cobro.
           </p>
         </div>
       }

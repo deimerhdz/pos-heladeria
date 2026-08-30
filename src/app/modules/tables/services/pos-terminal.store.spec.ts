@@ -20,8 +20,41 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { Sale } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { MenuProduct } from '../../products/interfaces/product.interface';
+import { PaymentMethodService } from '../../sales/services/payment-method.service';
+import { CashService } from '../../cash-register/services/cash.service';
+import { RealtimeService } from '../../../core/realtime/realtime.service';
 
 const API = environment.apiBaseUrl;
+
+/**
+ * Spec 059: `selectTable()` de una mesa con pedido dispara ahora
+ * `ensureCheckoutDataLoaded()`. La mayoría de las suites de este archivo no
+ * están probando esa carga en sí (eso lo cubre el describe dedicado más
+ * abajo) — para que no disparen peticiones HTTP reales de más y rompan
+ * `http.verify()`, se mockean estos dos servicios ya "cargados" (mismo
+ * patrón que el mock de `PromotionService` ya usado en este archivo).
+ */
+function checkoutDataAlreadyLoadedProviders() {
+  return [
+    {
+      provide: PaymentMethodService,
+      useValue: {
+        methods: () => [{ id: 'pm-cash', name: 'Efectivo' }],
+        checkoutOptions: () => [{ id: 'pm-cash', name: 'Efectivo', is_cash: true }],
+        load: () => Promise.resolve(),
+        loadAvailableForCheckout: () => Promise.resolve(),
+      },
+    },
+    {
+      provide: CashService,
+      useValue: {
+        shift: () => ({ id: 'shift-1' }),
+        isOpen: () => true,
+        restoreShift: () => Promise.resolve(),
+      },
+    },
+  ];
+}
 
 function order(
   id: string,
@@ -572,6 +605,7 @@ describe('PosTerminalStore.selectTable', () => {
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
       ],
     });
     store = TestBed.inject(PosTerminalStore);
@@ -755,6 +789,7 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
       ],
     });
     store = TestBed.inject(PosTerminalStore);
@@ -836,6 +871,7 @@ describe('PosTerminalStore.marcarListo — pedido "pagada" no desaparece (gap sp
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
       ],
     });
     store = TestBed.inject(PosTerminalStore);
@@ -1414,6 +1450,7 @@ describe('PosTerminalStore.selectedTablePaidSummary — "Ya pagado" (bugfix spec
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
       ],
     });
     store = TestBed.inject(PosTerminalStore);
@@ -1470,5 +1507,184 @@ describe('PosTerminalStore.selectedTablePaidSummary — "Ya pagado" (bugfix spec
     // Sin una segunda petición a /invoices — ya se intentó para ese pedido.
 
     expect(store.selectedTablePaidSummary()).toEqual({ subtotal: 8000, discount: 0, total: 8000 });
+  });
+});
+
+/**
+ * Spec 059, Historia 1 (FR-001 a FR-004): `init()` deja de pedir métodos de
+ * pago y turno de caja — esos dos solo se cargan la primera vez que el
+ * cajero selecciona un pedido real (mesa con pedido, o pedido sin mesa,
+ * spec 059 Historia 3), nunca por una mesa libre. A diferencia de las demás
+ * suites de este archivo, aquí `PaymentMethodService`/`CashService` NO se
+ * mockean como "ya cargados" — son los servicios reales bajo prueba.
+ */
+describe('PosTerminalStore — carga diferida de datos de cobro (spec 059, Historia 1)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  const REGISTER_STORAGE_KEY = 'cash.register';
+
+  beforeEach(() => {
+    localStorage.removeItem(REGISTER_STORAGE_KEY);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => Promise.resolve(), activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        { provide: TableService, useValue: { loadTables: () => Promise.resolve(), tables: () => [] } },
+        { provide: MenuService, useValue: { loadMenu: () => Promise.resolve(), categories: () => [] } },
+        // Sin esto, init()/selectTable() abrirían de verdad el stream SSE
+        // (POST /realtime/ticket) — ruido ajeno a lo que prueba este bloque.
+        { provide: RealtimeService, useValue: { status: () => 'closed', on: () => () => {}, connectStaff: () => {}, disconnect: () => {} } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    localStorage.removeItem(REGISTER_STORAGE_KEY);
+  });
+
+  function expectNoCheckoutDataRequests(): void {
+    http.expectNone(
+      (r) => r.url === `${API}/sales/payment-methods` && !r.params.has('available'),
+    );
+    http.expectNone(
+      (r) => r.url === `${API}/sales/payment-methods` && r.params.get('available') === 'true',
+    );
+    http.expectNone((r) => r.url === `${API}/cash/shifts/current`);
+  }
+
+  it('tras init(), no se pidieron métodos de pago ni turno de caja (FR-001)', async () => {
+    const initPromise = store.init();
+    http.expectOne((r) => r.url === `${API}/orders`).flush([]);
+    await initPromise;
+
+    expectNoCheckoutDataRequests();
+  });
+
+  it('seleccionar una mesa libre (sin pedido) tampoco los pide (FR-001)', async () => {
+    store.orders.set([]);
+
+    store.selectTable('t1');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+    await Promise.resolve();
+
+    expectNoCheckoutDataRequests();
+  });
+
+  it('seleccionar una mesa con pedido los pide exactamente una vez cada uno, y no los repite en una segunda selección (FR-002/FR-003)', async () => {
+    localStorage.setItem(REGISTER_STORAGE_KEY, 'reg-1');
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't2' },
+    ]);
+
+    store.selectTable('t1');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+    // Respuestas no vacías a propósito: la condición de caché es
+    // `methods().length === 0`, así que flushear con `[]` no la satisface y
+    // el segundo `selectTable()` volvería a pedirlos — justo lo que esta
+    // prueba necesita descartar.
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && !r.params.has('available'))
+      .flush([{ id: 'pm-cash', name: 'Efectivo' }]);
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && r.params.get('available') === 'true')
+      .flush([{ id: 'pm-cash', name: 'Efectivo', is_cash: true }]);
+    http
+      .expectOne((r) => r.url === `${API}/cash/shifts/current` && r.params.get('cash_register_id') === 'reg-1')
+      .flush({ id: 'shift-1' });
+    await Promise.resolve();
+
+    // Segunda mesa con pedido: mismos tres datos ya en caché, no se repiten.
+    store.selectTable('t2');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+
+    expectNoCheckoutDataRequests();
+  });
+});
+
+/**
+ * Spec 059, Historia 2 (FR-005/FR-006/FR-008): filtra `orders()` por tipo,
+ * excluyendo lo ya cobrado/cancelado — sin ningún endpoint nuevo.
+ */
+describe('PosTerminalStore.ordersByType (spec 059, Historia 2)', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  function withType(
+    id: string,
+    orderType: 'TAKEAWAY' | 'DELIVERY' | 'DINE_IN',
+    extra: Partial<DiningOrder> = {},
+  ): DiningOrder {
+    return { ...order(id, 'abierta', ['pendiente']), channel: 'POS', order_type: orderType, ...extra };
+  }
+
+  it('"para-llevar" solo trae pedidos TAKEAWAY pendientes de cobro', () => {
+    store.orders.set([
+      withType('o1', 'TAKEAWAY', { customer_name: 'María G.' }),
+      withType('o2', 'DELIVERY'),
+      withType('o3', 'DINE_IN', { dining_table_id: 't1' }),
+    ]);
+
+    const cards = store.ordersByType('para-llevar');
+
+    expect(cards.map((c) => c.id)).toEqual(['o1']);
+    expect(cards[0].title).toBe('Para llevar');
+    expect(cards[0].secondaryLabel).toBe('María G.');
+  });
+
+  it('"domicilios" solo trae pedidos DELIVERY pendientes de cobro', () => {
+    store.orders.set([withType('o1', 'TAKEAWAY'), withType('o2', 'DELIVERY')]);
+
+    const cards = store.ordersByType('domicilios');
+
+    expect(cards.map((c) => c.id)).toEqual(['o2']);
+    expect(cards[0].title).toBe('Domicilio');
+  });
+
+  it('sin nombre de cliente, usa "Consumidor final" (spec 055 default)', () => {
+    store.orders.set([withType('o1', 'TAKEAWAY', { customer_name: null })]);
+
+    expect(store.ordersByType('para-llevar')[0].secondaryLabel).toBe('Consumidor final');
+  });
+
+  it('un pedido ya pagado desaparece de su pestaña (FR-008, spec 036)', () => {
+    store.orders.set([withType('o1', 'TAKEAWAY', { paid: true })]);
+
+    expect(store.ordersByType('para-llevar')).toEqual([]);
+  });
+
+  it('un pedido cancelado desaparece de su pestaña', () => {
+    store.orders.set([{ ...withType('o1', 'TAKEAWAY'), status: 'cancelada' }]);
+
+    expect(store.ordersByType('para-llevar')).toEqual([]);
+  });
+
+  it('sin ningún pedido pendiente de un tipo, devuelve un arreglo vacío', () => {
+    store.orders.set([]);
+
+    expect(store.ordersByType('domicilios')).toEqual([]);
+    expect(store.ordersByType('para-llevar')).toEqual([]);
   });
 });

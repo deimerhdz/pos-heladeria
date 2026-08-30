@@ -649,3 +649,98 @@ describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Nuevo pedido');
   });
 });
+
+function standaloneOrder(orderType: 'TAKEAWAY' | 'DELIVERY', extra: Partial<DiningOrder> = {}): DiningOrder {
+  return {
+    id: 'o1',
+    channel: 'POS',
+    order_type: orderType,
+    status: 'abierta',
+    version: 1,
+    dining_table_id: null,
+    customer_name: 'María G.',
+    created_at: '2026-08-21T10:00:00',
+    paid: false,
+    items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: 'pendiente' }],
+    ...extra,
+  } as DiningOrder;
+}
+
+/** Spec 059, Historia 3 (FR-010/FR-012): un pedido de Domicilio/Para llevar
+ *  seleccionado sin mesa muestra su detalle, no el placeholder — mismo
+ *  panel que ya usa una mesa con pedido. */
+describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('muestra el detalle del pedido (no el placeholder) para un pedido "Para llevar" sin mesa', () => {
+    store.orders.set([standaloneOrder('TAKEAWAY')]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    // `customerName` lo llena `selectStandaloneOrder()` en el flujo real —
+    // se fija a mano aquí porque este test manipula la selección
+    // directamente, sin pasar por ese método (mismo patrón ya usado por el
+    // resto de este archivo para `selectedTableId`/`selectedOrderId`).
+    store.customerName.set('María G.');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Selecciona una mesa');
+    expect(text).toContain('Para llevar');
+    expect(text).toContain('María G.');
+  });
+
+  it('con order_type DELIVERY, el título es "Domicilio" y se ven dirección/teléfono/valor del domicilio', () => {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Cra 45 # 10-20',
+        delivery_phone: '3001234567',
+        delivery_fee: 5000,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Domicilio');
+    expect(text).toContain('Cra 45 # 10-20');
+    expect(text).toContain('3001234567');
+  });
+
+  it('sin teléfono (opcional), no muestra la línea de teléfono', () => {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Cra 45 # 10-20',
+        delivery_phone: null,
+        delivery_fee: 5000,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement.textContent as string)).not.toContain('📞');
+  });
+});

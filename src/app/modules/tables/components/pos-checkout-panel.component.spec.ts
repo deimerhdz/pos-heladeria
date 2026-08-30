@@ -16,6 +16,7 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { CashShift } from '../../cash-register/interfaces/cash.interface';
 import { PaymentMethod, PaymentMethodCheckoutOption, Sale } from '../../sales/interfaces/sales.interface';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 
 const API = environment.apiBaseUrl;
 
@@ -531,5 +532,128 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
       (b as HTMLButtonElement).textContent?.includes('Rechazar pedido'),
     );
     expect(button).toBeUndefined();
+  });
+});
+
+/**
+ * Spec 059, Historia 3 — test de regresión: confirma el hallazgo hecho
+ * durante `/speckit-tasks` de que este componente **no necesita ningún
+ * cambio de código** para cobrar un pedido de Domicilio/Para llevar sin
+ * mesa. `sidebarMode()`, `showSessionCharge()` y `checkout()` ya operan
+ * exclusivamente sobre `store.selectedOrder()`/`store.cashShiftId()`, sin
+ * ninguna dependencia de `selectedTableId()` — si un cambio futuro
+ * introdujera una dependencia oculta de mesa aquí, este test lo detectaría.
+ */
+describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)', () => {
+  let fixture: ComponentFixture<PosCheckoutPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  function standaloneOrder(): DiningOrder {
+    return {
+      id: 'o1',
+      channel: 'POS',
+      order_type: 'TAKEAWAY',
+      status: 'recibida',
+      version: 1,
+      dining_table_id: null,
+      customer_name: 'María G.',
+      created_at: '2026-08-20T10:00:00',
+      items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: 'pendiente' }],
+    } as DiningOrder;
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosCheckoutPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        // Necesario para llegar hasta el final de checkoutAndSend():
+        // receiptContext() lee TenantInfoService, que en la app real se
+        // inicializa en el arranque (provideTenantInitializer()) — sin
+        // mockearlo aquí, TenantContextService lanza "read before
+        // initialization" (gap de infraestructura de test preexistente, no
+        // introducido por spec 059: ningún otro test de este archivo llega a
+        // ejercitar receiptContext() con una aserción sobre store.error()).
+        { provide: TenantInfoService, useValue: { businessName: () => 'Heladería', logoUrl: () => null, receiptMessage: () => 'Gracias' } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosCheckoutPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+
+    TestBed.inject(CashService).shift.set({
+      id: 'shift-1',
+      cash_register_id: 'r1',
+      user_id: 'u1',
+      opening_amount: '0',
+      opened_at: '2026-08-20T08:00:00',
+      status: 'open',
+    } as CashShift);
+    TestBed.inject(PaymentMethodService).methods.set(methods);
+    TestBed.inject(PaymentMethodService).checkoutOptions.set(checkoutOptions);
+
+    // Selección "sin mesa" — mismo estado que deja selectStandaloneOrder().
+    store.orders.set([standaloneOrder()]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  it('muestra el panel de cobro editable ("Cobrar pedido"), no el de resumen de solo lectura ni el de sesión', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Cobrar pedido');
+    expect(text).not.toContain('Cobrar y cerrar mesa');
+  });
+
+  it('cobra un pedido sin mesa con el mismo checkout-and-send ya implementado, sin cambios', async () => {
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'pm-cash';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const amountInput = fixture.nativeElement.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    amountInput.value = '10000';
+    amountInput.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => (b as HTMLButtonElement).textContent?.trim() === 'Cobrar',
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
+    expect(req.request.body.cash_shift_id).toBe('shift-1');
+    req.flush({
+      id: 's1',
+      total: '10000',
+      customer_name: 'María G.',
+      status: 'paid',
+      sold_at: '2026-08-20T10:05:00',
+      items: [],
+      payments: [],
+    } as unknown as Sale);
+    await fixture.whenStable();
+
+    // checkoutAndSend() termina en reload() (loadTables()+reloadOrders()) —
+    // mismos dos GET ya existentes que cualquier cobro dispara hoy.
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http.expectOne((r) => r.url === `${API}/orders`).flush([]);
+    await fixture.whenStable();
+
+    expect(store.error()).toBeNull();
   });
 });

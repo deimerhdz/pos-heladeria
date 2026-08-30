@@ -93,10 +93,28 @@ type TableFilter = 'todas' | 'libres' | 'ocupadas' | 'pendientes';
 
 /**
  * Pestaña de tipo de orden (spec 036, FR-001/FR-003), independiente del
- * `filter` de ocupación de arriba. Solo `'mesas'` tiene datos reales hoy —
- * las otras dos no tienen ninguna vía de creación de orden todavía.
+ * `filter` de ocupación de arriba. Desde spec 059, "domicilios"/"para-llevar"
+ * sí tienen datos reales — pedidos `DELIVERY`/`TAKEAWAY` ya creados desde
+ * `manual-order-page.component.ts` (spec 055/056), filtrados de `orders()`
+ * (`ordersByType()`), sin ningún endpoint nuevo.
  */
 export type OrderTypeTab = 'mesas' | 'domicilios' | 'para-llevar';
+
+/**
+ * Tarjeta de pedido sin mesa (Domicilio/Para llevar, spec 059) — mismo shape
+ * que consume `<app-order-summary-card>` (contracts/ui-contracts.md,
+ * Contrato 1), mapeado aquí para que `pos-tables-panel.component.ts` no
+ * tenga que conocer `DiningOrder` directamente.
+ */
+export interface OrderSummaryCardView {
+  id: string;
+  title: string;
+  statusLabel: string;
+  statusClass: string;
+  secondaryLabel: string;
+  elapsedLabel: string;
+  totalLabel: string;
+}
 
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
   libre: { label: 'Libre', chip: 'bg-gray-100 text-gray-600' },
@@ -558,7 +576,15 @@ export class PosTerminalStore {
     () => this.orders().find((o) => o.id === this.selectedOrderId()) ?? null,
   );
 
-  readonly hasActiveOrder = computed(() => !!this.selectedTableId());
+  /**
+   * Spec 059, Historia 3: reemplaza a `hasActiveOrder` (que solo miraba
+   * `selectedTableId()`) — un pedido de Domicilio/Para llevar seleccionado
+   * vía `selectStandaloneOrder()` no tiene mesa, pero sí debe mostrar su
+   * detalle en `pos-order-panel.component.ts` en vez del placeholder.
+   */
+  readonly hasActiveSelection = computed(
+    () => !!this.selectedTableId() || !!this.selectedOrderId(),
+  );
 
   /**
    * Pestañas de pedido (cuando la mesa tiene >1 orden activa). Rotuladas
@@ -613,12 +639,20 @@ export class PosTerminalStore {
    * `STATUS_META`/`deriveTableStatus` que ya usa `tablesView()`, pero
    * calculado directo sobre la mesa seleccionada, sin depender del
    * filtro/búsqueda de la grilla (que podría excluirla de `tablesView()`).
+   *
+   * Spec 059, Historia 3: sin mesa pero con un pedido de Domicilio/Para
+   * llevar seleccionado, cae al mismo cálculo de un solo pedido que ya usa
+   * `toOrderCardView()` (research.md §5), en vez de devolver `null`.
    */
   readonly selectedTableStatusMeta = computed(() => {
     const table = this.selectedTable();
-    if (!table) return null;
-    const status = deriveTableStatus(this.tableOrders(table.id), table.status);
-    return STATUS_META[status];
+    if (table) {
+      const status = deriveTableStatus(this.tableOrders(table.id), table.status);
+      return STATUS_META[status];
+    }
+    const order = this.selectedOrder();
+    if (!order) return null;
+    return STATUS_META[deriveTableStatus([order], 'ocupada')];
   });
 
   readonly tablesView = computed(() => {
@@ -666,6 +700,55 @@ export class PosTerminalStore {
   });
 
   readonly noTablesFound = computed(() => this.tablesView().length === 0);
+
+  /**
+   * Spec 059, Historia 2: pedidos `DELIVERY`/`TAKEAWAY` pendientes de cobro
+   * (`!paid && status !== 'cancelada'`, mismo criterio de visibilidad ya
+   * definido en spec 036 para estos tipos de orden), mapeados al mismo
+   * shape que consumen las tarjetas de mesa. Filtra sobre `orders()`, ya
+   * poblado por `reloadOrders()` sin ningún endpoint nuevo (research.md §4).
+   */
+  private ordersByTypeFiltered(type: 'DELIVERY' | 'TAKEAWAY'): OrderSummaryCardView[] {
+    return this.orders()
+      .filter((o) => o.order_type === type && !o.paid && o.status !== 'cancelada')
+      .map((o) => this.toOrderCardView(o));
+  }
+
+  private readonly deliveryOrders = computed(() => this.ordersByTypeFiltered('DELIVERY'));
+  private readonly takeawayOrders = computed(() => this.ordersByTypeFiltered('TAKEAWAY'));
+
+  /**
+   * Usado por `pos-tables-panel.component.ts` para las pestañas
+   * "Domicilios"/"Para llevar" — acepta `OrderTypeTab` completo (no solo las
+   * dos pestañas de pedido sin mesa) para que el template no necesite
+   * angostar `store.orderTypeTab()` él mismo; `'mesas'` simplemente no
+   * corresponde a ningún pedido sin mesa.
+   */
+  ordersByType(tab: OrderTypeTab): OrderSummaryCardView[] {
+    if (tab === 'domicilios') return this.deliveryOrders();
+    if (tab === 'para-llevar') return this.takeawayOrders();
+    return [];
+  }
+
+  /**
+   * Reutiliza `deriveTableStatus`/`STATUS_META` con un arreglo de un solo
+   * pedido — el fallback de mesa vacía (`tableStatus`, tercer argumento) no
+   * se alcanza nunca aquí porque un pedido sin mesa por definición ya tiene
+   * al menos un elemento en el arreglo (research.md §5).
+   */
+  private toOrderCardView(o: DiningOrder): OrderSummaryCardView {
+    const status = deriveTableStatus([o], 'ocupada');
+    const meta = STATUS_META[status];
+    return {
+      id: o.id,
+      title: o.order_type === 'DELIVERY' ? 'Domicilio' : 'Para llevar',
+      statusLabel: meta.label,
+      statusClass: meta.chip,
+      secondaryLabel: o.customer_name || 'Consumidor final',
+      elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
+      totalLabel: this.fmt(this.orderSubtotal(o)),
+    };
+  }
 
   /**
    * Líneas de los ítems ya persistidos de **un** pedido (sin el draft nuevo,
@@ -833,6 +916,13 @@ export class PosTerminalStore {
   });
 
   // ─── Ciclo de vida ───────────────────────────────────────────────────────────
+  /**
+   * Spec 059, Historia 1: métodos de pago y turno de caja ya NO se cargan
+   * aquí — solo se necesitan dentro del panel de cobro, una vez que hay un
+   * pedido real seleccionado (`ensureCheckoutDataLoaded()`, invocado desde
+   * `selectTable()`/`selectStandaloneOrder()`). Diferirlos evita una
+   * petición HTTP que, en este punto, el cajero todavía no va a usar.
+   */
   async init(): Promise<void> {
     this.timer ??= startVisibleInterval(() => this.nowTick.set(Date.now()), 30000);
     this.loading.set(true);
@@ -841,13 +931,8 @@ export class PosTerminalStore {
       await Promise.all([
         this.tableService.loadTables(),
         this.reloadOrders(),
-        this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
-        this.paymentMethodService.checkoutOptions().length === 0
-          ? this.paymentMethodService.loadAvailableForCheckout()
-          : null,
         this.menuService.categories().length === 0 ? this.menuService.loadMenu() : null,
         this.promotionService.loadActive(),
-        this.cash.shift() ? null : this.cash.restoreShift(),
       ]);
       const cats = this.menuService.categories();
       if (cats.length && !this.catalogCategoryId()) this.catalogCategoryId.set(cats[0].id);
@@ -860,6 +945,26 @@ export class PosTerminalStore {
     // Después de la carga REST a propósito: `pendingSeeded` ya es `true`, así
     // que la primera ráfaga de eventos no hace sonar la campana.
     this.connectRealtime();
+  }
+
+  /**
+   * Spec 059, Historia 1: agrupa las tres peticiones de datos de cobro que
+   * antes vivían en `init()` — se invoca en cambio la primera vez que el
+   * cajero selecciona un pedido real (mesa con pedido, o pedido de
+   * Domicilio/Para llevar sin mesa), nunca por seleccionar una mesa libre.
+   * Mismo criterio de caché que ya usaba `init()`
+   * (`methods().length === 0 ? load() : null`): estos tres servicios son
+   * `providedIn: 'root'`, así que una vez cargados en la sesión de la app no
+   * se vuelven a pedir sin importar cuántas veces cambie la selección.
+   */
+  private async ensureCheckoutDataLoaded(): Promise<void> {
+    await Promise.all([
+      this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
+      this.paymentMethodService.checkoutOptions().length === 0
+        ? this.paymentMethodService.loadAvailableForCheckout()
+        : null,
+      this.cash.shift() ? null : this.cash.restoreShift(),
+    ]);
   }
 
   stop(): void {
@@ -1040,6 +1145,9 @@ export class PosTerminalStore {
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
+      // Spec 059, Historia 1: solo con un pedido real seleccionado — nunca
+      // por una mesa libre (rama `else`, sin pedido).
+      void this.ensureCheckoutDataLoaded();
     } else {
       this.selectedOrderId.set(null);
       // Vacío a propósito: lo que haya aquí se graba como nombre en la factura,
@@ -1053,6 +1161,22 @@ export class PosTerminalStore {
     this.selectedOrderId.set(orderId);
     this.customerName.set(this.selectedOrder()?.customer_name || '');
     this.draftLines.set([]);
+  }
+
+  /**
+   * Spec 059, Historia 3: selecciona un pedido de Domicilio/Para llevar (sin
+   * mesa) desde su tarjeta — mismo patrón que `selectTable()` pero sin
+   * `loadSessionBill`/`prefetchPaidOrderSales` (conceptos de sesión de
+   * mesa, no aplican aquí) y disparando la misma carga diferida de datos de
+   * cobro (Historia 1) que hoy solo vivía en `selectTable()`.
+   */
+  selectStandaloneOrder(orderId: string): void {
+    this.selectedTableId.set(null);
+    this.selectedOrderId.set(orderId);
+    this.resetTransient();
+    this.showAllOrders.set(false);
+    this.customerName.set(this.selectedOrder()?.customer_name || '');
+    void this.ensureCheckoutDataLoaded();
   }
 
   /**
