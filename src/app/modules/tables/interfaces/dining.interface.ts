@@ -8,7 +8,10 @@
 
 // ── Orders (`/orders`) ─────────────────────────────────────────────────────
 
-export type OrderChannel = 'qr' | 'counter' | 'waiter';
+export type OrderChannel = 'POS' | 'QR_MENU' | 'WHATSAPP' | 'API';
+
+/** Cómo se atiende el pedido (spec 055). */
+export type OrderType = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 
 /**
  * Ciclo de vida del **pedido** (facturación), independiente del de cocina.
@@ -46,13 +49,18 @@ export interface OrderItemPayload {
 /** Body for `POST /orders` (`OrderCreate`). */
 export interface OrderCreatePayload {
   channel?: OrderChannel;
+  order_type?: OrderType;
   dining_session_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;
+  /** Solo aplican con `order_type: 'DELIVERY'` (spec 056). */
+  delivery_address?: string | null;
+  delivery_phone?: string | null;
+  delivery_fee?: number | null;
   notes?: string | null;
   items: OrderItemPayload[];
   /**
-   * Solo válido con `channel: 'counter' | 'waiter'` (feature 028). El pedido se
+   * Solo válido con `channel: 'POS'` (feature 028). El pedido se
    * crea **sin** descontar inventario ni ser visible en cocina — eso solo pasa
    * al llamar `POST /orders/{id}/checkout-and-send`. Así una orden de mostrador
    * que el cajero está armando no golpea cocina antes de estar pagada.
@@ -84,6 +92,13 @@ export interface DiningOrderItem {
   participant_id?: string | null;
   quantity: number;
   unit_price: string;
+  /**
+   * Precio/subtotal ya con el mejor descuento vigente aplicado al confirmar,
+   * o `null`/ausente si ninguna promoción aplicó a esta línea (o es un
+   * combo, que ahorra aparte), o si el pedido es anterior a esta spec.
+   */
+  discounted_unit_price?: string | null;
+  discounted_line_total?: string | null;
   /** Estado de preparación de este ítem. */
   estado_cocina: KitchenStatus;
   /**
@@ -180,6 +195,7 @@ export interface PaymentAttemptConfirmCashPayload {
 export interface DiningOrder {
   id: string;
   channel: string;
+  order_type?: string | null;
   status: DiningOrderStatus;
   version?: number;
   /** Sesión de mesa a la que pertenece (agrupa los pedidos de todos los comensales). */
@@ -188,6 +204,10 @@ export interface DiningOrder {
   participant_id?: string | null;
   dining_table_id?: string | null;
   customer_name?: string | null;
+  /** Solo presentes cuando `order_type === 'DELIVERY'` (spec 056). */
+  delivery_address?: string | null;
+  delivery_phone?: string | null;
+  delivery_fee?: number | null;
   notes?: string | null;
   created_at: string;
   items?: DiningOrderItem[];
@@ -205,7 +225,7 @@ export interface DiningOrder {
 
 /**
  * Qué panel muestra la barra lateral de cobro: `'resumen'` (solo lectura, para
- * pedidos `qr` — el comensal ya pagó a distancia y el cajero solo valida el
+ * pedidos `QR_MENU` — el comensal ya pagó a distancia y el cajero solo valida el
  * comprobante) o `'terminal-pos'` (editable, para pedidos creados/pagados en
  * el mostrador por el cajero, o una mesa libre donde todavía no hay pedido).
  */
@@ -224,7 +244,7 @@ export type SidebarMode = 'resumen' | 'terminal-pos';
  */
 export function getSidebarMode(order: DiningOrder | null | undefined): SidebarMode {
   if (order?.paid) return 'resumen';
-  return order?.channel === 'qr' ? 'resumen' : 'terminal-pos';
+  return order?.channel === 'QR_MENU' ? 'resumen' : 'terminal-pos';
 }
 
 /** Body de `POST /orders/{id}/checkout-and-send` (feature 028). Paga un pedido
@@ -271,28 +291,6 @@ export interface TableSession {
 }
 
 /** Una línea del desglose de la cuenta (`SessionBillLine`). */
-/** `POST /table-sessions/{id}/participants` — comensal creado por el staff. */
-export interface ParticipantCreatePayload {
-  display_name: string;
-}
-
-/**
- * Una línea (o parte de ella) y a quién se le cobra. `participant_id: null` = sin
- * asignar. `quantity` reparte las unidades de una misma línea entre varias personas:
- * se mandan varias entradas del mismo `order_item_id` y **la suma debe ser exactamente
- * la cantidad de la línea**. Omitirlo significa "la línea entera".
- */
-export interface ItemAssignment {
-  order_item_id: string;
-  participant_id: string | null;
-  quantity?: number;
-}
-
-/** `PUT /table-sessions/{id}/assignments` — reparto en lote. */
-export interface AssignmentsPayload {
-  assignments: ItemAssignment[];
-}
-
 /** Ítem consumido, para el detalle de la cuenta (spec 026, FR-006). */
 export interface SessionBillItem {
   description: string;

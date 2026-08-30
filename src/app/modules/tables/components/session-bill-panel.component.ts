@@ -12,12 +12,10 @@ import {
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import {
-  BillingMode,
   CloseSessionPayload,
   CloseSessionResponse,
   PaymentLine,
   SessionBill,
-  SplitPayment,
 } from '../interfaces/dining.interface';
 import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import { TableSessionService } from '../services/table-session.service';
@@ -29,15 +27,6 @@ import {
   paymentLines,
 } from '../services/payment-draft.util';
 import { ToastService } from '../../../shared/feedback/toast.service';
-
-/** Cobro asignado a un comensal en modo `split`. */
-interface SplitDraft {
-  participantId: string | null;
-  label: string;
-  subtotal: number;
-  /** Con qué método(s) paga su parte; puede combinar dos. */
-  payment: PaymentDraft;
-}
 
 /**
  * Cuenta de la mesa y cobro.
@@ -54,6 +43,31 @@ interface SplitDraft {
   template: `
     <div class="flex flex-col h-full">
       <h2 class="text-base font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
+
+      @if (paidSummary; as pagado) {
+        <!-- Bugfix reportado sobre spec 049: la mesa puede tener pedidos ya
+             cobrados (p. ej. mostrador pagado por adelantado) que el
+             desglose de abajo no incluye a propósito (evita cobrar dos
+             veces) — este bloque muestra ese consumo ya pagado aparte, sin
+             mezclarlo con lo pendiente. -->
+        <div class="mb-3 pb-3 border-b border-gray-100 space-y-1">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ya pagado</p>
+          <div class="flex items-center justify-between text-sm text-gray-600">
+            <span>Subtotal</span>
+            <span>$ {{ pagado.subtotal | number: '1.2-2' }}</span>
+          </div>
+          @if (pagado.discount > 0) {
+            <div class="flex items-center justify-between text-sm text-emerald-700">
+              <span>Descuento</span>
+              <span>- $ {{ pagado.discount | number: '1.2-2' }}</span>
+            </div>
+          }
+          <div class="flex items-center justify-between text-sm font-semibold text-gray-800">
+            <span>Total pagado</span>
+            <span>$ {{ pagado.total | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      }
 
       @if (!bill) {
         @if (orphan) {
@@ -91,7 +105,20 @@ interface SplitDraft {
               }
             </div>
           }
-          <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+          @let summary = billSummary();
+          @if (summary) {
+            <div class="flex items-center justify-between pt-2 border-t border-gray-100 text-sm text-gray-600">
+              <span>Subtotal</span>
+              <span>$ {{ summary.subtotal | number: '1.2-2' }}</span>
+            </div>
+            @if (summary.discount > 0) {
+              <div class="flex items-center justify-between text-sm text-emerald-700">
+                <span>Descuento</span>
+                <span>- $ {{ summary.discount | number: '1.2-2' }}</span>
+              </div>
+            }
+          }
+          <div class="flex items-center justify-between pt-2" [class.border-t]="!summary" [class.border-gray-100]="!summary">
             <span class="text-base font-semibold text-gray-800">Total</span>
             <span class="text-lg font-bold text-gray-900">
               $ {{ +bill.total | number: '1.2-2' }}
@@ -112,65 +139,13 @@ interface SplitDraft {
             Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
           </p>
         } @else {
-        <!-- Modo de cobro -->
-        <div class="flex gap-2 mb-3">
-          <button
-            (click)="mode.set('unified')"
-            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors"
-            [class]="
-              mode() === 'unified'
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            "
-          >
-            Cuenta única
-          </button>
-          <button
-            (click)="mode.set('split')"
-            [disabled]="!canSplit()"
-            class="flex-1 min-h-11 py-2 rounded-lg text-sm font-semibold border transition-colors disabled:opacity-40"
-            [class]="
-              mode() === 'split'
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-            "
-          >
-            Dividir por comensal
-          </button>
-        </div>
-
-        @if (!canSplit()) {
-          <p class="text-sm text-gray-400 mb-3">
-            Dividir requiere consumo asignado a más de un comensal.
-          </p>
-        }
-
         <!-- Pago -->
         <div class="flex-1 overflow-y-auto space-y-2 mb-3">
-          @if (mode() === 'unified') {
-            <app-payment-input
-              [total]="total()"
-              [methods]="methods"
-              (changed)="unifiedPayment.set($event)"
-            />
-          } @else {
-            <p class="text-sm text-gray-500">Cómo paga cada comensal con consumo:</p>
-            @for (d of splits(); track d.participantId) {
-              <div class="border border-gray-200 rounded-lg p-2">
-                <div class="flex items-center justify-between mb-1.5">
-                  <span class="text-base font-semibold text-gray-700 truncate">{{ d.label }}</span>
-                  <span class="text-base font-medium text-gray-900">
-                    $ {{ d.subtotal | number: '1.2-2' }}
-                  </span>
-                </div>
-                <app-payment-input
-                  [total]="d.subtotal"
-                  [methods]="methods"
-                  (changed)="setSplitPayment(d.participantId, $event)"
-                />
-              </div>
-            }
-          }
+          <app-payment-input
+            [total]="total()"
+            [methods]="methods"
+            (changed)="unifiedPayment.set($event)"
+          />
         </div>
 
         @if (error()) {
@@ -200,6 +175,12 @@ export class SessionBillPanelComponent implements OnChanges {
   /** La mesa tiene consumo pero ninguna sesión activa que cobrar. */
   @Input() orphan = false;
   /**
+   * Consumo ya cobrado de la mesa (pedidos `paid`), sumado desde las ventas
+   * reales — independiente de `bill` (que a propósito excluye lo ya pagado).
+   * `null` sin nada pagado. Ver `PosTerminalStore.selectedTablePaidSummary`.
+   */
+  @Input() paidSummary: { subtotal: number; discount: number; total: number } | null = null;
+  /**
    * Feature 028 (T004/T009): `true` cuando el pedido activo es de canal `qr`
    * — el comensal ya pagó a distancia. Oculta el selector de método y el
    * botón "Cobrar y cerrar mesa"; solo queda el desglose de lectura.
@@ -219,10 +200,8 @@ export class SessionBillPanelComponent implements OnChanges {
   private readonly api = inject(TableSessionService);
   private readonly toast = inject(ToastService);
 
-  readonly mode = signal<BillingMode>('unified');
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
-  readonly splits = signal<SplitDraft[]>([]);
 
   /**
    * Cómo se paga la cuenta única. **Es una señal**: `ready()` la lee, y un
@@ -242,23 +221,29 @@ export class SessionBillPanelComponent implements OnChanges {
 
   readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
 
-  /** Dividir solo tiene sentido si hay consumo de más de un comensal. */
-  readonly canSplit = computed(() => (this.currentBill()?.split.length ?? 0) > 1);
+  /**
+   * Subtotal/descuento agregados de toda la cuenta, sumando las mismas
+   * columnas que ya trae `bill.split` por comensal (spec 049, FR-003/FR-004).
+   * `bill.total` no cambia: esto solo agrega dos filas encima, sin recalcular
+   * nada que el backend no haya entregado ya.
+   */
+  readonly billSummary = computed(() => {
+    const bill = this.currentBill();
+    if (!bill) return null;
+    return {
+      subtotal: bill.split.reduce((s, l) => s + Number(l.subtotal), 0),
+      discount: bill.split.reduce((s, l) => s + Number(l.discount), 0),
+    };
+  });
 
   /**
-   * Solo se cobra si **ningún** bloque tiene incidencia: método sin elegir,
-   * importe corto, o un cobro electrónico por encima de lo que se debe (eso
-   * descuadraría el efectivo esperado del turno).
+   * Solo se cobra si el bloque de pago no tiene incidencia: método sin
+   * elegir, importe corto, o un cobro electrónico por encima de lo que se
+   * debe (eso descuadraría el efectivo esperado del turno).
    */
-  readonly ready = computed(() => {
-    if (this.mode() === 'unified') {
-      return paymentIssue(this.unifiedPayment(), this.total(), this.methods) === null;
-    }
-    return (
-      this.splits().length > 0 &&
-      this.splits().every((s) => paymentIssue(s.payment, s.subtotal, this.methods) === null)
-    );
-  });
+  readonly ready = computed(
+    () => paymentIssue(this.unifiedPayment(), this.total(), this.methods) === null,
+  );
 
   /**
    * Resetea el pago **solo cuando cambia la cuenta**, no ante cualquier `@Input`.
@@ -280,26 +265,15 @@ export class SessionBillPanelComponent implements OnChanges {
     this.error.set(null);
     this.currentBill.set(this.bill);
     this.unifiedPayment.set(emptyPaymentDraft());
-    this.splits.set(
-      (this.bill?.split ?? []).map((l) => ({
-        participantId: l.participant_id,
-        label: this.lineLabel(l.display_label),
-        subtotal: Number(l.subtotal),
-        payment: emptyPaymentDraft(),
-      })),
-    );
-    if (!this.canSplit()) this.mode.set('unified');
   }
 
-  /** Los ítems sin comensal los añadió el mesero. */
+  /** Los ítems sin comensal los añadió el mesero — spec 057, FR-005/FR-006:
+   *  se prioriza el nombre de cliente de la orden (ya disponible en
+   *  `customerName`, el mismo que se envía como `customer_name` al cobrar)
+   *  por encima de la etiqueta genérica, cuando existe. */
   lineLabel(label: string | null): string {
-    return label ?? 'Sin asignar (mesero)';
-  }
-
-  setSplitPayment(participantId: string | null, payment: PaymentDraft): void {
-    this.splits.update((list) =>
-      list.map((s) => (s.participantId === participantId ? { ...s, payment } : s)),
-    );
+    if (label) return label;
+    return this.customerName.trim() || 'Sin asignar (mesero)';
   }
 
   async charge(): Promise<void> {
@@ -330,47 +304,28 @@ export class SessionBillPanelComponent implements OnChanges {
    * En efectivo se manda **lo que entregó el cliente**, no el importe justo: el
    * backend deriva de ahí `paid_amount` y `change_given`, y sin eso el vuelto no
    * se descuenta del efectivo esperado del turno.
+   *
+   * Spec 046 (FR-005): "Dividir por comensal" se retiró — el cierre siempre
+   * cobra la cuenta completa (`billing_mode: 'unified'`) con un único método.
    */
   private buildPayload(cashShiftId: string): CloseSessionPayload {
-    if (this.mode() === 'unified') {
-      const payments: PaymentLine[] = paymentLines(this.unifiedPayment());
-      const nombre = this.customerName.trim();
-      return {
-        cash_shift_id: cashShiftId,
-        billing_mode: 'unified',
-        payments,
-        // Vacío no se manda: el backend cae a los comensales o a la mesa.
-        ...(nombre ? { customer_name: nombre } : {}),
-      };
-    }
-    // En `split` cada venta va a nombre de su comensal, no del campo Cliente.
-    const splits: SplitPayment[] = this.splits().map((s) => ({
-      participant_id: s.participantId,
-      payments: paymentLines(s.payment),
-    }));
-    return { cash_shift_id: cashShiftId, billing_mode: 'split', splits };
+    const payments: PaymentLine[] = paymentLines(this.unifiedPayment());
+    const nombre = this.customerName.trim();
+    return {
+      cash_shift_id: cashShiftId,
+      billing_mode: 'unified',
+      payments,
+      // Vacío no se manda: el backend cae a los comensales o a la mesa.
+      ...(nombre ? { customer_name: nombre } : {}),
+    };
   }
 
-  /**
-   * Los rechazos al cerrar son accionables, no genéricos: o falta confirmar
-   * pedidos, o hay comida sin terminar, o el split deja comensales sin cubrir.
-   */
+  /** Los rechazos al cerrar son accionables, no genéricos: o falta confirmar
+   *  pedidos, o hay comida sin terminar. */
   private showChargeError(err: unknown): void {
     const blocked = this.api.closeBlocked(err);
     if (blocked) {
       this.error.set(blocked.error);
-      return;
-    }
-    const incomplete = this.api.splitIncomplete(err);
-    if (incomplete) {
-      const missing = this.splits()
-        .filter((s) => (incomplete.participant_ids ?? []).includes(s.participantId ?? ''))
-        .map((s) => s.label);
-      this.error.set(
-        missing.length > 0
-          ? `Falta asignar el pago de: ${missing.join(', ')}.`
-          : incomplete.error,
-      );
       return;
     }
     this.error.set(this.api.extractError(err, 'No se pudo cobrar la mesa.'));

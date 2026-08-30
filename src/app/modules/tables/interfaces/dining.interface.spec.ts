@@ -12,7 +12,7 @@ describe('getSidebarMode', () => {
   function order(overrides: Partial<DiningOrder>): DiningOrder {
     return {
       id: 'o1',
-      channel: 'counter',
+      channel: 'POS',
       status: 'abierta',
       created_at: '2026-08-21T18:27:00',
       ...overrides,
@@ -20,15 +20,15 @@ describe('getSidebarMode', () => {
   }
 
   it('un pedido de mostrador ya pagado va a "resumen" (solo lectura)', () => {
-    expect(getSidebarMode(order({ channel: 'counter', paid: true }))).toBe('resumen');
+    expect(getSidebarMode(order({ channel: 'POS', paid: true }))).toBe('resumen');
   });
 
   it('un pedido de mostrador sin pagar sigue en "terminal-pos" (editable)', () => {
-    expect(getSidebarMode(order({ channel: 'counter', paid: false }))).toBe('terminal-pos');
+    expect(getSidebarMode(order({ channel: 'POS', paid: false }))).toBe('terminal-pos');
   });
 
   it('un pedido QR sin pagar sigue en "resumen" (comportamiento existente)', () => {
-    expect(getSidebarMode(order({ channel: 'qr', paid: false }))).toBe('resumen');
+    expect(getSidebarMode(order({ channel: 'QR_MENU', paid: false }))).toBe('resumen');
   });
 
   it('sin pedido seleccionado, cae en "terminal-pos"', () => {

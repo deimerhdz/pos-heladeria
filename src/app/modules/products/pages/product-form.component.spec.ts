@@ -8,6 +8,8 @@ import {
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { vi } from 'vitest';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
+import type { VariantDraft } from '../interfaces/product.interface';
 import { environment } from '../../../../environments/environment';
 import { ProductFormComponent } from './product-form.component';
 import { CategoryService } from '../../categories/services/category.service';
@@ -231,10 +233,14 @@ describe('ProductFormComponent', () => {
 
     const savePromise = component.save();
 
-    // El switch sigue apagado (default): el payload de creación lo refleja.
+    // Spec 043: una sola petición trae el producto y la presentación "Único" por
+    // defecto (con su receta/grupos vacíos) — ya no hace falta ningún paso aparte.
     const created = http.expectOne(PRODUCTS);
     expect(created.request.method).toBe('POST');
     expect(created.request.body.tracks_inventory).toBe(false);
+    expect(created.request.body.variants).toEqual([
+      { name: 'Único', price: 0, recipe: [], option_groups: [] },
+    ]);
     created.flush({
       id: 'p1',
       category_id: 'c1',
@@ -246,30 +252,207 @@ describe('ProductFormComponent', () => {
       available: true,
       tracks_inventory: false,
       created_at: '2026-08-19T00:00:00',
+      variants: [],
     });
-    await tick();
-
-    http.expectOne(`${PRODUCTS}/p1/variants`).flush([
-      { id: 'v1', product_id: 'p1', name: 'Single', sku: null, price: '0', active: true },
-    ]);
-    await tick();
-
-    http.expectOne(`${VARIANTS}/v1`).flush({
-      id: 'v1', product_id: 'p1', name: 'Único', sku: null, price: '0', active: true,
-    });
-    await tick();
-
-    const recipe = http.expectOne(`${VARIANTS}/v1/recipe`);
-    expect(recipe.request.body).toEqual({ items: [] });
-    recipe.flush({});
-    await tick();
-
-    const groups = http.expectOne(`${VARIANTS}/v1/option-groups`);
-    expect(groups.request.body).toEqual({ groups: [] });
-    groups.flush({});
 
     await savePromise;
     expect(component.service.error()).toBeNull();
     expect(navigate).toHaveBeenCalledWith(['/dashboard/products']);
+  });
+
+  // ── Bug 4 — "Copiar insumos" solo con inventario activo (FR-021 a FR-024) ─
+
+  /** Arranca en modo edición para `id`, con dos presentaciones ya guardadas
+   *  (una con un insumo) y `tracks_inventory` según `tracksInventory`. */
+  async function createEdit(id: string, tracksInventory: boolean): Promise<void> {
+    navigate = vi.fn().mockResolvedValue(true);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ProductFormComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+        { provide: CategoryService, useClass: FakeCategoryService },
+        { provide: InventoryService, useClass: FakeInventoryService },
+        { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
+        { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({ id }) } },
+        },
+        { provide: Router, useValue: { navigate } },
+      ],
+    });
+    fixture = TestBed.createComponent(ProductFormComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges(); // dispara ngOnInit
+    await tick();
+
+    http.expectOne(`${PRODUCTS}/${id}`).flush({
+      id,
+      category_id: 'c1',
+      name: 'Cono doble',
+      description: null,
+      preparation_type: 'prepared',
+      image_url: null,
+      active: true,
+      available: true,
+      tracks_inventory: tracksInventory,
+      created_at: '2026-08-19T00:00:00',
+    });
+    await tick();
+
+    http.expectOne(`${PRODUCTS}/${id}/variants`).flush([
+      { id: 'v1', product_id: id, name: 'Grande', sku: null, price: '8000', active: true },
+      { id: 'v2', product_id: id, name: 'Pequeña', sku: null, price: '5000', active: true },
+    ]);
+    await tick();
+
+    // v1 ya tiene un insumo guardado; v2 no.
+    http.expectOne(`${VARIANTS}/v1/recipe`).flush([
+      { inventory_item_id: 'i1', quantity: '1', unit_measure_id: 'u1' },
+    ]);
+    http.expectOne(`${VARIANTS}/v1/option-groups`).flush([]);
+    await tick();
+    http.expectOne(`${VARIANTS}/v2/recipe`).flush([]);
+    http.expectOne(`${VARIANTS}/v2/option-groups`).flush([]);
+    await tick();
+    fixture.detectChanges();
+  }
+
+  /** El botón "Copiar insumos..." de la presentación activa, o `null` si no está. */
+  const copyButton = (): HTMLButtonElement | null =>
+    (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+      (b) => b.textContent?.includes('Copiar insumos'),
+    ) ?? null;
+
+  it('el botón "Copiar insumos..." está oculto con tracks_inventory=false, aunque hasSizes && variants.length > 1', async () => {
+    await createNew();
+    component.toggleHasSizes(); // hasSizes=true, 3 variantes — switch de inventario sigue apagado
+    fixture.detectChanges();
+
+    expect(component.draft().tracks_inventory).toBe(false);
+    expect(component.draft().hasSizes && component.draft().variants.length > 1).toBe(true);
+    expect(copyButton()).toBeNull();
+  });
+
+  it('el botón "Copiar insumos..." aparece con tracks_inventory=true, en las mismas condiciones', async () => {
+    await createNew();
+    component.toggleHasSizes();
+    await component.toggleTracksInventory();
+    fixture.detectChanges();
+
+    expect(component.draft().tracks_inventory).toBe(true);
+    expect(copyButton()).not.toBeNull();
+    expect(copyButton()!.textContent).toContain('Copiar insumos');
+  });
+
+  it('reacciona de inmediato a toggleTracksInventory() en ambos sentidos, sin recargar', async () => {
+    await createNew();
+    component.toggleHasSizes();
+    fixture.detectChanges();
+    expect(copyButton()).toBeNull();
+
+    await component.toggleTracksInventory(); // enciende
+    fixture.detectChanges();
+    expect(copyButton()).not.toBeNull();
+
+    await component.toggleTracksInventory(); // apaga (sin insumos configurados: no pide confirmación)
+    fixture.detectChanges();
+    expect(copyButton()).toBeNull();
+  });
+
+  it('en edición, con tracks_inventory=false el botón está oculto aunque el producto ya tenga insumos guardados', async () => {
+    await createEdit('p9', false);
+
+    expect(component.draft().hasSizes).toBe(true); // 2 variantes ya guardadas
+    expect(copyButton()).toBeNull();
+  });
+
+  it('en edición, con tracks_inventory=true el botón aparece igual que en creación', async () => {
+    await createEdit('p9', true);
+
+    expect(component.draft().hasSizes).toBe(true);
+    expect(copyButton()).not.toBeNull();
+  });
+
+  // ── Orden de presentaciones por arrastre (spec 042) ──────────────────────
+
+  const drop = (previousIndex: number, currentIndex: number) =>
+    ({ previousIndex, currentIndex }) as CdkDragDrop<VariantDraft[]>;
+
+  it('arrastrar reordena draft().variants de inmediato, sin ninguna llamada al backend', async () => {
+    await createEdit('p9', true); // v1 Grande, v2 Pequeña (ese orden)
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(['Grande', 'Pequeña']);
+
+    component.onVariantDrop(drop(0, 1));
+    fixture.detectChanges();
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(['Pequeña', 'Grande']);
+    // Puramente local: ninguna petición pendiente por el solo hecho de arrastrar.
+    http.expectNone((r) => r.url.endsWith('/variants/reorder'));
+  });
+
+  it('soltar en la misma posición no cambia nada', async () => {
+    await createEdit('p9', true);
+    const before = component.draft().variants.map((v) => v.name);
+
+    component.onVariantDrop(drop(1, 1));
+    fixture.detectChanges();
+
+    expect(component.draft().variants.map((v) => v.name)).toEqual(before);
+  });
+
+  it('guardar tras arrastrar persiste el nuevo orden en una sola llamada atómica', async () => {
+    await createEdit('p9', true);
+    component.onVariantDrop(drop(0, 1)); // Grande, Pequeña → Pequeña, Grande
+    fixture.detectChanges();
+
+    const savePromise = component.save();
+
+    // Spec 043: una sola petición PATCH trae producto + presentaciones en el orden
+    // ya arrastrado -- el orden de `variants[]` en el body reemplaza al endpoint de
+    // reordenamiento por separado (spec 042).
+    const req = http.expectOne(`${PRODUCTS}/p9`);
+    expect(req.request.method).toBe('PATCH');
+    const ids = (req.request.body.variants as Array<{ id?: string }>).map((v) => v.id);
+    expect(ids).toEqual(['v2', 'v1']); // Pequeña (v2) primero tras arrastrar
+    req.flush({
+      id: 'p9', category_id: 'c1', name: 'Cono doble', description: null,
+      preparation_type: 'prepared', image_url: null, active: true, available: true,
+      tracks_inventory: true, created_at: '2026-08-19T00:00:00', variants: [],
+    });
+
+    await savePromise;
+    expect(component.service.error()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/dashboard/products']);
+  });
+
+  // ── Guardado unificado de producto (spec 043) ────────────────────────────
+
+  it('restaurar una presentación desactivada solo la trae al draft, sin ninguna llamada de escritura', async () => {
+    await createEdit('p9', true);
+    component.draft.update((d) => ({
+      ...d,
+      deactivated: [{ id: 'v3', name: 'Mediana', price: 4000 }],
+    }));
+
+    const restorePromise = component.restoreVariant({ id: 'v3', name: 'Mediana', price: 4000 });
+
+    // Solo lectura (sin cambios, spec 043 no toca los GET) -- research.md Decisión 4:
+    // ya no hay ningún PATCH /variants/v3 disparado por el solo hecho de restaurar.
+    http.expectOne(`${VARIANTS}/v3/recipe`).flush([]);
+    http.expectOne(`${VARIANTS}/v3/option-groups`).flush([]);
+    http.expectNone(`${VARIANTS}/v3`);
+
+    await restorePromise;
+
+    expect(component.draft().variants.map((v) => v.name)).toContain('Mediana');
+    expect(component.draft().deactivated).toEqual([]);
   });
 });

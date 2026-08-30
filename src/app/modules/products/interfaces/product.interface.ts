@@ -45,9 +45,14 @@ export interface ProductCreatePayload {
   preparation_type: PreparationType;
   image_url?: string | null;
   tracks_inventory?: boolean;
+  /**
+   * Presentaciones iniciales, con receta y grupos de opciones (spec 043). Vacío/ausente = se
+   * crea automáticamente la presentación "Single" a precio 0 (`RN-CAT-05`), igual que hoy.
+   */
+  variants?: VariantSavePayload[];
 }
 
-/** `PATCH /products/{id}` (`ProductUpdate`) — all optional. */
+/** `PATCH`/`PUT /products/{id}` (`ProductUpdate`) — all optional. */
 export interface ProductUpdatePayload {
   category_id?: string;
   name?: string;
@@ -57,6 +62,29 @@ export interface ProductUpdatePayload {
   active?: boolean;
   available?: boolean;
   tracks_inventory?: boolean;
+  /**
+   * Árbol completo de presentaciones deseado (spec 043). Ausente del body = no tocar ninguna
+   * presentación (back-compat). Presente (incluso `[]`) = reemplazo total: crea las entradas sin
+   * `id`, actualiza las que traen `id`, desactiva cualquier presentación activa no listada.
+   */
+  variants?: VariantSavePayload[];
+}
+
+/**
+ * Una presentación dentro del árbol de `POST`/`PATCH`/`PUT /products` (spec 043,
+ * `VariantSaveIn`). `id` ausente crea una presentación nueva; presente actualiza esa fila. La
+ * posición dentro de `variants[]` determina su `display_order` (1-based).
+ */
+export interface VariantSavePayload {
+  id?: string;
+  name: string;
+  price: number;
+  sku?: string | null;
+  /** `false` explícito desactiva la presentación en el mismo guardado (equivalente a un
+   *  `DELETE /variants/{id}` de hoy, pero dentro de la transacción consolidada). Default `true`. */
+  active?: boolean;
+  recipe: RecipeItem[];
+  option_groups: VariantOptionGroup[];
 }
 
 // --- Variants ---
@@ -94,17 +122,20 @@ export interface VariantUpdatePayload {
 }
 
 /**
- * `detail` del 409 de `POST /products/{id}/variants` y `PATCH /variants/{id}` cuando el
- * nombre ya está tomado dentro del producto.
+ * `detail` del 409 de nombre de presentación duplicado en `POST`/`PATCH`/`PUT /products` (spec
+ * 043) cuando alguna entrada de `variants[]` choca con otra presentación del mismo producto.
  *
- * `active: false` es el caso interesante: la que estorba es una presentación
- * soft-borrada, que el editor no lista y por eso el usuario intenta recrearla. Se
- * resuelve restaurándola, no creando otra.
+ * `active: false` es el caso interesante: la que estorba es una presentación soft-borrada, que
+ * el editor no lista y por eso el usuario intenta recrearla. Se resuelve restaurándola (moverla
+ * al draft, `product-form.component.ts` `restoreVariant`) y reintentando "Guardar" — no creando
+ * otra ni con una llamada de red aparte.
  */
 export interface VariantNameConflict {
   error: string;
   variant_id: string;
   active: boolean;
+  /** Posición (0-based) de la entrada en conflicto dentro de `variants[]` del payload enviado. */
+  variant_index?: number;
 }
 
 // --- Option groups & options ---

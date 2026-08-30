@@ -29,7 +29,7 @@ import {
   ProductSelection,
 } from '../components/product-select.component';
 
-type MenuView = 'loading' | 'error' | 'name' | 'menu';
+type MenuView = 'loading' | 'error' | 'name' | 'menu' | 'exited';
 /** Secciones navegables dentro de la vista `menu`, reflejadas en el query param `v`. */
 type MenuSection = 'carta' | 'pedidos';
 /**
@@ -65,6 +65,29 @@ const REFRESH_DEBOUNCE_MS = 250;
           <div class="text-6xl mb-4">🚫</div>
           <h1 class="text-xl font-bold text-gray-800">{{ errorMessage() }}</h1>
           <p class="text-gray-500 text-sm mt-2">Verifica que el código QR sea correcto.</p>
+        </div>
+      }
+
+      <!-- Acceso finalizado (Bug 1): tras "Salir" explícito, ni recargar, "Atrás"/
+           "Adelante" ni reabrir la misma URL en esta pestaña deben ofrecer de nuevo
+           el flujo de acceso — la única vía prevista es volver a escanear el QR
+           físico de la mesa (FR-002 a FR-006). Sin botón ni enlace hacia
+           confirmName()/openSession() a propósito. -->
+      @if (view() === 'exited') {
+        <div class="flex flex-col items-center justify-center min-h-screen px-4 text-center">
+          @if (businessLogo()) {
+            <img
+              [src]="businessLogo()"
+              [alt]="businessName() ?? ''"
+              class="w-20 h-20 rounded-2xl object-cover mx-auto mb-4 border border-gray-100"
+            />
+          }
+          <h1 class="text-xl font-bold text-gray-800">
+            {{ businessName() ? '¡Gracias por tu visita a ' + businessName() + '!' : '¡Gracias por tu visita!' }}
+          </h1>
+          <p class="text-gray-500 text-sm mt-2">
+            Acceso finalizado, vuelve a escanear el código QR de tu mesa
+          </p>
         </div>
       }
 
@@ -346,7 +369,7 @@ const REFRESH_DEBOUNCE_MS = 250;
                       @if (product.image_url) {
                         <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover" />
                       } @else {
-                        🍦
+                        <span class="w-10 h-10 text-gray-300"><app-icon name="image-off" /></span>
                       }
                     </div>
                     <div class="p-3">
@@ -671,7 +694,15 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // 2. ¿Hay sesión que restaurar? Se comprueba contra el backend, no contra
+    // 2. ¿Este acceso ya fue cerrado explícitamente en esta pestaña? Si es así,
+    //    no se ofrece el flujo de nombre — el único camino de vuelta es volver a
+    //    escanear el QR físico (FR-002 a FR-006; `research.md` Decisión 1).
+    if (this.tokenStore.isExited(this.token)) {
+      this.view.set('exited');
+      return;
+    }
+
+    // 3. ¿Hay sesión que restaurar? Se comprueba contra el backend, no contra
     //    el estado local: un 401 aquí significa "vuelve a escanear el QR".
     if (!this.tokenStore.token()) {
       this.view.set('name');
@@ -1009,26 +1040,26 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
    * no pidió nada, la mesa queda libre en el acto. Si la llamada falla se sigue
    * adelante igual — el barrido lo resuelve solo, y bloquear la salida por un
    * error de red sería peor que la fuga.
+   *
+   * Además marca este `:token` como acceso cerrado (Bug 1, FR-001/FR-002): sin
+   * esa marca, un reload/"Atrás"/"Adelante" en la misma pestaña volvería a
+   * ofrecer el flujo de nombre como si fuera un primer acceso.
    */
   async exit(): Promise<void> {
-    const tenia = this.myOrders().length > 0;
     this.stopPolling();
     this.disconnectRealtime();
     try {
       await this.api.leave();
     } catch {
       /* best-effort: el barrido cierra la sesión de todos modos */
+    } finally {
+      this.tokenStore.markExited(this.token);
     }
     this.cart.clear();
     this.cart.clearDiner();
     this.myOrders.set([]);
     this.section.set('carta');
-    this.errorMessage.set(
-      tenia
-        ? 'Gracias por tu visita 🍦 El personal cerrará tu cuenta.'
-        : 'Gracias por tu visita 🍦 La mesa queda libre.',
-    );
-    this.view.set('error');
+    this.view.set('exited');
   }
 
   variantLabel(variantId: string): string {
@@ -1160,7 +1191,15 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     this.view.set('error');
   }
 
-  /** La sesión dejó de valer: se descarta el token y se vuelve a pedir nombre. */
+  /**
+   * La sesión dejó de valer: se descarta el token y se vuelve a pedir nombre.
+   *
+   * Segundo camino hacia el formulario de nombre además de `ngOnInit`
+   * (`research.md` Decisión 2): si este `:token` ya está marcado como un acceso
+   * que el propio comensal cerró explícitamente, respeta ese estado en vez de
+   * reabrir el flujo de nombre — un `401` tardío no debe pisar la marca de
+   * `exit()`.
+   */
   private expireSession(message: string): void {
     this.stopPolling();
     this.disconnectRealtime();
@@ -1169,6 +1208,10 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     this.cart.clearDiner();
     this.myOrders.set([]);
     this.orderError.set(null);
+    if (this.tokenStore.isExited(this.token)) {
+      this.view.set('exited');
+      return;
+    }
     this.errorMessage.set(message);
     this.view.set('name');
   }

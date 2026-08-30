@@ -115,8 +115,32 @@ describe('ProductService', () => {
     });
   });
 
-  describe('saveProduct sobre un producto existente', () => {
-    it('reconcilia solo contra las activas y no re-borra las desactivadas', async () => {
+  describe('saveProduct para un producto nuevo (spec 043: guardado consolidado)', () => {
+    it('hace una sola petición POST con el árbol completo de presentaciones', async () => {
+      const promise = service.saveProduct(
+        draft({
+          id: null,
+          variants: [
+            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'l2', name: 'Grande', price: 9000, recipe: [], optionGroups: [] },
+          ],
+        }),
+      );
+
+      const req = http.expectOne(PRODUCTS);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.variants).toEqual([
+        { name: 'Pequeña', price: 6000, recipe: [], option_groups: [] },
+        { name: 'Grande', price: 9000, recipe: [], option_groups: [] },
+      ]);
+      req.flush({ ...productResponse(), variants: [] });
+
+      expect(await promise).toBe(PID);
+    });
+  });
+
+  describe('saveProduct sobre un producto existente (spec 043: guardado consolidado)', () => {
+    it('hace una sola petición PATCH con el árbol completo, en vez de una por presentación', async () => {
       const promise = service.saveProduct(
         draft({
           variants: [
@@ -126,24 +150,12 @@ describe('ProductService', () => {
         }),
       );
 
-      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
-      await tick();
-
-      const list = http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`);
-      expect(list.request.params.get('active')).toBe('true');
-      list.flush([variantResponse({ id: 'viva', name: 'Mediana', active: true })]);
-      await tick();
-
-      http.expectOne(`${VARIANTS}/viva`).flush(variantResponse({ id: 'viva' }));
-      await tick();
-      http.expectOne(`${VARIANTS}/viva/recipe`).flush({});
-      await tick();
-      http.expectOne(`${VARIANTS}/viva/option-groups`).flush({});
-      await tick();
-
-      // `muerta` no está en el draft, pero tampoco debe recibir un DELETE: ya está
-      // desactivada y el usuario no la quitó en esta edición.
-      http.expectNone(`${VARIANTS}/muerta`);
+      const req = http.expectOne(`${PRODUCTS}/${PID}`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body.variants).toEqual([
+        { id: 'viva', name: 'Mediana', price: 9000, recipe: [], option_groups: [] },
+      ]);
+      req.flush({ ...productResponse(), variants: [] });
 
       // `saveProduct` invalida la query paginada de productos al terminar, pero
       // este test nunca la activó (no llamó `loadProducts()`), así que no hay
@@ -161,16 +173,12 @@ describe('ProductService', () => {
         }),
       );
 
-      http.expectOne(`${PRODUCTS}/${PID}`).flush(productResponse());
-      await tick();
-      http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`).flush([]);
-      await tick();
-
-      http.expectOne((r) => r.method === 'POST' && r.url === `${PRODUCTS}/${PID}/variants`).flush(
+      http.expectOne(`${PRODUCTS}/${PID}`).flush(
         {
           detail: {
             error: 'Ya existe una variante «Pequeña» desactivada en este producto. Reactívala en vez de crear otra.',
             variant_id: 'muerta',
+            variant_index: 0,
             active: false,
           },
         },
@@ -182,6 +190,27 @@ describe('ProductService', () => {
       // Sin el parseo del detalle-objeto, el banner mostraría '[object Object]'.
       expect(service.error()).toContain('«Pequeña» desactivada');
       expect(service.error()).toContain('Presentaciones desactivadas');
+    });
+  });
+
+  describe('orden de presentaciones al guardar (spec 043, sustituye a spec 042)', () => {
+    it('el orden de variants[] en el payload es el orden final -- ya no hay un endpoint aparte de reorder', async () => {
+      const promise = service.saveProduct(
+        draft({
+          variants: [
+            { id: 'v2', localId: 'v2', name: 'Grande', price: 8000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'nueva', name: 'Mediana', price: 6500, recipe: [], optionGroups: [] },
+            { id: 'v1', localId: 'v1', name: 'Pequeña', price: 5000, recipe: [], optionGroups: [] },
+          ],
+        }),
+      );
+
+      const req = http.expectOne(`${PRODUCTS}/${PID}`);
+      const ids = (req.request.body.variants as Array<{ id?: string }>).map((v) => v.id ?? null);
+      expect(ids).toEqual(['v2', null, 'v1']);
+      req.flush({ ...productResponse(), variants: [] });
+
+      expect(await promise).toBe(PID);
     });
   });
 

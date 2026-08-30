@@ -25,10 +25,14 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
  * carga y resuelve su propio intento de pago sin compartir estado con sus
  * hermanas (spec 026/024).
  *
- * A diferencia del extinto `pending-orders-panel`, **no** hay ningún botón
- * "Rechazar" a nivel de pedido completo: la única forma de rechazar es la del
- * intento de pago (con motivo obligatorio), que ya vive dentro del panel
- * embebido — T007 retira `cancelOrder` de este flujo.
+ * Spec 044 revierte, para pago en efectivo y transferencia sin comprobante
+ * aún, la Decisión D5 de spec 028 (que había retirado de aquí, a propósito,
+ * el botón "Rechazar" a nivel de pedido completo del extinto
+ * `pending-orders-panel`): esos dos casos ahora sí pueden rechazar el pedido
+ * completo, con motivo obligatorio, desde el mismo panel embebido. La
+ * transferencia con comprobante ya subido conserva su "Rechazar" de
+ * siempre (rechaza el intento de pago, permite reintentar) — D5 sigue
+ * vigente solo para ese caso.
  */
 @Component({
   selector: 'app-payment-validation-block',

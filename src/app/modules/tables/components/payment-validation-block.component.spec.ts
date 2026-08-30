@@ -14,7 +14,7 @@ const API = environment.apiBaseUrl;
 function order(id: string): DiningOrder {
   return {
     id,
-    channel: 'qr',
+    channel: 'QR_MENU',
     status: 'recibida',
     created_at: '2026-08-20T10:00:00',
     customer_name: `Comensal ${id}`,

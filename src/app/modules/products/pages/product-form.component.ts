@@ -9,6 +9,13 @@ import {
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import {
+  CdkDrag,
+  CdkDragDrop,
+  CdkDragHandle,
+  CdkDropList,
+  moveItemInArray,
+} from '@angular/cdk/drag-drop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
@@ -57,7 +64,16 @@ interface SlotBreakdown {
 @Component({
   selector: 'app-product-form',
   standalone: true,
-  imports: [RouterLink, FormsModule, DecimalPipe, SearchableSelectComponent, MoneyInputComponent],
+  imports: [
+    RouterLink,
+    FormsModule,
+    DecimalPipe,
+    SearchableSelectComponent,
+    MoneyInputComponent,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="max-w-3xl mx-auto space-y-5">
@@ -177,16 +193,42 @@ interface SlotBreakdown {
           }
 
           @if (draft().hasSizes) {
-            <div class="flex flex-wrap gap-2 mt-4">
-              @for (v of draft().variants; track v.localId) {
-                <button type="button" (click)="activeLocalId.set(v.localId)"
-                  class="px-4 py-1.5 rounded-lg border text-sm font-semibold transition-colors"
-                  [class]="v.localId === activeLocalId() ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'">
-                  {{ v.name }}
-                </button>
-              }
+            <div class="mt-4 rounded-xl border border-gray-200 overflow-hidden">
+              <div class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                <span></span>
+                <span class="text-center">#</span>
+                <span>Nombre</span>
+                <span>Precio</span>
+                <span></span>
+              </div>
+              <div cdkDropList [cdkDropListData]="draft().variants" (cdkDropListDropped)="onVariantDrop($event)"
+                class="divide-y divide-gray-100">
+                @for (v of draft().variants; track v.localId; let i = $index) {
+                  <div cdkDrag (click)="activeLocalId.set(v.localId)"
+                    class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 cursor-pointer transition-colors"
+                    [class]="v.localId === activeLocalId() ? 'bg-indigo-50' : 'hover:bg-gray-50'">
+                    <span cdkDragHandle (click)="$event.stopPropagation()"
+                      class="text-center text-gray-300 hover:text-gray-500 cursor-move">⠿</span>
+                    <span class="text-center text-xs text-gray-400">{{ i + 1 }}</span>
+                    <input [value]="v.name" (input)="setVariantField(v.localId, 'name', $any($event.target).value)"
+                      class="min-w-0 px-2 py-1.5 border border-transparent rounded-lg text-sm font-semibold text-gray-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-gray-200" />
+                    <div class="flex items-center gap-1 border border-gray-200 rounded-lg px-2 py-1 bg-white">
+                      <span class="text-gray-400 text-sm">$</span>
+                      <app-money-input [ngModel]="v.price"
+                        (ngModelChange)="setVariantField(v.localId, 'price', $event ?? 0)"
+                        [bordered]="false" sizeClass="text-sm" />
+                    </div>
+                    @if (draft().variants.length > 1) {
+                      <button type="button" (click)="removeVariant(v.localId); $event.stopPropagation()"
+                        class="justify-self-end px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        Eliminar
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
               <button type="button" (click)="addVariant()"
-                class="border-2 border-dashed border-gray-300 rounded-lg px-4 py-1.5 text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors">
+                class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors border-t border-dashed border-gray-200">
                 + Agregar tamaño
               </button>
             </div>
@@ -215,31 +257,20 @@ interface SlotBreakdown {
 
           @if (activeVariant(); as av) {
             <div class="mt-4 space-y-5">
-              <!-- Nombre y precio del tamaño -->
-              <div class="flex flex-wrap items-end gap-3">
-                @if (draft().hasSizes) {
+              @if (!draft().hasSizes) {
+                <!-- Sin tamaños: una sola presentación; el nombre y el orden no aplican. -->
+                <div class="flex flex-wrap items-end gap-3">
                   <div>
-                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Nombre</label>
-                    <input [value]="av.name" (input)="setVariantField(av.localId, 'name', $any($event.target).value)"
-                      class="w-40 px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                }
-                <div>
-                  <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
-                  <div class="flex items-center gap-1.5 border border-gray-300 rounded-xl px-3 py-2 w-36">
-                    <span class="text-gray-400 text-sm">$</span>
-                    <app-money-input [ngModel]="av.price"
-                      (ngModelChange)="setVariantField(av.localId, 'price', $event ?? 0)"
-                      [bordered]="false" sizeClass="text-sm" />
+                    <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
+                    <div class="flex items-center gap-1.5 border border-gray-300 rounded-xl px-3 py-2 w-36">
+                      <span class="text-gray-400 text-sm">$</span>
+                      <app-money-input [ngModel]="av.price"
+                        (ngModelChange)="setVariantField(av.localId, 'price', $event ?? 0)"
+                        [bordered]="false" sizeClass="text-sm" />
+                    </div>
                   </div>
                 </div>
-                @if (draft().hasSizes && draft().variants.length > 1) {
-                  <button type="button" (click)="removeVariant(av.localId)"
-                    class="px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors">
-                    Eliminar tamaño
-                  </button>
-                }
-              </div>
+              }
 
               @if (draft().tracks_inventory) {
               <!-- Insumos fijos -->
@@ -381,7 +412,7 @@ interface SlotBreakdown {
               </div>
               }
 
-              @if (draft().hasSizes && draft().variants.length > 1) {
+              @if (draft().hasSizes && draft().variants.length > 1 && draft().tracks_inventory) {
                 <button type="button" (click)="copyConfigToOthers(av.localId)"
                   class="text-xs font-medium text-gray-500 hover:text-indigo-600 border border-dashed border-gray-300 hover:border-indigo-400 rounded-lg px-3 py-2 transition-colors">
                   Copiar insumos y sabores de «{{ av.name }}» a los otros tamaños
@@ -881,13 +912,14 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Devuelve una presentación desactivada a la carta y la trae al draft con su id real,
-   * su receta y sus grupos — así el guardado la actualiza (`PATCH`) en vez de intentar
+   * Devuelve una presentación desactivada a la carta y la trae al draft con su id real, su
+   * receta y sus grupos — así el guardado la actualiza (reactivándola) en vez de intentar
    * crearla otra vez, que es justo el choque que la constraint de nombre rechaza.
    *
-   * A diferencia del resto del formulario, se aplica en el momento: reactivar es la
-   * operación que libera el nombre, y diferirla al «Guardar» dejaría al usuario sin
-   * salida cuando el guardado es precisamente lo que está fallando.
+   * Spec 043 (research.md Decisión 4): a diferencia de antes, esto ya NO dispara ninguna
+   * petición de red por sí solo — solo mueve la presentación dentro del draft en memoria. La
+   * reactivación se persiste recién en el siguiente guardado consolidado, junto con el resto de
+   * los cambios (igual que agregar cualquier otra presentación nueva).
    */
   async restoreVariant(dv: DeactivatedVariant): Promise<void> {
     const enUso = this.draft().variants.some(
@@ -899,9 +931,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       );
       return;
     }
-
-    const ok = await this.service.restoreVariant(dv.id);
-    if (!ok) return; // el banner ya muestra el error
 
     const [recipe, optionGroups] = await Promise.all([
       this.service.getVariantRecipe(dv.id),
@@ -925,6 +954,21 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       };
     });
     this.activeLocalId.set(restored.localId);
+  }
+
+  /**
+   * Reordena `draft().variants` al soltar (spec 042, FR-001/FR-003). Puramente local:
+   * no dispara ninguna llamada al backend — el nuevo orden se persiste recién al
+   * guardar el producto (`ProductService.saveExistingProduct`), igual que el resto de
+   * los cambios en memoria de este formulario.
+   */
+  onVariantDrop(event: CdkDragDrop<VariantDraft[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    this.draft.update((d) => {
+      const variants = [...d.variants];
+      moveItemInArray(variants, event.previousIndex, event.currentIndex);
+      return { ...d, variants };
+    });
   }
 
   removeVariant(localId: string): void {

@@ -11,7 +11,7 @@ const API = environment.apiBaseUrl;
 function order(id: string, status: DiningOrder['status'], paid?: boolean): DiningOrder {
   return {
     id,
-    channel: 'qr',
+    channel: 'QR_MENU',
     status,
     paid,
     created_at: '2026-08-21T18:27:00',

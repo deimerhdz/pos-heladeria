@@ -3,13 +3,9 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
-  AssignmentsPayload,
   CloseSessionPayload,
   CloseSessionResponse,
-  ItemAssignment,
-  ParticipantCreatePayload,
   SessionBill,
-  SessionParticipant,
   TableSession,
 } from '../interfaces/dining.interface';
 
@@ -18,12 +14,6 @@ export interface CloseBlockedDetail {
   error: string;
   order_ids?: string[];
   items?: unknown[];
-}
-
-/** Detalle del `422` en `split`: faltan comensales por cobrar. */
-export interface SplitIncompleteDetail {
-  error: string;
-  participant_ids?: string[];
 }
 
 /**
@@ -65,30 +55,6 @@ export class TableSessionService {
     );
   }
 
-  // --- Reparto de la cuenta (staff) ---
-
-  /** Crea un comensal sin QR, para repartir cuando una sola persona pidió todo. */
-  addParticipant(sessionId: string, displayName: string): Promise<SessionParticipant> {
-    const payload: ParticipantCreatePayload = { display_name: displayName };
-    return firstValueFrom(
-      this.http.post<SessionParticipant>(`${this.api}/table-sessions/${sessionId}/participants`, payload),
-    );
-  }
-
-  removeParticipant(sessionId: string, participantId: string): Promise<void> {
-    return firstValueFrom(
-      this.http.delete<void>(`${this.api}/table-sessions/${sessionId}/participants/${participantId}`),
-    );
-  }
-
-  /** Reparto en lote; devuelve la cuenta ya recalculada. */
-  setAssignments(sessionId: string, assignments: ItemAssignment[]): Promise<SessionBill> {
-    const payload: AssignmentsPayload = { assignments };
-    return firstValueFrom(
-      this.http.put<SessionBill>(`${this.api}/table-sessions/${sessionId}/assignments`, payload),
-    );
-  }
-
   /**
    * Libera una mesa ya cobrada por completo, sin cobrar nada (feature 028).
    *
@@ -107,16 +73,6 @@ export class TableSessionService {
     const detail = (err.error as { detail?: unknown } | null)?.detail;
     if (detail && typeof detail === 'object' && 'error' in detail) {
       return detail as CloseBlockedDetail;
-    }
-    return null;
-  }
-
-  /** Comensales que faltan por cobrar en un `split` incompleto (`422`). */
-  splitIncomplete(err: unknown): SplitIncompleteDetail | null {
-    if (!(err instanceof HttpErrorResponse) || err.status !== 422) return null;
-    const detail = (err.error as { detail?: unknown } | null)?.detail;
-    if (detail && typeof detail === 'object' && 'participant_ids' in detail) {
-      return detail as SplitIncompleteDetail;
     }
     return null;
   }
