@@ -9,11 +9,7 @@ import { PaymentMethod, Sale } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
-import {
-  bestProductDiscount,
-  discountedUnitPrice,
-  isPromoActiveNow,
-} from '../../promotions/services/promotion-pricing.util';
+import { isPromoActiveNow } from '../../promotions/services/promotion-pricing.util';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -391,14 +387,36 @@ export class PosTerminalStore {
   readonly paymentMethodsAvailable = this.paymentMethodService.checkoutOptions;
   readonly categories = this.menuService.categories;
 
-  /** Combos activos y vigentes ahora mismo, disponibles para vender (el staff ya tiene token de sesión). */
-  readonly combos = computed<Promotion[]>(() => {
+  /** spec 063 (FR-024): el tipo `combo` se retira. Ya no hay combos vendibles.
+   *  Se conserva la señal (vacía) para no romper las plantillas que la leen. */
+  readonly combos = computed<Promotion[]>(() => []);
+
+  /**
+   * spec 063 (FR-023, research.md D10): el descuento efectivo lo resuelve el
+   * backend (`discounted_unit_price` de la línea, poblado por el preview del
+   * cobro). El cliente solo elige qué número pintar, no lo recalcula.
+   */
+  private itemUnitPrice(i: DiningOrderItem): number {
+    return i.discounted_unit_price != null
+      ? Number(i.discounted_unit_price)
+      : Number(i.unit_price);
+  }
+
+  /** Insignia de descuento para un producto, si alguna promoción vigente por
+   *  conjunto de variantes lo cubre. Solo decide si se muestra la insignia. */
+  private productDiscountBadge(variantIds: string[]): string | null {
     const now = currentNow(this.promotionService);
-    if (now === null) return []; // A-09: sin hora sincronizada aún, degrada sin combos
-    return this.promotionService
-      .activePromotions()
-      .filter((p) => p.type === 'combo' && isPromoActiveNow(p, now));
-  });
+    if (now === null || variantIds.length === 0) return null;
+    const set = new Set(variantIds);
+    for (const p of this.promotionService.activePromotions()) {
+      if (!isPromoActiveNow(p, now)) continue;
+      if (!p.variants.some((v) => set.has(v.product_variant_id))) continue;
+      return p.type === 'percent'
+        ? `-${Number(p.value)}%`
+        : `Paquete ${this.fmt(Number(p.value))}`;
+    }
+    return null;
+  }
 
   /**
    * Insignia de descuento (ej. "-50%") por producto, para las promociones
@@ -408,21 +426,11 @@ export class PosTerminalStore {
    * insignia; el monto real que se cobra lo sigue calculando el backend.
    */
   readonly productDiscountBadges = computed<Map<string, string>>(() => {
-    const now = currentNow(this.promotionService);
-    if (now === null) return new Map<string, string>(); // A-09: sin hora sincronizada aún
-    const promos = this.promotionService.activePromotions();
     const result = new Map<string, string>();
-
     for (const c of this.categories()) {
       for (const prod of c.products) {
-        const price = prod.variants.length ? Math.min(...prod.variants.map((v) => v.price)) : 0;
-        const match = bestProductDiscount(promos, now, prod.id, c.id, price);
-        if (!match) continue;
-        const label =
-          match.promo.type === 'percent'
-            ? `-${Number(match.promo.value)}%`
-            : `-${this.fmt(Number(match.promo.value))}`;
-        result.set(prod.id, label);
+        const label = this.productDiscountBadge(prod.variants.map((v) => v.id));
+        if (label) result.set(prod.id, label);
       }
     }
     return result;
@@ -770,14 +778,7 @@ export class PosTerminalStore {
 
     const plainItems = items.filter((i) => !i.combo_id);
     const persistedPlain = plainItems.map((i) => {
-      const unitPrice = discountedUnitPrice(
-        promos,
-        now,
-        lk.productId(i.product_variant_id),
-        lk.categoryId(i.product_variant_id),
-        Number(i.unit_price),
-        i.quantity,
-      );
+      const unitPrice = this.itemUnitPrice(i);
       return {
         kind: 'persisted' as const,
         key: i.id,
@@ -847,14 +848,9 @@ export class PosTerminalStore {
           pendingItemIds: [] as string[],
         };
       }
-      const unitPrice = discountedUnitPrice(
-        promos,
-        now,
-        lk.productId(l.variant.id),
-        lk.categoryId(l.variant.id),
-        l.unitPrice,
-        l.quantity,
-      );
+      // spec 063: los draft sin guardar todavía no tienen descuento del backend;
+      // el efectivo aparece en el preview del cobro (FR-023).
+      const unitPrice = l.unitPrice;
       return {
         kind: 'draft' as const,
         key: l.key,
@@ -1344,16 +1340,13 @@ export class PosTerminalStore {
     this.catalogSearchText.set('');
   }
 
-  /** Productos incluidos en un combo, para mostrarlos como bullets del carrito. */
-  private comboBullets(comboId: string): string[] {
-    const promo = this.combos().find((p) => p.id === comboId);
-    const lk = this.lookup();
-    return (promo?.combo_items ?? []).map(
-      (ci) => `${ci.quantity}x ${lk.variantLabel(ci.product_variant_id)}`,
-    );
+  // spec 063 (FR-024, A-61): el mecanismo de combo se retira. Los helpers se
+  // conservan como no-ops para las columnas históricas (`combo_id`), que se
+  // pintan a su precio normal — ninguna línea nueva lleva `combo_id`.
+  private comboBullets(_comboId: string): string[] {
+    return [];
   }
 
-  /** Agrupa ítems de pedido por `combo_id`: sus componentes reales comparten uno. */
   private groupByCombo(items: DiningOrderItem[]): Map<string, DiningOrderItem[]> {
     const groups = new Map<string, DiningOrderItem[]>();
     for (const it of items) {
@@ -1365,51 +1358,16 @@ export class PosTerminalStore {
     return groups;
   }
 
-  /**
-   * Cuántas unidades completas del combo hay presentes entre sus componentes ya
-   * guardados (mínimo por componente, igual que `combo_discount_for_lines` del
-   * backend) — para mostrar "2x Combo X" en vez de una línea por componente.
-   */
-  private comboUnitsPresent(comboId: string, items: DiningOrderItem[]): number {
-    const promo = this.combos().find((p) => p.id === comboId);
-    const recipe = promo?.combo_items ?? [];
-    if (recipe.length === 0) return 0;
-    const qtyByVariant = new Map<string, number>();
-    for (const it of items) {
-      qtyByVariant.set(
-        it.product_variant_id,
-        (qtyByVariant.get(it.product_variant_id) ?? 0) + it.quantity,
-      );
-    }
-    return Math.min(
-      ...recipe.map((ci) =>
-        Math.floor((qtyByVariant.get(ci.product_variant_id) ?? 0) / ci.quantity),
-      ),
-    );
+  private comboUnitsPresent(_comboId: string, _items: DiningOrderItem[]): number {
+    return 0;
   }
 
-  /**
-   * Subtotal a mostrar para un combo ya guardado: las unidades que forman un
-   * combo completo se muestran al precio del bundle, y solo el remanente que
-   * no alcanza a formarlo (por una anulación parcial en cocina) se muestra a
-   * precio normal — mismo criterio que `combo_discount_for_lines` del backend,
-   * para que el número que ve el cajero coincida con lo que se cobrará.
-   */
   private comboDisplaySubtotal(
-    promo: Promotion | undefined,
+    _promo: Promotion | undefined,
     its: DiningOrderItem[],
-    units: number,
+    _units: number,
   ): number {
-    const normalTotal = its.reduce((s, it) => s + Number(it.unit_price) * it.quantity, 0);
-    if (units <= 0 || !promo) return normalTotal;
-
-    const priceByVariant = new Map<string, number>();
-    for (const it of its) priceByVariant.set(it.product_variant_id, Number(it.unit_price));
-    const coveredNormalTotal = promo.combo_items.reduce(
-      (s, ci) => s + (priceByVariant.get(ci.product_variant_id) ?? 0) * ci.quantity * units,
-      0,
-    );
-    return Number(promo.value) * units + (normalTotal - coveredNormalTotal);
+    return its.reduce((s, it) => s + Number(it.unit_price) * it.quantity, 0);
   }
 
   incDraft(key: string): void {
@@ -1917,21 +1875,10 @@ export class PosTerminalStore {
     const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
     const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
     const plain = items.filter((i) => !i.combo_id);
-    let total = plain.reduce((s, i) => {
-      const unitPrice = discountedUnitPrice(
-        promos,
-        now,
-        lk.productId(i.product_variant_id),
-        lk.categoryId(i.product_variant_id),
-        Number(i.unit_price),
-        i.quantity,
-      );
-      return s + unitPrice * i.quantity;
-    }, 0);
-    for (const [comboId, its] of this.groupByCombo(items)) {
-      const promo = this.combos().find((p) => p.id === comboId);
-      const units = this.comboUnitsPresent(comboId, its);
-      total += this.comboDisplaySubtotal(promo, its, units);
+    let total = plain.reduce((s, i) => s + this.itemUnitPrice(i) * i.quantity, 0);
+    // spec 063: `combo_id` histórico — los componentes se cobran a su precio.
+    for (const it of items.filter((i) => i.combo_id)) {
+      total += Number(it.unit_price) * it.quantity;
     }
     return total;
   }
