@@ -359,7 +359,7 @@ const REFRESH_DEBOUNCE_MS = 250;
                     <div class="rounded-xl bg-teal-50 border border-teal-100 px-4 py-3">
                       <p class="text-sm font-semibold text-teal-900">🎉 {{ promo.promotion_name }}</p>
                       <ul class="mt-1 text-xs text-teal-700 space-y-0.5">
-                        @for (rule of promo.rules; track rule.presentation_name) {
+                        @for (rule of promo.rules; track $index) {
                           <li>{{ rule.text }}</li>
                         }
                       </ul>
