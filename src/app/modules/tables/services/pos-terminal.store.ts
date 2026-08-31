@@ -93,21 +93,27 @@ type TableFilter = 'todas' | 'libres' | 'ocupadas' | 'pendientes';
 
 /**
  * Pestaña de tipo de orden (spec 036, FR-001/FR-003), independiente del
- * `filter` de ocupación de arriba. Solo `'mesas'` tiene datos reales hoy —
- * las otras dos no tienen ninguna vía de creación de orden todavía.
+ * `filter` de ocupación de arriba. Desde spec 059, "domicilios"/"para-llevar"
+ * sí tienen datos reales — pedidos `DELIVERY`/`TAKEAWAY` ya creados desde
+ * `manual-order-page.component.ts` (spec 055/056), filtrados de `orders()`
+ * (`ordersByType()`), sin ningún endpoint nuevo.
  */
 export type OrderTypeTab = 'mesas' | 'domicilios' | 'para-llevar';
 
-/** Fila de la sección "Pagos por confirmar" (spec 036, FR-004): una por cada
- *  orden de `pendingOrders()`, enriquecida con el número/nombre de su mesa. */
-export interface PendingPaymentViewModel {
-  orderId: string;
-  tableId: string;
-  tableLabel: string;
-  customerLabel: string;
-  totalLabel: string;
+/**
+ * Tarjeta de pedido sin mesa (Domicilio/Para llevar, spec 059) — mismo shape
+ * que consume `<app-order-summary-card>` (contracts/ui-contracts.md,
+ * Contrato 1), mapeado aquí para que `pos-tables-panel.component.ts` no
+ * tenga que conocer `DiningOrder` directamente.
+ */
+export interface OrderSummaryCardView {
+  id: string;
+  title: string;
+  statusLabel: string;
+  statusClass: string;
+  secondaryLabel: string;
   elapsedLabel: string;
-  createdAt: string;
+  totalLabel: string;
 }
 
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
@@ -171,7 +177,7 @@ export function deriveTableStatus(
   // pedido de mostrador `hold_for_payment` también vive en `recibida` mientras
   // se arma, y ese no es un pago por confirmar — es el cajero armando su
   // propio pedido, y mostrarlo como "Por confirmar" sería una falsa alarma.
-  if (orders.some((o) => o.status === 'recibida' && o.channel === 'qr')) return 'por_confirmar';
+  if (orders.some((o) => o.status === 'recibida' && o.channel === 'QR_MENU')) return 'por_confirmar';
   if (orders.some((o) => o.status === 'bloqueada')) return 'pago_pendiente';
 
   const items = orders.flatMap((o) => (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado'));
@@ -181,14 +187,15 @@ export function deriveTableStatus(
     // no basta con que cocina termine. La señal real sigue siendo
     // `order.paid` (D2 de research.md), no `status`: aunque desde spec 035
     // (A-52) los caminos QR/mostrador sí llegan a `status === 'pagada'` en
-    // cuanto se cobra, `tableOrders()` ya deja pasar esas órdenes mientras
-    // les quede comida en preparación (`hasPendingKitchenWork`), así que acá
-    // puede haber una orden `'pagada'` con ítems `'listo'` a medio camino de
-    // que el resto del pedido también quede `'listo'` — `paid` es la
-    // comprobación explícita y no depende de en qué momento cambió `status`.
-    // Mientras falte el pago, se muestra "Pago pendiente" — el mismo estado
-    // que ya usa la rama 'bloqueada' de arriba, para no inventar una
-    // insignia nueva casi idéntica.
+    // cuanto se cobra, `tableOrders()` incluye cualquier orden `'pagada'`
+    // sin importar en qué vaya su cocina (spec 047, gap de A-52) — así que
+    // acá puede llegar una orden `'pagada'` con ítems todavía sin todos
+    // `'listo'` (la rama de arriba ya la habría mandado a `'en_preparacion'`)
+    // o con todos `'listo'` — `paid` es la comprobación explícita y no
+    // depende de en qué momento cambió `status`. Mientras falte el pago, se
+    // muestra "Pago pendiente" — el mismo estado que ya usa la rama
+    // 'bloqueada' de arriba, para no inventar una insignia nueva casi
+    // idéntica.
     const conConsumo = orders.filter((o) =>
       (o.items ?? []).some((i) => i.estado_cocina !== 'anulado'),
     );
@@ -258,12 +265,76 @@ export class PosTerminalStore {
     });
   }
 
+  /** IDs de pedido ya intentados (con éxito o no) — evita reintentar y volver
+   *  a mostrar un toast de error cada vez que se reselecciona la mesa. */
+  private readonly saleFetchAttempted = new Set<string>();
+
+  /**
+   * Precarga en segundo plano la venta de cada pedido ya pagado de una mesa,
+   * para poder mostrar en "Cuenta de la mesa" el consumo ya cobrado (bugfix
+   * reportado sobre spec 049): reutiliza `resolveSaleForOrder` (T033, ya
+   * usado para reimprimir factura) en vez de recalcular subtotal/descuento
+   * en el frontend — esa cuenta ya la hizo el backend al cobrar.
+   *
+   * Se llama explícitamente desde `selectTable()` (no un `effect()` global
+   * sobre `selectedTableId()`/`orders()`): un efecto así dispara este fetch
+   * en **cualquier** test que arme un `PosTerminalStore` con un pedido
+   * `paid`, sin que ese test lo espere ni lo mockee — rompía decenas de
+   * specs ajenos a esta pantalla. Llamarlo solo al seleccionar una mesa
+   * acota el efecto a quien realmente navega a "Cuenta de la mesa".
+   */
+  private prefetchPaidOrderSales(tableId: string): void {
+    for (const order of this.tableOrders(tableId)) {
+      if (!order.paid || this.saleFetchAttempted.has(order.id)) continue;
+      this.saleFetchAttempted.add(order.id);
+      this.api
+        .findSaleForOrder(order.id)
+        .then((found) => {
+          if (found) this.checkoutSaleByOrderId.update((m) => ({ ...m, [order.id]: found }));
+        })
+        .catch(() => {
+          // Precarga silenciosa: un pedido pagado sin venta encontrada (o un
+          // error de red) no debe interrumpir al cajero con un toast — solo
+          // deja de sumar su parte en el resumen de "Ya pagado".
+        });
+    }
+  }
+
+  /**
+   * Resumen de lo ya cobrado de la mesa seleccionada, sumando las ventas
+   * reales de sus pedidos `paid` (mismos datos que ya usa "Imprimir
+   * Factura", T033) — no un recálculo propio de descuento por
+   * promoción/combo, que solo el backend conoce con certeza al cobrar.
+   * `null` sin mesa seleccionada, sin ningún pedido pagado, o mientras las
+   * ventas todavía se están precargando.
+   */
+  readonly selectedTablePaidSummary = computed(() => {
+    const tableId = this.selectedTableId();
+    if (!tableId) return null;
+    const cache = this.checkoutSaleByOrderId();
+    const sales = this.tableOrders(tableId)
+      .filter((o) => o.paid)
+      .map((o) => cache[o.id])
+      .filter((s): s is Sale => !!s);
+    if (sales.length === 0) return null;
+    return {
+      subtotal: sales.reduce((s, sale) => s + Number(sale.subtotal), 0),
+      discount: sales.reduce((s, sale) => s + Number(sale.discount), 0),
+      total: sales.reduce((s, sale) => s + Number(sale.total), 0),
+    };
+  });
+
   // ─── Estado ────────────────────────────────────────────────────────────────
   readonly orders = signal<DiningOrder[]>([]);
   readonly selectedTableId = signal<string | null>(null);
   readonly selectedOrderId = signal<string | null>(null);
   readonly draftLines = signal<DraftLine[]>([]);
   readonly customerName = signal('');
+  /** Datos de entrega del borrador "Domicilio" (spec 056) — solo relevantes
+   *  con `orderTypeTab() === 'domicilios'`. Sin valor por defecto. */
+  readonly deliveryAddress = signal('');
+  readonly deliveryPhone = signal('');
+  readonly deliveryFee = signal<number | null>(null);
 
   readonly search = signal('');
   readonly filter = signal<TableFilter>('todas');
@@ -285,14 +356,6 @@ export class PosTerminalStore {
   readonly lastSale = signal<{ total: number; customer: string } | null>(null);
   /** Facturas del último cobro (una por venta) listas para imprimir. */
   readonly lastReceipts = signal<ReceiptData[]>([]);
-
-  /**
-   * Mesa libre / sin pedido: el cajero pulsó "+ Crear Orden Manual" (o F3) y
-   * está armando el pedido con el catálogo, pero todavía no existe en el
-   * backend (feature 028, T021-T023). Se crea de una vez con
-   * `createManualOrderFromDraft()` cuando termina.
-   */
-  readonly manualOrderBuilding = signal(false);
 
   /** A nombre de quién se factura el cobro de mostrador; el cajero puede
    *  cambiarlo, pero por defecto va sin identificar (feature 028, T024). */
@@ -382,50 +445,32 @@ export class PosTerminalStore {
    * bloque de validación de pagos.
    */
   readonly pendingOrders = computed(() =>
-    this.orders().filter((o) => o.status === 'recibida' && o.channel === 'qr'),
+    this.orders().filter((o) => o.status === 'recibida' && o.channel === 'QR_MENU'),
   );
-
-  /**
-   * Vista de la sección "Pagos por confirmar" (spec 036, FR-004): el mismo
-   * `pendingOrders()` de arriba, enriquecido con el número/nombre de mesa —
-   * no duplica la lógica de confirmación, que sigue viviendo en
-   * `payment-attempt-review-panel.component.ts` (embebido tal cual en
-   * `pending-payments-panel.component.ts`). Vacío fuera de la pestaña
-   * "Mesas" (FR-003): no existe ningún pago pendiente de "Domicilios"/"Para
-   * llevar" todavía.
-   */
-  readonly pendingPaymentsView = computed<PendingPaymentViewModel[]>(() => {
-    if (this.orderTypeTab() !== 'mesas') return [];
-    return this.pendingOrders().map((o) => {
-      const table = this.tables().find((t) => t.id === o.dining_table_id);
-      const tableLabel = table ? `Mesa ${table.number}` : 'Mesa';
-      return {
-        orderId: o.id,
-        tableId: o.dining_table_id ?? '',
-        tableLabel,
-        customerLabel: o.customer_name || tableLabel,
-        totalLabel: this.fmt(this.orderSubtotal(o)),
-        elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
-        createdAt: o.created_at,
-      };
-    });
-  });
 
   /**
    * Órdenes activas por mesa: ni terminales ni QR sin confirmar. Un pedido de
    * mostrador `hold_for_payment` también vive en `'recibida'` mientras se arma
    * (ver `pendingOrders` arriba) pero SÍ es editable/seleccionable — solo el
-   * canal `qr` necesita `confirmOrder()` antes de entrar aquí. Sin esto,
+   * canal `QR_MENU` necesita `confirmOrder()` antes de entrar aquí. Sin esto,
    * `selectTable()` no auto-seleccionaba un pedido de mostrador recién creado
    * tras recargar la página (el store se recrea y pierde la selección en
    * memoria de `createManualOrderFromDraft()`).
+   *
+   * Bugfix (gap de spec 035, A-52): una orden `'pagada'` sigue contando como
+   * activa **sin importar en qué vaya la cocina**. Antes se excluía en cuanto
+   * `hasPendingKitchenWork(o)` se volvía `false` — o sea, justo al terminar de
+   * cocinar (`marcarListo()`) — lo que hacía desaparecer un pedido ya cobrado
+   * de mostrador mientras la sesión de mesa seguía abierta. Quién decide si el
+   * pedido ya "no está" es el backend: `reload()` siempre pide
+   * `GET /orders?active_sessions_only=true` (`dining-session.service.ts`), que
+   * solo deja de devolver la orden cuando `TableSession.status !== 'active'`
+   * (tras `Liberar Mesa`). No hace falta que el frontend repita ese criterio
+   * mirando cocina.
    */
   private readonly activeOrders = computed(() =>
     this.orders().filter(
-      (o) =>
-        o.status !== 'cancelada' &&
-        (o.status !== 'pagada' || hasPendingKitchenWork(o)) &&
-        (o.status !== 'recibida' || o.channel !== 'qr'),
+      (o) => o.status !== 'cancelada' && (o.status !== 'recibida' || o.channel !== 'QR_MENU'),
     ),
   );
 
@@ -439,17 +484,23 @@ export class PosTerminalStore {
    *
    * Es lo que alimenta el tablero: una mesa con un pedido del QR esperando
    * confirmación no está libre, y su consumo tampoco es cero. Desde spec 035
-   * (A-52), una orden `'pagada'` con ítems todavía sin terminar de preparar
-   * (se cobró antes de enviarla a cocina, spec 028) también sigue contando
-   * como consumo vivo — de lo contrario la mesa se vería libre con el pedido
-   * aún en preparación (`hasPendingKitchenWork`, `order-status.util.ts`).
+   * (A-52), una orden `'pagada'` (se cobró antes de enviarla a cocina, spec
+   * 028) también sigue contando como consumo vivo — sin importar si a la
+   * cocina ya le faltan ítems por terminar o no.
+   *
+   * Bugfix (gap de spec 035, A-52): antes solo contaba mientras
+   * `hasPendingKitchenWork(o)` fuera `true`, así que en cuanto cocina
+   * terminaba (`marcarListo()`) la orden `'pagada'` desaparecía de aquí — la
+   * mesa se veía "libre" con la sesión todavía abierta y nadie había tocado
+   * "Liberar Mesa". Una orden `'pagada'` solo deja de estar viva cuando el
+   * backend cierra su sesión (`TableSessionService.release()`); ese filtro ya
+   * lo aplica `reload()` al pedir `active_sessions_only=true`
+   * (`dining-session.service.ts`), así que no hace falta duplicarlo aquí
+   * mirando el estado de cocina.
    */
   private tableOrders(tableId: string): DiningOrder[] {
     return this.orders().filter(
-      (o) =>
-        o.dining_table_id === tableId &&
-        o.status !== 'cancelada' &&
-        (o.status !== 'pagada' || hasPendingKitchenWork(o)),
+      (o) => o.dining_table_id === tableId && o.status !== 'cancelada',
     );
   }
 
@@ -467,8 +518,10 @@ export class PosTerminalStore {
    * - `'validar-pago'`: hay al menos un pedido QR esperando que el cajero
    *   apruebe/rechace su comprobante o confirme el efectivo. Tiene prioridad
    *   sobre todo lo demás: es lo más urgente en pantalla.
-   * - `'mesa-libre'`: la mesa no tiene ningún pedido vivo y el cajero no ha
-   *   empezado a armar uno manual todavía — CTA "+ Crear Orden Manual".
+   * - `'mesa-libre'`: la mesa no tiene ningún pedido vivo — bloque puramente
+   *   informativo (spec 045); crear un pedido nuevo se hace desde el botón
+   *   fijo de "Pedido de mostrador" o F3, que navegan a la vista dedicada
+   *   (`manual-order-page.component.ts`), no desde aquí.
    * - `'armando-pedido'` / `'pedido-activo'`: se sigue mostrando el panel de
    *   carrito existente (`app-pos-order-panel`), que ya distingue internamente
    *   entre un draft sin guardar y un pedido persistido.
@@ -478,11 +531,42 @@ export class PosTerminalStore {
     const tableId = this.selectedTableId();
     if (!tableId) return 'pedido'; // nada seleccionado: pos-order-panel pinta su placeholder
     const hasTableConsumption = this.tableOrders(tableId).length > 0;
-    if (!hasTableConsumption && !this.manualOrderBuilding() && !this.hasDraft()) {
+    if (!hasTableConsumption && !this.hasDraft()) {
       return 'mesa-libre';
     }
     return 'pedido';
   });
+
+  /**
+   * Spec 048: cuál de las dos pestañas eligió el cajero cuando la mesa tiene
+   * a la vez un pago pendiente de confirmar y un pedido pagado/activo — la
+   * más urgente por defecto. Se reinicia en `resetTransient()` al cambiar de
+   * selección; `reload()` NO la toca, así que un pago nuevo que llegue
+   * mientras el cajero ya está viendo "Pedido de la mesa" no lo saca de ahí.
+   */
+  readonly centralPanelTab = signal<'validar-pago' | 'pedido'>('validar-pago');
+
+  /**
+   * ¿La mesa seleccionada tiene A LA VEZ algún pago pendiente de confirmar y
+   * algún pedido pagado/activo? (spec 048, FR-001). `ordersOfTable` ya
+   * excluye exactamente lo que hay en `pendingOfSelectedTable` (misma
+   * frontera `recibida`+`qr`), así que basta con combinar ambos.
+   */
+  readonly hasPendingAndActiveOrders = computed(() => {
+    const tableId = this.selectedTableId();
+    if (!tableId) return false;
+    return this.pendingOfSelectedTable().length > 0 && this.ordersOfTable(tableId).length > 0;
+  });
+
+  /**
+   * Qué debe renderizar el panel central (spec 048, FR-002/FR-003/FR-005):
+   * la pestaña elegida por el cajero cuando hay ambos tipos de pedido a la
+   * vez, o `centralState()` sin cambios en cualquier otro caso — mismo tipo
+   * de valor que ya consume el `@switch` de la plantilla.
+   */
+  readonly effectiveCentralView = computed<'validar-pago' | 'mesa-libre' | 'pedido'>(() =>
+    this.hasPendingAndActiveOrders() ? this.centralPanelTab() : this.centralState(),
+  );
 
   readonly selectedTable = computed<Table | null>(
     () => this.tables().find((t) => t.id === this.selectedTableId()) ?? null,
@@ -492,16 +576,83 @@ export class PosTerminalStore {
     () => this.orders().find((o) => o.id === this.selectedOrderId()) ?? null,
   );
 
-  readonly hasActiveOrder = computed(() => !!this.selectedTableId());
+  /**
+   * Spec 059, Historia 3: reemplaza a `hasActiveOrder` (que solo miraba
+   * `selectedTableId()`) — un pedido de Domicilio/Para llevar seleccionado
+   * vía `selectStandaloneOrder()` no tiene mesa, pero sí debe mostrar su
+   * detalle en `pos-order-panel.component.ts` en vez del placeholder.
+   */
+  readonly hasActiveSelection = computed(
+    () => !!this.selectedTableId() || !!this.selectedOrderId(),
+  );
 
-  /** Pestañas de pedido (cuando la mesa tiene >1 orden activa). */
+  /**
+   * Pestañas de pedido (cuando la mesa tiene >1 orden activa). Rotuladas
+   * "Pedido N" por posición (spec 049, FR-009) — el nombre del cliente ya se
+   * muestra una sola vez en la cabecera, no repetido por pestaña.
+   */
   readonly orderTabs = computed(() => {
     const t = this.selectedTableId();
     if (!t) return [];
     const list = this.ordersOfTable(t);
-    return list.length > 1
-      ? list.map((o) => ({ id: o.id, label: o.customer_name || 'Pedido' }))
-      : [];
+    return list.length > 1 ? list.map((o, i) => ({ id: o.id, label: `Pedido ${i + 1}` })) : [];
+  });
+
+  /**
+   * Vista "Todos los pedidos" activa (spec 049, FR-009/FR-011): por defecto
+   * cuando la mesa tiene más de un pedido — coincide con el mockup, donde esa
+   * pestaña ya viene activa. Se reinicia junto al resto del estado transitorio
+   * de la selección en `selectTable()`.
+   */
+  readonly showAllOrders = signal(false);
+
+  /**
+   * Una tarjeta por pedido de la mesa seleccionada (spec 049, D4/D5): sus
+   * ítems ya persistidos (sin draft, que solo aplica al pedido en edición),
+   * la hora de creación y si le falta algo por preparar.
+   */
+  readonly ordersView = computed(() => {
+    const t = this.selectedTableId();
+    if (!t) return [];
+    return this.ordersOfTable(t).map((order) => ({
+      order,
+      items: this.persistedItemsView(order),
+      createdAtLabel: new Date(order.created_at).toLocaleTimeString('es-CO', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      pending: hasPendingKitchenWork(order),
+    }));
+  });
+
+  /**
+   * Todas las líneas persistidas de la mesa seleccionada, cada una con el id
+   * de su pedido de origen — usado por `avanzarItem` para encontrar un ítem
+   * aunque su tarjeta no sea la del pedido seleccionado (spec 049, D6).
+   */
+  private readonly tableItemsView = computed(() =>
+    this.ordersView().flatMap((card) => card.items.map((item) => ({ ...item, orderId: card.order.id }))),
+  );
+
+  /**
+   * Chip de estado de la mesa seleccionada (spec 049, D7) — mismo par
+   * `STATUS_META`/`deriveTableStatus` que ya usa `tablesView()`, pero
+   * calculado directo sobre la mesa seleccionada, sin depender del
+   * filtro/búsqueda de la grilla (que podría excluirla de `tablesView()`).
+   *
+   * Spec 059, Historia 3: sin mesa pero con un pedido de Domicilio/Para
+   * llevar seleccionado, cae al mismo cálculo de un solo pedido que ya usa
+   * `toOrderCardView()` (research.md §5), en vez de devolver `null`.
+   */
+  readonly selectedTableStatusMeta = computed(() => {
+    const table = this.selectedTable();
+    if (table) {
+      const status = deriveTableStatus(this.tableOrders(table.id), table.status);
+      return STATUS_META[status];
+    }
+    const order = this.selectedOrder();
+    if (!order) return null;
+    return STATUS_META[deriveTableStatus([order], 'ocupada')];
   });
 
   readonly tablesView = computed(() => {
@@ -550,8 +701,64 @@ export class PosTerminalStore {
 
   readonly noTablesFound = computed(() => this.tablesView().length === 0);
 
-  /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
-  readonly cartView = computed(() => {
+  /**
+   * Spec 059, Historia 2: pedidos `DELIVERY`/`TAKEAWAY` pendientes de cobro
+   * (`!paid && status !== 'cancelada'`, mismo criterio de visibilidad ya
+   * definido en spec 036 para estos tipos de orden), mapeados al mismo
+   * shape que consumen las tarjetas de mesa. Filtra sobre `orders()`, ya
+   * poblado por `reloadOrders()` sin ningún endpoint nuevo (research.md §4).
+   */
+  private ordersByTypeFiltered(type: 'DELIVERY' | 'TAKEAWAY'): OrderSummaryCardView[] {
+    return this.orders()
+      .filter((o) => o.order_type === type && !o.paid && o.status !== 'cancelada')
+      .map((o) => this.toOrderCardView(o));
+  }
+
+  private readonly deliveryOrders = computed(() => this.ordersByTypeFiltered('DELIVERY'));
+  private readonly takeawayOrders = computed(() => this.ordersByTypeFiltered('TAKEAWAY'));
+
+  /**
+   * Usado por `pos-tables-panel.component.ts` para las pestañas
+   * "Domicilios"/"Para llevar" — acepta `OrderTypeTab` completo (no solo las
+   * dos pestañas de pedido sin mesa) para que el template no necesite
+   * angostar `store.orderTypeTab()` él mismo; `'mesas'` simplemente no
+   * corresponde a ningún pedido sin mesa.
+   */
+  ordersByType(tab: OrderTypeTab): OrderSummaryCardView[] {
+    if (tab === 'domicilios') return this.deliveryOrders();
+    if (tab === 'para-llevar') return this.takeawayOrders();
+    return [];
+  }
+
+  /**
+   * Reutiliza `deriveTableStatus`/`STATUS_META` con un arreglo de un solo
+   * pedido — el fallback de mesa vacía (`tableStatus`, tercer argumento) no
+   * se alcanza nunca aquí porque un pedido sin mesa por definición ya tiene
+   * al menos un elemento en el arreglo (research.md §5).
+   */
+  private toOrderCardView(o: DiningOrder): OrderSummaryCardView {
+    const status = deriveTableStatus([o], 'ocupada');
+    const meta = STATUS_META[status];
+    return {
+      id: o.id,
+      title: o.order_type === 'DELIVERY' ? 'Domicilio' : 'Para llevar',
+      statusLabel: meta.label,
+      statusClass: meta.chip,
+      secondaryLabel: o.customer_name || 'Consumidor final',
+      elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
+      totalLabel: this.fmt(this.orderSubtotal(o)),
+    };
+  }
+
+  /**
+   * Líneas de los ítems ya persistidos de **un** pedido (sin el draft nuevo,
+   * que solo tiene sentido para el pedido seleccionado) — extraído de
+   * `cartView()` (spec 049, D4) para poder construir tanto el carrito del
+   * pedido seleccionado como una tarjeta por cada pedido de la mesa
+   * (`ordersView`), reutilizando la misma lógica de combos/descuento por
+   * promoción en vez de duplicarla.
+   */
+  private persistedItemsView(order: DiningOrder | null) {
     const lk = this.lookup();
     const syncedNow = currentNow(this.promotionService);
     // A-09: sin hora sincronizada aún, sin descuento de previsualización —
@@ -559,7 +766,6 @@ export class PosTerminalStore {
     // sin tocar `now` (el placeholder nunca se evalúa contra ninguna promo).
     const now = syncedNow ?? new Date(0);
     const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
-    const order = this.selectedOrder();
     const items = (order?.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
 
     const plainItems = items.filter((i) => !i.combo_id);
@@ -614,6 +820,17 @@ export class PosTerminalStore {
       };
     });
 
+    return [...persistedPlain, ...persistedCombos];
+  }
+
+  /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
+  readonly cartView = computed(() => {
+    const lk = this.lookup();
+    const syncedNow = currentNow(this.promotionService);
+    const now = syncedNow ?? new Date(0);
+    const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
+    const persisted = this.persistedItemsView(this.selectedOrder());
+
     const draft = this.draftLines().map((l) => {
       if (l.kind === 'combo') {
         return {
@@ -652,7 +869,7 @@ export class PosTerminalStore {
         pendingItemIds: [] as string[],
       };
     });
-    return [...persistedPlain, ...persistedCombos, ...draft];
+    return [...persisted, ...draft];
   });
 
   readonly cartEmpty = computed(() => this.cartView().length === 0);
@@ -667,8 +884,12 @@ export class PosTerminalStore {
     // `cartView()` (`discountedUnitPrice`), no como un monto aparte aquí.
     const discount = 0;
     const tax = 0; // Impuestos deprecado: se guarda/calcula siempre en 0.
-    const total = Math.max(0, Math.round(subtotal - discount + tax));
-    return { subtotal, discount, tax, total };
+    // Spec 056, FR-009/FR-012: el valor del domicilio se suma al total en
+    // pantalla solo con "Domicilio" seleccionado — 0 para cualquier otro
+    // tipo de orden, sin afectar su total.
+    const deliveryFee = this.orderTypeTab() === 'domicilios' ? (this.deliveryFee() ?? 0) : 0;
+    const total = Math.max(0, Math.round(subtotal - discount + tax + deliveryFee));
+    return { subtotal, discount, tax, deliveryFee, total };
   });
 
   /** ¿Todos los ítems persistidos están listos para cobrar? */
@@ -695,6 +916,13 @@ export class PosTerminalStore {
   });
 
   // ─── Ciclo de vida ───────────────────────────────────────────────────────────
+  /**
+   * Spec 059, Historia 1: métodos de pago y turno de caja ya NO se cargan
+   * aquí — solo se necesitan dentro del panel de cobro, una vez que hay un
+   * pedido real seleccionado (`ensureCheckoutDataLoaded()`, invocado desde
+   * `selectTable()`/`selectStandaloneOrder()`). Diferirlos evita una
+   * petición HTTP que, en este punto, el cajero todavía no va a usar.
+   */
   async init(): Promise<void> {
     this.timer ??= startVisibleInterval(() => this.nowTick.set(Date.now()), 30000);
     this.loading.set(true);
@@ -703,13 +931,8 @@ export class PosTerminalStore {
       await Promise.all([
         this.tableService.loadTables(),
         this.reloadOrders(),
-        this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
-        this.paymentMethodService.checkoutOptions().length === 0
-          ? this.paymentMethodService.loadAvailableForCheckout()
-          : null,
         this.menuService.categories().length === 0 ? this.menuService.loadMenu() : null,
         this.promotionService.loadActive(),
-        this.cash.shift() ? null : this.cash.restoreShift(),
       ]);
       const cats = this.menuService.categories();
       if (cats.length && !this.catalogCategoryId()) this.catalogCategoryId.set(cats[0].id);
@@ -722,6 +945,26 @@ export class PosTerminalStore {
     // Después de la carga REST a propósito: `pendingSeeded` ya es `true`, así
     // que la primera ráfaga de eventos no hace sonar la campana.
     this.connectRealtime();
+  }
+
+  /**
+   * Spec 059, Historia 1: agrupa las tres peticiones de datos de cobro que
+   * antes vivían en `init()` — se invoca en cambio la primera vez que el
+   * cajero selecciona un pedido real (mesa con pedido, o pedido de
+   * Domicilio/Para llevar sin mesa), nunca por seleccionar una mesa libre.
+   * Mismo criterio de caché que ya usaba `init()`
+   * (`methods().length === 0 ? load() : null`): estos tres servicios son
+   * `providedIn: 'root'`, así que una vez cargados en la sesión de la app no
+   * se vuelven a pedir sin importar cuántas veces cambie la selección.
+   */
+  private async ensureCheckoutDataLoaded(): Promise<void> {
+    await Promise.all([
+      this.paymentMethodService.methods().length === 0 ? this.paymentMethodService.load() : null,
+      this.paymentMethodService.checkoutOptions().length === 0
+        ? this.paymentMethodService.loadAvailableForCheckout()
+        : null,
+      this.cash.shift() ? null : this.cash.restoreShift(),
+    ]);
   }
 
   stop(): void {
@@ -857,7 +1100,31 @@ export class PosTerminalStore {
    */
   async reload(): Promise<void> {
     await Promise.all([this.tableService.loadTables(), this.reloadOrders()]);
+    this.resyncSelectedOrder();
     await this.loadSessionBill(this.selectedTableId());
+  }
+
+  /**
+   * Spec 044: tras un `reload()`, si la mesa seleccionada sigue teniendo
+   * pedidos activos pero el pedido seleccionado ya no es válido, vuelve a
+   * elegir uno (mismo criterio que `selectTable()`). Cubre el caso de
+   * confirmar/aprobar un pago QR pendiente: mientras el pedido era
+   * `recibida`+`qr` quedaba excluido de `activeOrders()`, así que
+   * `selectedOrderId` se había quedado en `null` desde que se seleccionó la
+   * mesa — sin esto, el panel mostraba "Pedido nuevo sin guardar" vacío hasta
+   * que el cajero volvía a tocar la tarjeta. Si la selección actual sigue
+   * vigente (p. ej. el cajero ya eligió una pestaña concreta entre varios
+   * pedidos activos), no se toca.
+   */
+  private resyncSelectedOrder(): void {
+    const tableId = this.selectedTableId();
+    if (!tableId) return;
+    const list = this.ordersOfTable(tableId);
+    const current = this.selectedOrderId();
+    if (current !== null && list.some((o) => o.id === current)) return;
+    const next = list[0] ?? null;
+    this.selectedOrderId.set(next?.id ?? null);
+    this.customerName.set(next?.customer_name || '');
   }
 
   /** Único punto de escritura de `orderTypeTab` (spec 036, FR-001/FR-003). */
@@ -870,10 +1137,17 @@ export class PosTerminalStore {
     const list = this.ordersOfTable(tableId);
     this.selectedTableId.set(tableId);
     void this.loadSessionBill(tableId);
+    this.prefetchPaidOrderSales(tableId);
     this.resetTransient();
+    // Spec 049, D5: "Todos los pedidos" activa por defecto cuando hay más de
+    // un pedido — coincide con el mockup de referencia.
+    this.showAllOrders.set(list.length > 1);
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
+      // Spec 059, Historia 1: solo con un pedido real seleccionado — nunca
+      // por una mesa libre (rama `else`, sin pedido).
+      void this.ensureCheckoutDataLoaded();
     } else {
       this.selectedOrderId.set(null);
       // Vacío a propósito: lo que haya aquí se graba como nombre en la factura,
@@ -889,25 +1163,20 @@ export class PosTerminalStore {
     this.draftLines.set([]);
   }
 
-  newOrderOnTable(): void {
-    this.selectedOrderId.set(null);
-    this.draftLines.set([]);
-    this.customerName.set('');
-  }
-
   /**
-   * "+ Crear Orden Manual" (o F3) en una mesa libre (feature 028, T021/T022).
-   *
-   * Solo abre el catálogo para empezar a armar el draft: el pedido no existe
-   * en el backend hasta `createManualOrderFromDraft()`, así que nada se manda
-   * a cocina ni descuenta inventario todavía.
+   * Spec 059, Historia 3: selecciona un pedido de Domicilio/Para llevar (sin
+   * mesa) desde su tarjeta — mismo patrón que `selectTable()` pero sin
+   * `loadSessionBill`/`prefetchPaidOrderSales` (conceptos de sesión de
+   * mesa, no aplican aquí) y disparando la misma carga diferida de datos de
+   * cobro (Historia 1) que hoy solo vivía en `selectTable()`.
    */
-  startManualOrder(): void {
-    if (!this.selectedTableId()) return;
-    this.manualOrderBuilding.set(true);
-    this.selectedOrderId.set(null);
-    this.draftLines.set([]);
-    this.openCatalog();
+  selectStandaloneOrder(orderId: string): void {
+    this.selectedTableId.set(null);
+    this.selectedOrderId.set(orderId);
+    this.resetTransient();
+    this.showAllOrders.set(false);
+    this.customerName.set(this.selectedOrder()?.customer_name || '');
+    void this.ensureCheckoutDataLoaded();
   }
 
   /**
@@ -918,8 +1187,17 @@ export class PosTerminalStore {
    * inventario hasta que se cobre con `checkoutAndSend()`.
    */
   async createManualOrderFromDraft(): Promise<boolean> {
+    // spec 055: "Para Llevar" no exige mesa (FR-009) — solo "En Mesa" (tab
+    // 'mesas') sigue exigiéndola. spec 056: "Domicilio" tampoco exige mesa,
+    // pero sí exige cliente/dirección/valor del domicilio (FR-007) — segunda
+    // capa de protección, además del botón deshabilitado del componente.
+    const esParaLlevar = this.orderTypeTab() === 'para-llevar';
+    const esDomicilio = this.orderTypeTab() === 'domicilios';
     const tableId = this.selectedTableId();
-    if (!tableId || this.draftLines().length === 0) return false;
+    if ((!esParaLlevar && !esDomicilio && !tableId) || this.draftLines().length === 0) return false;
+    if (esDomicilio && (
+      !this.customerName().trim() || !this.deliveryAddress().trim() || this.deliveryFee() == null
+    )) return false;
     this.submitting.set(true);
     this.error.set(null);
     try {
@@ -934,14 +1212,17 @@ export class PosTerminalStore {
             },
       );
       const order = await this.api.createManualOrder({
-        channel: 'counter',
-        dining_table_id: tableId,
+        channel: 'POS',
+        order_type: esDomicilio ? 'DELIVERY' : esParaLlevar ? 'TAKEAWAY' : 'DINE_IN',
+        dining_table_id: (esParaLlevar || esDomicilio) ? null : tableId,
         customer_name: this.customerName().trim() || null,
+        delivery_address: esDomicilio ? this.deliveryAddress().trim() : null,
+        delivery_phone: esDomicilio ? (this.deliveryPhone().trim() || null) : null,
+        delivery_fee: esDomicilio ? this.deliveryFee() : null,
         items,
         hold_for_payment: true,
       });
       this.draftLines.set([]);
-      this.manualOrderBuilding.set(false);
       await this.reload();
       this.selectedOrderId.set(order.id);
       this.toast.success('Pedido creado — cóbralo desde el panel de la derecha.');
@@ -973,8 +1254,9 @@ export class PosTerminalStore {
     this.catalogSearchText.set('');
     this.configuringProduct.set(null);
     this.error.set(null);
-    this.manualOrderBuilding.set(false);
     this.billingCustomerName.set('Consumidor Final');
+    this.centralPanelTab.set('validar-pago');
+    this.showAllOrders.set(false);
   }
 
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
@@ -1181,9 +1463,15 @@ export class PosTerminalStore {
     }
   }
 
-  /** Anula todos los componentes reales de un combo agrupado en una sola acción. */
+  /**
+   * Anula todos los componentes reales de un combo agrupado en una sola
+   * acción. Busca el pedido dueño recorriendo `orders()` en vez de asumir
+   * `selectedOrder()` (spec 049, D6): en la vista "Todos los pedidos" el
+   * combo puede pertenecer a una tarjeta distinta de la seleccionada, y un
+   * `combo_id` es único dentro de su pedido.
+   */
   async voidPersistedCombo(comboId: string): Promise<void> {
-    const order = this.selectedOrder();
+    const order = this.orders().find((o) => (o.items ?? []).some((i) => i.combo_id === comboId));
     if (!order) return;
     const ids = (order.items ?? [])
       .filter((i) => i.combo_id === comboId && i.estado_cocina !== 'anulado')
@@ -1226,18 +1514,34 @@ export class PosTerminalStore {
   }
 
   /**
-   * Marca listo el pedido entero, en una sola petición.
+   * Marca listo todo lo que le falte por preparar al pedido entero.
    *
-   * Antes recorría los ítems encadenando dos PATCH por cada uno para respetar
-   * el paso intermedio; ahora `POST /orders/{id}/ready` lo resuelve del lado
-   * del servidor y emite sus eventos.
+   * PATCH por ítem (`updateItemKitchen`), igual que el botón "✓ Listo" de
+   * cada línea (`avanzarItem`) — no `POST /orders/{id}/ready`
+   * (`markOrderReady`): ese endpoint rechaza con 409 en cuanto
+   * `order.status === 'pagada'` (registro-de-anomalias.md, A-16), que es
+   * justo el caso normal de un pedido de mostrador cobrado por adelantado
+   * (`hold_for_payment`, spec 028) cuya cocina todavía no termina — el mismo
+   * pedido donde este botón hace más falta. El PATCH por ítem no mira el
+   * status del pedido, así que no choca con esa restricción.
+   *
+   * `orderId` opcional (spec 049, D6): sin argumento preserva el
+   * comportamiento actual (`selectedOrder()`); con un id, opera sobre ese
+   * pedido — lo usa el botón "Marcar pedido listo" de cada tarjeta en la
+   * vista "Todos los pedidos", que no depende de cuál esté seleccionada.
    */
-  async marcarListo(): Promise<void> {
-    const order = this.selectedOrder();
+  async marcarListo(orderId?: string): Promise<void> {
+    const order = orderId ? this.orders().find((o) => o.id === orderId) : this.selectedOrder();
     if (!order) return;
+    const pendingIds = (order.items ?? [])
+      .filter((i) => i.estado_cocina !== 'anulado' && KITCHEN_NOT_READY.includes(i.estado_cocina))
+      .map((i) => i.id);
+    if (pendingIds.length === 0) return;
     this.submitting.set(true);
     try {
-      await this.api.markOrderReady(order.id);
+      for (const id of pendingIds) {
+        await this.api.updateItemKitchen(id, 'listo');
+      }
       await this.reload();
     } catch (err) {
       this.toast.error(this.api.extractError(err, 'No se pudo marcar como listo.'));
@@ -1253,9 +1557,14 @@ export class PosTerminalStore {
    * se tocan los que siguen en curso: mandar un PATCH sobre uno ya `listo` lo
    * rechazaría el backend con un `409` y tumbaría el combo entero. El salto
    * directo desde `pendiente` es legal, así que es un PATCH por ítem y no dos.
+   *
+   * Busca la línea en `tableItemsView` (todos los pedidos de la mesa, spec
+   * 049, D6), no solo en `cartView()` (limitado al pedido seleccionado): en
+   * la vista "Todos los pedidos" el ítem puede pertenecer a una tarjeta
+   * distinta de la seleccionada.
    */
   async avanzarItem(key: string): Promise<void> {
-    const linea = this.cartView().find((l) => l.key === key);
+    const linea = this.tableItemsView().find((l) => l.key === key);
     if (!linea || linea.kind !== 'persisted') return;
     if (linea.pendingItemIds.length === 0) return;
     this.submitting.set(true);

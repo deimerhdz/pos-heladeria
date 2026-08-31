@@ -3,50 +3,36 @@ import { PaymentLine } from '../interfaces/dining.interface';
 import { formatMoney } from './receipt.util';
 
 /**
- * Cómo paga el cliente un cobro concreto: un método, o dos combinados.
+ * Cómo paga el cliente un cobro concreto: un único método.
  *
- * Es el estado que edita `PaymentInputComponent`; el backend acepta N pagos por
- * venta, aquí se limita a dos porque es el caso real (efectivo + tarjeta) y
- * evita convertir el panel de cobro en una hoja de cálculo.
+ * Es el estado que edita `PaymentInputComponent`; el backend acepta N pagos
+ * por venta, pero spec 046 (FR-004/FR-007) retiró la opción de combinar más
+ * de un método desde el frontend — cada cobro se hace con un único método,
+ * por el total exacto o más.
  */
 export interface PaymentDraft {
   methodId: string;
   amount: number;
-  /** Hay un segundo método en juego. */
-  combined: boolean;
-  secondMethodId: string;
-  secondAmount: number;
 }
 
 export function emptyPaymentDraft(): PaymentDraft {
-  return { methodId: '', amount: 0, combined: false, secondMethodId: '', secondAmount: 0 };
+  return { methodId: '', amount: 0 };
 }
 
-/** Las líneas de pago que se mandan al backend: una, o dos si está combinado. */
+/** La línea de pago que se manda al backend. */
 export function paymentLines(draft: PaymentDraft): PaymentLine[] {
-  const lines: PaymentLine[] = [
-    { payment_method_id: draft.methodId, amount: draft.amount },
-  ];
-  if (draft.combined && draft.secondMethodId) {
-    lines.push({ payment_method_id: draft.secondMethodId, amount: draft.secondAmount });
-  }
-  return lines;
+  return [{ payment_method_id: draft.methodId, amount: draft.amount }];
 }
 
 /** Lo que entrega el cliente en total. */
 export function paidAmount(draft: PaymentDraft): number {
-  return draft.amount + (draft.combined && draft.secondMethodId ? draft.secondAmount : 0);
+  return draft.amount;
 }
 
 /** Suma de lo cobrado por métodos que no son efectivo. */
 export function nonCashAmount(draft: PaymentDraft, methods: PaymentMethodCheckoutOption[]): number {
   const isCash = (id: string): boolean => !!methods.find((m) => m.id === id)?.is_cash;
-  let sum = 0;
-  if (draft.methodId && !isCash(draft.methodId)) sum += draft.amount;
-  if (draft.combined && draft.secondMethodId && !isCash(draft.secondMethodId)) {
-    sum += draft.secondAmount;
-  }
-  return sum;
+  return draft.methodId && !isCash(draft.methodId) ? draft.amount : 0;
 }
 
 /** Vuelto: lo que sobra del total. Siempre sale del efectivo (ver `paymentIssue`). */
@@ -66,6 +52,10 @@ export function missingAmount(draft: PaymentDraft, total: number): number {
  * como `pagado − total` sin mirar el método, y el arqueo se lo descuenta al
  * efectivo. Un cobro electrónico por encima del total dejaría un faltante
  * fantasma en el cajón.
+ *
+ * Spec 046 (FR-003/FR-004/FR-007): si el monto no alcanza, este cobro no se
+ * puede registrar — no hay ninguna forma de completarlo con un segundo
+ * método, el cajero debe rechazar el pedido o esperar el monto exacto.
  */
 export function paymentIssue(
   draft: PaymentDraft,
@@ -74,10 +64,6 @@ export function paymentIssue(
 ): string | null {
   if (!draft.methodId) return 'Elige el método de pago.';
   if (draft.amount <= 0) return 'Escribe el importe del pago.';
-  if (draft.combined) {
-    if (!draft.secondMethodId) return 'Elige el segundo método de pago.';
-    if (draft.secondAmount <= 0) return 'Escribe el importe del segundo método.';
-  }
 
   const missing = missingAmount(draft, total);
   if (missing > 0) return `Faltan ${formatMoney(missing)} para cubrir la cuenta.`;

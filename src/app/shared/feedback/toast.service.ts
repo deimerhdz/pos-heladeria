@@ -34,6 +34,10 @@ export class ToastService {
   }
 
   private push(kind: ToastKind, text: string, ms: number): void {
+    // Bugfix (spec 050): un error que se repite (p. ej. reintentar una
+    // acción bloqueada) no debe apilar una copia idéntica por cada intento —
+    // se deja que la ya visible siga su propio temporizador.
+    if (this.toasts().some(t => t.kind === kind && t.text === text)) return;
     const id = ++this.seq;
     this.toasts.update(list => [...list, { id, kind, text }]);
     if (ms > 0) {

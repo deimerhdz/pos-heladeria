@@ -71,7 +71,7 @@ describe('DiningSessionService', () => {
     const req = http.expectOne(`${API}/orders/o1/confirm`);
 
     expect(req.request.method).toBe('POST');
-    req.flush({ id: 'o1', status: 'abierta', channel: 'qr', created_at: '2026-07-28' });
+    req.flush({ id: 'o1', status: 'abierta', channel: 'QR_MENU', created_at: '2026-07-28' });
 
     const order = await promise;
     expect(order.status).toBe('abierta');
@@ -82,7 +82,7 @@ describe('DiningSessionService', () => {
     const req = http.expectOne(`${API}/orders/o1/cancel`);
 
     expect(req.request.body).toEqual({ motivo: 'Rechazado por el personal' });
-    req.flush({ id: 'o1', status: 'cancelada', channel: 'qr', created_at: '2026-07-28' });
+    req.flush({ id: 'o1', status: 'cancelada', channel: 'QR_MENU', created_at: '2026-07-28' });
     await promise;
   });
 
@@ -119,7 +119,7 @@ describe('DiningSessionService', () => {
 
   it('crea un pedido de mostrador con hold_for_payment (T023)', async () => {
     const promise = service.createManualOrder({
-      channel: 'counter',
+      channel: 'POS',
       dining_table_id: 't1',
       customer_name: null,
       items: [{ product_variant_id: 'v1', quantity: 1 }],
@@ -129,8 +129,8 @@ describe('DiningSessionService', () => {
 
     expect(req.request.method).toBe('POST');
     expect(req.request.body.hold_for_payment).toBe(true);
-    expect(req.request.body.channel).toBe('counter');
-    req.flush({ id: 'o1', channel: 'counter', status: 'recibida', created_at: '2026-08-20' });
+    expect(req.request.body.channel).toBe('POS');
+    req.flush({ id: 'o1', channel: 'POS', status: 'recibida', created_at: '2026-08-20' });
 
     const order = await promise;
     expect(order.id).toBe('o1');

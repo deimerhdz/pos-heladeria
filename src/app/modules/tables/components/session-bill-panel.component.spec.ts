@@ -21,6 +21,16 @@ const bill: SessionBill = {
   split: [{ participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' }],
 };
 
+/** Ítems agregados por el mesero sin asignarlos a ningún comensal
+ *  (`display_label: null`) — spec 057, línea "Sin asignar (mesero)". */
+const billMesero: SessionBill = {
+  table_session_id: 'ts4',
+  dining_table_id: 't4',
+  total: '7500',
+  order_ids: ['o4'],
+  split: [{ participant_id: null, display_label: null, subtotal: '7500', items: [], discount: '0' }],
+};
+
 /** Dos comensales con consumo: habilita el modo dividido. */
 const splitBill: SessionBill = {
   table_session_id: 'ts2',
@@ -29,6 +39,18 @@ const splitBill: SessionBill = {
   order_ids: ['o2'],
   split: [
     { participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '0' },
+    { participant_id: 'p2', display_label: 'Luis', subtotal: '8000', items: [], discount: '0' },
+  ],
+};
+
+/** Dos comensales, uno con descuento aplicado. */
+const billWithDiscount: SessionBill = {
+  table_session_id: 'ts3',
+  dining_table_id: 't3',
+  total: '18000',
+  order_ids: ['o3'],
+  split: [
+    { participant_id: 'p1', display_label: 'Ana', subtotal: '12000', items: [], discount: '2000' },
     { participant_id: 'p2', display_label: 'Luis', subtotal: '8000', items: [], discount: '0' },
   ],
 };
@@ -71,8 +93,12 @@ describe('SessionBillPanelComponent', () => {
   const selects = (): HTMLSelectElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('select'));
 
+  // `app-money-input` (spec 035) renderiza su <input> como
+  // `type="text" inputmode="decimal"` — no `type="number"` (selector
+  // obsoleto de antes de que ese componente reemplazara el campo de
+  // importe, spec 057 research.md Decisión 5).
   const amounts = (): HTMLInputElement[] =>
-    Array.from(fixture.nativeElement.querySelectorAll('input[type="number"]'));
+    Array.from(fixture.nativeElement.querySelectorAll('input[inputmode="decimal"]'));
 
   const combineBox = (): HTMLInputElement | null =>
     fixture.nativeElement.querySelector('input[type="checkbox"]');
@@ -135,7 +161,7 @@ describe('SessionBillPanelComponent', () => {
 
     it('no muestra el selector de método de pago', () => {
       expect(fixture.nativeElement.querySelectorAll('select').length).toBe(0);
-      expect(fixture.nativeElement.querySelectorAll('input[type="number"]').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('input[inputmode="decimal"]').length).toBe(0);
     });
 
     it('sigue mostrando el desglose de la cuenta (no se pierde información)', () => {
@@ -191,13 +217,75 @@ describe('SessionBillPanelComponent', () => {
     expect(panel.ready()).toBe(false);
   });
 
-  it('reevalúa si la cuenta se puede dividir al cambiar de mesa', () => {
-    expect(panel.canSplit()).toBe(false);
-
+  it('spec 046, FR-005/SC-004: no ofrece ningún modo "Dividir por comensal", ni siquiera con más de un comensal con consumo', () => {
     setBill(splitBill);
 
-    // Antes `canSplit` no leía ninguna señal: se quedaba congelado en el primer valor.
-    expect(panel.canSplit()).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir por comensal');
+    expect(fixture.nativeElement.textContent).not.toContain('Cuenta única');
+  });
+
+  // ── Resumen agregado Subtotal/Descuento (spec 049, FR-003/FR-004) ────────
+  describe('resumen agregado Subtotal/Descuento', () => {
+    it('muestra "Subtotal" con la suma de subtotal de todas las líneas, sin ninguna fila "Descuento" cuando ninguna línea tiene descuento', () => {
+      setBill(splitBill);
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(panel.billSummary()).toEqual({ subtotal: 20000, discount: 0 });
+      expect(texto).toContain('Subtotal');
+      expect(texto).not.toContain('Descuento');
+    });
+
+    it('muestra "Descuento" con la suma de descuento de todas las líneas cuando al menos una lo tiene', () => {
+      setBill(billWithDiscount);
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(panel.billSummary()).toEqual({ subtotal: 20000, discount: 2000 });
+      expect(texto).toContain('Subtotal');
+      expect(texto).toContain('Descuento');
+    });
+
+    it('billSummary() es null sin ninguna cuenta cargada', () => {
+      fixture.componentRef.setInput('bill', null);
+      fixture.componentRef.setInput('orphan', true);
+      fixture.detectChanges();
+
+      expect(panel.billSummary()).toBeNull();
+    });
+  });
+
+  // ── "Ya pagado" (bugfix spec 049: mesa con pedido ya cobrado, bill=$0) ────
+  describe('resumen "Ya pagado" (paidSummary)', () => {
+    it('sin paidSummary no muestra ninguna sección "Ya pagado"', () => {
+      expect(fixture.nativeElement.textContent).not.toContain('Ya pagado');
+    });
+
+    it('con paidSummary muestra su Subtotal/Descuento/Total, aparte del desglose pendiente', () => {
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 1000, total: 7000 });
+      fixture.detectChanges();
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(texto).toContain('Ya pagado');
+      expect(texto).toContain('7,000.00');
+      expect(texto).toContain('1,000.00');
+    });
+
+    it('se muestra incluso sin ninguna cuenta pendiente (bill=null, mesa ya toda pagada)', () => {
+      fixture.componentRef.setInput('bill', null);
+      fixture.componentRef.setInput('orphan', true);
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 0, total: 8000 });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('Ya pagado');
+    });
+
+    it('sin descuento en lo pagado, no muestra la fila "Descuento" de esa sección', () => {
+      fixture.componentRef.setInput('paidSummary', { subtotal: 8000, discount: 0, total: 8000 });
+      fixture.detectChanges();
+
+      const texto = fixture.nativeElement.textContent as string;
+      expect(texto).toContain('Ya pagado');
+      expect(texto).not.toContain('Descuento');
+    });
   });
 
   // ── Efectivo: monto recibido y vuelto ────────────────────────────────────
@@ -205,8 +293,55 @@ describe('SessionBillPanelComponent', () => {
   it('precarga el importe justo al elegir método', async () => {
     await chooseMethod('pm1');
 
-    expect(amounts()[0].value).toBe('12000');
+    // `app-money-input` agrupa la parte entera con Intl.NumberFormat('es-CO')
+    // (money-input.component.ts:119-125) — "12.000", no "12000" (el valor
+    // numérico real, sin formatear, es el que expone `unifiedPayment().amount`).
+    expect(amounts()[0].value).toBe('12.000');
     expect(panel.unifiedPayment().amount).toBe(12000);
+  });
+
+  // ── spec 057: importe fijo para métodos no efectivo ───────────────────────
+
+  it('con un método no efectivo, el importe queda deshabilitado en el total exacto y el botón de cobrar se habilita solo (FR-001, SC-002)', async () => {
+    await chooseMethod('pm2'); // Tarjeta, is_cash: false
+
+    expect(amounts()[0].disabled).toBe(true);
+    expect(amounts()[0].value).toBe('12.000');
+    expect(panel.ready()).toBe(true);
+    expect(chargeButton().disabled).toBe(false);
+  });
+
+  it('al volver de un método no efectivo a efectivo, el importe vuelve a ser editable (FR-004, no regresión)', async () => {
+    await chooseMethod('pm2');
+    expect(amounts()[0].disabled).toBe(true);
+
+    await chooseMethod('pm1'); // Efectivo
+    expect(amounts()[0].disabled).toBe(false);
+  });
+
+  // ── spec 057: nombre de cliente en vez de "Sin asignar (mesero)" ─────────
+
+  it('con customerName no vacío, la línea sin comensal asignado muestra el nombre del cliente (FR-005)', () => {
+    fixture.componentRef.setInput('customerName', 'Ana Torres');
+    setBill(billMesero);
+
+    expect(fixture.nativeElement.textContent).toContain('Ana Torres');
+    expect(fixture.nativeElement.textContent).not.toContain('Sin asignar (mesero)');
+  });
+
+  it('con customerName vacío, la línea sin comensal asignado sigue mostrando "Sin asignar (mesero)" (FR-006, no regresión)', () => {
+    fixture.componentRef.setInput('customerName', '');
+    setBill(billMesero);
+
+    expect(fixture.nativeElement.textContent).toContain('Sin asignar (mesero)');
+  });
+
+  it('una línea con comensal identificado no cambia, aunque customerName tenga valor (FR-007)', () => {
+    fixture.componentRef.setInput('customerName', 'Carlos Ruiz');
+    setBill(bill); // línea con display_label: 'Ana' (comensal real, no el mesero)
+
+    expect(fixture.nativeElement.textContent).toContain('Ana');
+    expect(fixture.nativeElement.textContent).not.toContain('Carlos Ruiz');
   });
 
   it('cobra enviando el efectivo recibido, no el total', async () => {
@@ -228,40 +363,11 @@ describe('SessionBillPanelComponent', () => {
     expect(chargeButton().disabled).toBe(true);
   });
 
-  // ── Pago mixto ────────────────────────────────────────────────────────────
-
-  /** Marca la casilla «Combinar con otro método». */
-  async function combine(): Promise<void> {
-    const box = combineBox()!;
-    box.checked = true;
-    box.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    fixture.detectChanges();
-  }
-
-  it('cobra con dos métodos y reparte el resto en el segundo', async () => {
+  it('spec 046, FR-004/FR-007/SC-002: no ofrece ninguna opción de combinar método de pago', async () => {
     await chooseMethod('pm1');
-    await fill(amounts()[0], '5000');
-    await combine();
-    await fill(selects()[1], 'pm2');
 
-    // El segundo método cubre lo que falta sin que el cajero tenga que restar.
-    expect(panel.unifiedPayment().secondAmount).toBe(7000);
-    expect(panel.ready()).toBe(true);
-
-    expect((await charge()).payments).toEqual([
-      { payment_method_id: 'pm1', amount: 5000 },
-      { payment_method_id: 'pm2', amount: 7000 },
-    ]);
-  });
-
-  it('no ofrece dos veces el mismo método', async () => {
-    await chooseMethod('pm1');
-    await combine();
-
-    const opciones = Array.from(selects()[1].options).map((o) => o.value);
-    expect(opciones).not.toContain('pm1');
-    expect(opciones).toContain('pm2');
+    expect(combineBox()).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Combinar con otro método');
   });
 
   // ── Nombre de la factura ──────────────────────────────────────────────────
@@ -281,19 +387,14 @@ describe('SessionBillPanelComponent', () => {
     expect((await charge()).customer_name).toBeUndefined();
   });
 
-  it('exige que cada comensal cubra su parte', () => {
+  it('spec 046, FR-005/SC-004: el cobro de una cuenta con varios comensales sigue construyendo billing_mode "unified"', async () => {
     setBill(splitBill);
-    panel.mode.set('split');
-    // Antes de asignar los pagos: al montarse, cada control emite su estado
-    // vacío y pisaría lo que se pusiera antes.
-    fixture.detectChanges();
+    await chooseMethod('pm2');
 
-    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 12000 });
-    panel.setSplitPayment('p2', { ...emptyPaymentDraft(), methodId: 'pm2', amount: 8000 });
-
-    expect(panel.ready()).toBe(true);
-
-    panel.setSplitPayment('p1', { ...emptyPaymentDraft(), methodId: 'pm1', amount: 5000 });
-    expect(panel.ready()).toBe(false);
+    const done = panel.charge();
+    const req = http.expectOne(`${API}/table-sessions/ts2/close`);
+    expect((req.request.body as CloseSessionPayload).billing_mode).toBe('unified');
+    req.flush({ table_session: {}, sale_ids: ['s1'] });
+    await done;
   });
 });

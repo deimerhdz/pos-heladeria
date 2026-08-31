@@ -16,6 +16,7 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 import { CashShift } from '../../cash-register/interfaces/cash.interface';
 import { PaymentMethod, PaymentMethodCheckoutOption, Sale } from '../../sales/interfaces/sales.interface';
+import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 
 const API = environment.apiBaseUrl;
 
@@ -24,7 +25,7 @@ const API = environment.apiBaseUrl;
 function manualOrder(): DiningOrder {
   return {
     id: 'o1',
-    channel: 'counter',
+    channel: 'POS',
     status: 'recibida',
     version: 1,
     dining_table_id: 't1',
@@ -92,8 +93,14 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
 
   const selects = (): HTMLSelectElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('select'));
+  // `app-money-input` (spec 035) renderiza su <input> como
+  // `type="text" inputmode="decimal"` — no `type="number"` (selector obsoleto
+  // de antes de que ese componente reemplazara el campo de importe, spec 057
+  // research.md Decisión 5). `inputmode="decimal"` es exclusivo de ese
+  // campo, así que sigue distinguiéndolo de "Facturar a nombre de" (también
+  // `type="text"`, sin `inputmode`).
   const numberInputs = (): HTMLInputElement[] =>
-    Array.from(fixture.nativeElement.querySelectorAll('input[type="number"]'));
+    Array.from(fixture.nativeElement.querySelectorAll('input[inputmode="decimal"]'));
   const textInputs = (): HTMLInputElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('input[type="text"]'));
 
@@ -104,10 +111,47 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     fixture.detectChanges();
   }
 
-  it('el nombre de facturación va por defecto "Consumidor Final" (T024)', () => {
+  it('el nombre de facturación va por defecto "Consumidor Final", en modo solo lectura (spec 058, FR-001)', () => {
     const billingInput = textInputs().find((i) => i.placeholder === 'Consumidor Final');
     expect(billingInput).toBeDefined();
     expect(billingInput!.value).toBe('Consumidor Final');
+    expect(billingInput!.readOnly).toBe(true);
+  });
+
+  it('spec 058, FR-001/FR-002: el botón "editar" habilita el nombre de facturación, y vuelve a solo lectura al perder foco', async () => {
+    const editButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).title === 'Editar nombre de facturación',
+    ) as HTMLButtonElement;
+    expect(editButton).toBeDefined();
+
+    const billingInput = () => textInputs().find((i) => i.placeholder === 'Consumidor Final')!;
+    expect(billingInput().readOnly).toBe(true);
+
+    editButton.click();
+    fixture.detectChanges();
+    expect(billingInput().readOnly).toBe(false);
+
+    await fill(billingInput(), 'María Pérez');
+    billingInput().dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    expect(billingInput().readOnly).toBe(true);
+    expect(billingInput().value).toBe('María Pérez');
+  });
+
+  it('spec 058, research.md Decisión 2: el modo edición del nombre de facturación se reinicia al cambiar de pedido seleccionado', () => {
+    const editButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).title === 'Editar nombre de facturación',
+    ) as HTMLButtonElement;
+    editButton.click();
+    fixture.detectChanges();
+    expect(textInputs().find((i) => i.placeholder === 'Consumidor Final')!.readOnly).toBe(false);
+
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2' }]);
+    store.selectedOrderId.set('o2');
+    fixture.detectChanges();
+
+    expect(textInputs().find((i) => i.placeholder === 'Consumidor Final')!.readOnly).toBe(true);
   });
 
   it('en efectivo muestra el vuelto calculado antes de cobrar (T026)', async () => {
@@ -126,12 +170,27 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Pendiente de revisión');
   });
 
-  it('cobra, factura y envía a cocina con "checkout-and-send" (T025)', async () => {
+  it('con datáfono/transferencia, el importe queda fijo en el total exacto y no se puede editar (spec 057, FR-001, FR-003)', async () => {
+    await fill(selects()[0], 'pm-transfer');
+
+    expect(numberInputs()[0].disabled).toBe(true);
+    expect(numberInputs()[0].value).toBe('10.000');
+  });
+
+  it('al volver de datáfono a efectivo, el importe vuelve a ser editable (spec 057, FR-004, no regresión)', async () => {
+    await fill(selects()[0], 'pm-transfer');
+    expect(numberInputs()[0].disabled).toBe(true);
+
+    await fill(selects()[0], 'pm-cash');
+    expect(numberInputs()[0].disabled).toBe(false);
+  });
+
+  it('cobra, factura y envía a cocina con "checkout-and-send" (T025, texto de botón "Cobrar" spec 058 FR-004)', async () => {
     await fill(selects()[0], 'pm-cash');
     await fill(numberInputs()[0], '10000');
 
     const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Cobrar, Facturar y Enviar a Cocina'),
+      (b as HTMLButtonElement).textContent?.trim() === 'Cobrar',
     ) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
 
@@ -153,7 +212,7 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
   // caché/red/toast (T033) se prueba sin pasar por el DOM ni por
   // `printReceiptHtml`, directamente sobre `PosTerminalStore.resolveSaleForOrder`
   // en `pos-terminal.store.spec.ts`.
-  it('T033/spec 029: ofrece "Imprimir Factura" para el pedido seleccionado, con cuenta de sesión', () => {
+  it('spec 058, FR-007: no ofrece "Imprimir Factura" mientras el cobro sigue pendiente, aunque ya haya cuenta de sesión', () => {
     const reprintButton = (): HTMLButtonElement | undefined =>
       Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
         (b as HTMLButtonElement).textContent?.includes('Imprimir Factura'),
@@ -170,10 +229,33 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     });
     fixture.detectChanges();
 
-    expect(reprintButton()).toBeDefined();
+    // El pedido sigue 'recibida' (cobro aún no efectuado): "Imprimir Factura" es una
+    // acción post-cobro y no debe verse todavía, aunque ya exista `sessionBill`
+    // (spec 058, FR-007 — endurece lo que probaba T033/spec 029 antes de este ajuste).
+    expect(reprintButton()).toBeUndefined();
   });
 
-  it('T035: "Liberar Mesa" pide la liberación y muestra el motivo del 409 si falla', async () => {
+  it('spec 046, FR-005/FR-006/SC-004: "Dividir la cuenta entre varias personas" ya no existe en el panel de mostrador', () => {
+    // Sin sessionBill: rama "+ Crear pedido nuevo" / cobro editable sin cuenta todavía.
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
+
+    // Con sessionBill: hoy ahí vivía el botón, junto a "Liberar Mesa"/"Imprimir Factura".
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [
+        { participant_id: 'p1', display_label: 'Ana', subtotal: '5000', items: [], discount: '0' },
+        { participant_id: 'p2', display_label: 'Luis', subtotal: '5000', items: [], discount: '0' },
+      ],
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
+  });
+
+  it('spec 046, FR-001/SC-001: "Liberar Mesa" no se muestra mientras la mesa tiene un pago pendiente de confirmar', () => {
     store.sessionBill.set({
       table_session_id: 'ts1',
       dining_table_id: 't1',
@@ -181,21 +263,44 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       order_ids: ['o1'],
       split: [],
     });
+    // Pedido QR 'recibida' en la misma mesa: pone a centralState() en 'validar-pago'.
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'QR_MENU', status: 'recibida' }]);
     fixture.detectChanges();
 
     const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
-    ) as HTMLButtonElement;
-    expect(button).toBeDefined();
-
-    button.click();
-    const req = http.expectOne(`${API}/table-sessions/ts1/release`);
-    req.flush({ detail: { error: 'Quedan ítems sin terminar en cocina' } }, { status: 409, statusText: 'Conflict' });
-    await fixture.whenStable();
-
-    expect(toast.toasts().some((t) => t.kind === 'error' && t.text.includes('Quedan ítems sin terminar'))).toBe(
-      true,
     );
+    expect(button).toBeUndefined();
+  });
+
+  it('spec 058, FR-007: "Liberar Mesa" sigue oculto tras confirmarse el pago pendiente, mientras el pedido propio siga sin cobrar', () => {
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [],
+    });
+    store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'QR_MENU', status: 'recibida' }]);
+    fixture.detectChanges();
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+        (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+      ),
+    ).toBeUndefined();
+
+    // Confirmar el pago pendiente: la orden QR ya no queda 'recibida' para esa mesa.
+    store.orders.set([manualOrder()]);
+    fixture.detectChanges();
+
+    // 'o1' (el pedido propio de este panel) sigue 'recibida' -- el cobro sigue
+    // pendiente, así que "Liberar Mesa" no reaparece todavía: la regla nueva de
+    // spec 058 (FR-007) es más estricta que la de spec 046, que solo miraba si
+    // había OTRO pago QR pendiente de confirmar en la mesa.
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+    );
+    expect(button).toBeUndefined();
   });
 
   it('T032: ofrece "Imprimir Pre-cuenta" cuando hay cuenta de sesión', () => {
@@ -245,11 +350,12 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
   let fixture: ComponentFixture<PosCheckoutPanelComponent>;
   let store: PosTerminalStore;
   let http: HttpTestingController;
+  let toast: ToastService;
 
   function abiertaOrder(estado: 'listo' | 'pendiente' = 'listo'): DiningOrder {
     return {
       id: 'o1',
-      channel: 'waiter',
+      channel: 'POS',
       status: 'abierta',
       version: 1,
       dining_table_id: 't1',
@@ -283,6 +389,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     fixture = TestBed.createComponent(PosCheckoutPanelComponent);
     store = TestBed.inject(PosTerminalStore);
     http = TestBed.inject(HttpTestingController);
+    toast = TestBed.inject(ToastService);
 
     TestBed.inject(CashService).shift.set({
       id: 'shift-1',
@@ -310,6 +417,32 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     expect(texto).not.toContain('Cobrar, Facturar y Enviar a Cocina');
   });
 
+  it('spec 058, FR-008: "Imprimir Factura" y "Liberar Mesa" siguen apareciendo en el cobro por sesión de mesa, sin cambios', () => {
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).toContain('Imprimir Factura');
+    expect(texto).toContain('Liberar Mesa');
+  });
+
+  it('T035: "Liberar Mesa" pide la liberación y muestra el motivo del 409 si falla', async () => {
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
+    ) as HTMLButtonElement;
+    expect(button).toBeDefined();
+
+    button.click();
+    const req = http.expectOne(`${API}/table-sessions/ts1/release`);
+    req.flush({ detail: { error: 'Quedan ítems sin terminar en cocina' } }, { status: 409, statusText: 'Conflict' });
+    await fixture.whenStable();
+
+    expect(toast.toasts().some((t) => t.kind === 'error' && t.text.includes('Quedan ítems sin terminar'))).toBe(
+      true,
+    );
+  });
+
+  it('spec 046, FR-005/FR-006/SC-004: no ofrece "Dividir la cuenta entre varias personas" en el cobro por sesión de mesa', () => {
+    expect(fixture.nativeElement.textContent).not.toContain('Dividir la cuenta entre varias personas');
+  });
+
   it('al cobrar, llama primero a ensureReadyToCharge (beforeCharge conectado) y luego cierra la sesión', async () => {
     const spy = vi.spyOn(store, 'ensureReadyToCharge').mockResolvedValue(true);
 
@@ -319,7 +452,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const input = fixture.nativeElement.querySelector('input[type="number"]') as HTMLInputElement;
+    const input = fixture.nativeElement.querySelector('input[inputmode="decimal"]') as HTMLInputElement;
     input.value = '10000';
     input.dispatchEvent(new Event('input'));
     await fixture.whenStable();
@@ -352,7 +485,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     select.dispatchEvent(new Event('change'));
     await fixture.whenStable();
     fixture.detectChanges();
-    const input = fixture.nativeElement.querySelector('input[type="number"]') as HTMLInputElement;
+    const input = fixture.nativeElement.querySelector('input[inputmode="decimal"]') as HTMLInputElement;
     input.value = '10000';
     input.dispatchEvent(new Event('input'));
     await fixture.whenStable();
@@ -399,5 +532,128 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
       (b as HTMLButtonElement).textContent?.includes('Rechazar pedido'),
     );
     expect(button).toBeUndefined();
+  });
+});
+
+/**
+ * Spec 059, Historia 3 — test de regresión: confirma el hallazgo hecho
+ * durante `/speckit-tasks` de que este componente **no necesita ningún
+ * cambio de código** para cobrar un pedido de Domicilio/Para llevar sin
+ * mesa. `sidebarMode()`, `showSessionCharge()` y `checkout()` ya operan
+ * exclusivamente sobre `store.selectedOrder()`/`store.cashShiftId()`, sin
+ * ninguna dependencia de `selectedTableId()` — si un cambio futuro
+ * introdujera una dependencia oculta de mesa aquí, este test lo detectaría.
+ */
+describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)', () => {
+  let fixture: ComponentFixture<PosCheckoutPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  function standaloneOrder(): DiningOrder {
+    return {
+      id: 'o1',
+      channel: 'POS',
+      order_type: 'TAKEAWAY',
+      status: 'recibida',
+      version: 1,
+      dining_table_id: null,
+      customer_name: 'María G.',
+      created_at: '2026-08-20T10:00:00',
+      items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '10000', estado_cocina: 'pendiente' }],
+    } as DiningOrder;
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosCheckoutPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        // Necesario para llegar hasta el final de checkoutAndSend():
+        // receiptContext() lee TenantInfoService, que en la app real se
+        // inicializa en el arranque (provideTenantInitializer()) — sin
+        // mockearlo aquí, TenantContextService lanza "read before
+        // initialization" (gap de infraestructura de test preexistente, no
+        // introducido por spec 059: ningún otro test de este archivo llega a
+        // ejercitar receiptContext() con una aserción sobre store.error()).
+        { provide: TenantInfoService, useValue: { businessName: () => 'Heladería', logoUrl: () => null, receiptMessage: () => 'Gracias' } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(PosCheckoutPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+
+    TestBed.inject(CashService).shift.set({
+      id: 'shift-1',
+      cash_register_id: 'r1',
+      user_id: 'u1',
+      opening_amount: '0',
+      opened_at: '2026-08-20T08:00:00',
+      status: 'open',
+    } as CashShift);
+    TestBed.inject(PaymentMethodService).methods.set(methods);
+    TestBed.inject(PaymentMethodService).checkoutOptions.set(checkoutOptions);
+
+    // Selección "sin mesa" — mismo estado que deja selectStandaloneOrder().
+    store.orders.set([standaloneOrder()]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  it('muestra el panel de cobro editable ("Cobrar pedido"), no el de resumen de solo lectura ni el de sesión', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Cobrar pedido');
+    expect(text).not.toContain('Cobrar y cerrar mesa');
+  });
+
+  it('cobra un pedido sin mesa con el mismo checkout-and-send ya implementado, sin cambios', async () => {
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'pm-cash';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const amountInput = fixture.nativeElement.querySelector(
+      'input[inputmode="decimal"]',
+    ) as HTMLInputElement;
+    amountInput.value = '10000';
+    amountInput.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => (b as HTMLButtonElement).textContent?.trim() === 'Cobrar',
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
+    expect(req.request.body.cash_shift_id).toBe('shift-1');
+    req.flush({
+      id: 's1',
+      total: '10000',
+      customer_name: 'María G.',
+      status: 'paid',
+      sold_at: '2026-08-20T10:05:00',
+      items: [],
+      payments: [],
+    } as unknown as Sale);
+    await fixture.whenStable();
+
+    // checkoutAndSend() termina en reload() (loadTables()+reloadOrders()) —
+    // mismos dos GET ya existentes que cualquier cobro dispara hoy.
+    http.expectOne(`${API}/orders/tables`).flush([]);
+    http.expectOne((r) => r.url === `${API}/orders`).flush([]);
+    await fixture.whenStable();
+
+    expect(store.error()).toBeNull();
   });
 });

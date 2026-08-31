@@ -185,11 +185,25 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
           <path d="M21.801 10A10 10 0 1 1 17 3.335" />
           <path d="m9 11 3 3L22 4" />
         }
+        @case ('alert-circle') {
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" x2="12" y1="8" y2="12" />
+          <line x1="12" x2="12.01" y1="16" y2="16" />
+        }
         @case ('image-off') {
           <rect width="18" height="18" x="3" y="3" rx="2" />
           <circle cx="9" cy="9" r="2" />
           <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
           <path d="M3 3l18 18" />
+        }
+        @case ('copy') {
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        }
+        @case ('download') {
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M4 19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" />
         }
         @default {
           <circle cx="12" cy="12" r="9" />

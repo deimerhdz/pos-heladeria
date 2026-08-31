@@ -71,4 +71,22 @@ describe('SearchableSelectComponent', () => {
     expect(component.value()).toBe('1');
     expect(component.open()).toBe(false);
   });
+
+  it('una opción disabled no se puede seleccionar (spec 053)', () => {
+    const cambios: string[] = [];
+    component.registerOnChange((v) => cambios.push(v));
+    component.open.set(true);
+    const opcionDeshabilitada = { id: '5', label: 'Mesa 5 · Ocupada', disabled: true };
+
+    component.selectOption(opcionDeshabilitada);
+
+    expect(cambios).toEqual([]);
+    expect(component.value()).toBe('');
+    expect(component.open()).toBe(true);
+  });
+
+  it('una opción disabled sigue apareciendo en el listado filtrado (spec 053)', () => {
+    component.options = [...OPCIONES, { id: '5', label: 'Mesa 5 · Ocupada', disabled: true }];
+    expect(buscar('Mesa 5')).toEqual(['Mesa 5 · Ocupada']);
+  });
 });

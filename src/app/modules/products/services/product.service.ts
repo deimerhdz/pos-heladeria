@@ -24,6 +24,7 @@ import {
   VariantNameConflict,
   VariantOptionGroup,
   VariantOptionGroupDraft,
+  VariantSavePayload,
   VariantUpdatePayload,
 } from '../interfaces/product.interface';
 
@@ -319,20 +320,6 @@ export class ProductService {
     return this.run(() => this.http.delete(`${this.variantsUrl}/${variantId}`));
   }
 
-  /**
-   * Persiste el orden de las presentaciones activas de un producto (spec 042). Se
-   * llama una sola vez, al final de `saveExistingProduct` — arrastrar una fila solo
-   * reordena `draft().variants` en memoria (feedback inmediato), nunca dispara esta
-   * llamada por sí solo.
-   */
-  private async reorderVariants(productId: string, orderedIds: string[]): Promise<void> {
-    await firstValueFrom(
-      this.http.patch(`${this.productsUrl}/${productId}/variants/reorder`, {
-        variant_ids: orderedIds,
-      }),
-    );
-  }
-
   // --- Recipes (per variant, consume inventory items) ---
 
   /** Fetch a variant's recipe. A missing recipe (404) is a valid empty state. */
@@ -469,79 +456,86 @@ export class ProductService {
       : `${conflict.error} Búscala en «Presentaciones desactivadas», más abajo.`;
   }
 
+  /**
+   * Guardado consolidado (spec 043): una sola petición trae el producto y el árbol completo de
+   * presentaciones (cada una con su receta y sus grupos de opciones), en vez de orquestar una
+   * llamada por presentación + receta + grupos + reordenamiento como antes de esta spec. El
+   * backend persiste todo en una única transacción (todo o nada, FR-004).
+   */
   private async saveNewProduct(draft: ProductDraft): Promise<string> {
-    const created = await firstValueFrom(
-      this.http.post<ProductResponse>(this.productsUrl, this.toProductPayload(draft)),
-    );
-    const productId = created.id;
-
-    // El backend auto-crea una variante "Single"; se reutiliza como la primera.
-    const auto = await firstValueFrom(
-      this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`),
-    );
-    const autoId = auto[0]?.id ?? null;
-
-    for (let i = 0; i < draft.variants.length; i++) {
-      const v = draft.variants[i];
-      const variantId =
-        i === 0 && autoId
-          ? (await this.patchVariant(autoId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id
-          : (await this.postVariant(productId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id;
-      await this.saveVariantConfig(variantId, v);
+    const payload: ProductCreatePayload = {
+      ...this.toProductPayload(draft),
+      variants: draft.variants.map((v) => this.toVariantSavePayload(v)),
+    };
+    try {
+      const created = await firstValueFrom(
+        this.http.post<ProductResponse>(this.productsUrl, payload),
+      );
+      return created.id;
+    } catch (err) {
+      const conflict = toNameConflict(err);
+      if (conflict) throw new VariantNameConflictError(conflict);
+      throw err;
     }
-    return productId;
   }
 
   private async saveExistingProduct(draft: ProductDraft): Promise<string> {
     const productId = draft.id!;
-    await firstValueFrom(
-      this.http.patch<ProductResponse>(
-        `${this.productsUrl}/${productId}`,
-        this.toProductPayload(draft),
-      ),
-    );
-
-    // Solo las vivas: el draft ya no las trae todas, y volver a soft-borrar una
-    // desactivada en cada guardado sería un DELETE inútil por presentación retirada.
-    const existing = await firstValueFrom(
-      this.http.get<VariantResponse[]>(`${this.productsUrl}/${productId}/variants`, {
-        params: { active: true },
-      }),
-    );
-    const keptIds = new Set(draft.variants.map((v) => v.id).filter(Boolean));
-
-    // Reconcilia: actualiza las que tienen id, crea las nuevas. Toda la configuración
-    // de una presentación va junta y sin orden obligado entre presentaciones, porque
-    // receta y grupos son dos PUT idempotentes sobre la misma variante.
-    const orderedIds: string[] = [];
-    for (const v of draft.variants) {
-      const variantId = v.id
-        ? (await this.patchVariant(v.id, { name: v.name, price: v.price, presentation_id: v.presentationId })).id
-        : (await this.postVariant(productId, { name: v.name, price: v.price, presentation_id: v.presentationId })).id;
-      orderedIds.push(variantId);
-      await this.saveVariantConfig(variantId, v);
+    // `draft.variants` ya trae TODAS las presentaciones activas (editadas o no) más las nuevas;
+    // el backend reconcilia contra eso: crea las que no tienen `id`, actualiza las que sí, y
+    // desactiva cualquier presentación activa existente que no aparezca aquí (data-model.md,
+    // tabla de reconciliación) — sustituye al bucle de PATCH/POST + DELETE + reorder de antes.
+    const payload: ProductUpdatePayload = {
+      ...this.toProductPayload(draft),
+      variants: draft.variants.map((v) => this.toVariantSavePayload(v)),
+    };
+    try {
+      await firstValueFrom(
+        this.http.patch<ProductResponse>(`${this.productsUrl}/${productId}`, payload),
+      );
+      return productId;
+    } catch (err) {
+      const conflict = toNameConflict(err);
+      if (conflict) throw new VariantNameConflictError(conflict);
+      throw err;
     }
-
-    // Elimina (soft) las variantes que el usuario quitó del draft.
-    for (const ex of existing) {
-      if (!keptIds.has(ex.id)) {
-        await firstValueFrom(this.http.delete(`${this.variantsUrl}/${ex.id}`));
-      }
-    }
-
-    // spec 042 (FR-002/FR-003): el orden que el usuario vio y arrastró en el
-    // formulario se persiste aquí, al guardar — nunca al soltar la fila. Se llama
-    // después del loop de arriba (todo id ya resuelto) y del borrado (el conjunto de
-    // activas en el backend ya coincide exactamente con `orderedIds`).
-    await this.reorderVariants(productId, orderedIds);
-
-    return productId;
   }
 
-  /** Receta e grupos de una presentación: dos reemplazos totales e idempotentes. */
-  private async saveVariantConfig(variantId: string, v: VariantDraft): Promise<void> {
-    await this.setRecipe(variantId, v.recipe);
-    await this.setVariantOptionGroups(variantId, v.optionGroups);
+  /**
+   * Mapea una presentación del draft al `VariantSaveIn` que espera el backend (spec 043):
+   * mismo filtrado/deduplicado que antes hacían `setRecipe`/`setVariantOptionGroups` por
+   * separado, ahora aplicado antes de armar el árbol completo.
+   */
+  private toVariantSavePayload(v: VariantDraft): VariantSavePayload {
+    const seenItems = new Set<string>();
+    const recipe: RecipeItem[] = [];
+    for (const l of v.recipe) {
+      if (!l.inventory_item_id || Number(l.quantity) <= 0) continue;
+      if (seenItems.has(l.inventory_item_id)) continue;
+      seenItems.add(l.inventory_item_id);
+      recipe.push({ inventory_item_id: l.inventory_item_id, quantity: Number(l.quantity) });
+    }
+
+    const seenGroups = new Set<string>();
+    const optionGroups: VariantOptionGroup[] = [];
+    for (const g of v.optionGroups) {
+      if (!g.option_group_id || seenGroups.has(g.option_group_id)) continue;
+      seenGroups.add(g.option_group_id);
+      optionGroups.push({
+        option_group_id: g.option_group_id,
+        min_select: Number(g.min_select) || 0,
+        max_select: Number(g.max_select) || 1,
+        quantity_per_option: Number(g.quantity_per_option) || 0,
+      });
+    }
+
+    return {
+      ...(v.id ? { id: v.id } : {}),
+      name: v.name,
+      price: v.price,
+      recipe,
+      option_groups: optionGroups,
+    };
   }
 
   private toProductPayload(draft: ProductDraft): ProductCreatePayload & ProductUpdatePayload {
@@ -553,85 +547,6 @@ export class ProductService {
       image_url: draft.image_url || null,
       tracks_inventory: draft.tracks_inventory,
     };
-  }
-
-  /**
-   * Crea la presentación, traduciendo el 409 de nombre tomado a un error tipado. Sin
-   * esto el guardado solo podía mostrar el texto del backend, y el caso que de verdad
-   * importa —el nombre lo ocupa una presentación desactivada, que el editor no lista—
-   * quedaba indistinguible de un duplicado a la vista del usuario.
-   */
-  private async postVariant(
-    productId: string,
-    form: { name: string; price: number; presentation_id?: string | null },
-  ) {
-    try {
-      return await firstValueFrom(
-        this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, form),
-      );
-    } catch (err) {
-      const conflict = toNameConflict(err);
-      if (conflict) throw new VariantNameConflictError(conflict);
-      throw err;
-    }
-  }
-
-  /** Renombrar al nombre de otra presentación choca igual que crearla: mismo trato. */
-  private async patchVariant(
-    variantId: string,
-    form: { name: string; price: number; presentation_id?: string | null },
-  ) {
-    try {
-      return await firstValueFrom(
-        this.http.patch<VariantResponse>(`${this.variantsUrl}/${variantId}`, form),
-      );
-    } catch (err) {
-      const conflict = toNameConflict(err);
-      if (conflict) throw new VariantNameConflictError(conflict);
-      throw err;
-    }
-  }
-
-  /**
-   * Reemplazo total de los insumos fijos. Descarta las líneas sin insumo elegido o sin
-   * cantidad, y deduplica por insumo (el backend rechaza el repetido con 422).
-   */
-  private async setRecipe(variantId: string, lines: RecipeLineDraft[]): Promise<void> {
-    const seen = new Set<string>();
-    const items: RecipeItem[] = [];
-    for (const l of lines) {
-      if (!l.inventory_item_id || Number(l.quantity) <= 0) continue;
-      if (seen.has(l.inventory_item_id)) continue;
-      seen.add(l.inventory_item_id);
-      items.push({ inventory_item_id: l.inventory_item_id, quantity: Number(l.quantity) });
-    }
-    await firstValueFrom(this.http.put(`${this.variantsUrl}/${variantId}/recipe`, { items }));
-  }
-
-  /**
-   * Reemplazo total de los grupos que ofrece la presentación. Descarta las filas sin
-   * grupo elegido y deduplica; `quantity_per_option` en 0 es válido (el grupo se ofrece
-   * sin descontar por sí mismo).
-   */
-  private async setVariantOptionGroups(
-    variantId: string,
-    drafts: VariantOptionGroupDraft[],
-  ): Promise<void> {
-    const seen = new Set<string>();
-    const groups: VariantOptionGroup[] = [];
-    for (const g of drafts) {
-      if (!g.option_group_id || seen.has(g.option_group_id)) continue;
-      seen.add(g.option_group_id);
-      groups.push({
-        option_group_id: g.option_group_id,
-        min_select: Number(g.min_select) || 0,
-        max_select: Number(g.max_select) || 1,
-        quantity_per_option: Number(g.quantity_per_option) || 0,
-      });
-    }
-    await firstValueFrom(
-      this.http.put(`${this.variantsUrl}/${variantId}/option-groups`, { groups }),
-    );
   }
 
   // --- Image storage (Cloudflare R2, via presigned upload) ---

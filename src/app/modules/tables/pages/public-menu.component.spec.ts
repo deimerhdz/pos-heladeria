@@ -10,6 +10,7 @@ import { DiningCartService } from '../services/dining-cart.service';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
 import { ResolvedBusiness } from '../services/diner.service';
+import { DiningOrder } from '../interfaces/dining.interface';
 
 /**
  * `DinerService` es transporte HTTP real (`inject(HttpClient)`); lo que este
@@ -202,5 +203,42 @@ describe('PublicMenuComponent', () => {
     const img = fixture.nativeElement.querySelector('img[alt="Con foto"]') as HTMLImageElement | null;
     expect(img?.src).toBe('https://cdn.example/p2.jpg');
     expect(fixture.nativeElement.querySelector('app-icon[name="image-off"]')).toBeNull();
+  });
+
+  // ── Notas del ítem en "Mis pedidos" (spec 061, FR-001 a FR-003) ───────────
+
+  it('una nota de ítem se muestra en "Mis pedidos", asociada solo a la línea que la tiene (FR-001 a FR-003)', async () => {
+    const order: DiningOrder = {
+      id: 'o1',
+      channel: 'QR_MENU',
+      status: 'recibida',
+      created_at: new Date().toISOString(),
+      items: [
+        {
+          id: 'it1',
+          product_variant_id: 'v1',
+          quantity: 1,
+          unit_price: '5000',
+          estado_cocina: 'pendiente',
+          notes: 'sin banana',
+        },
+        {
+          id: 'it2',
+          product_variant_id: 'v1',
+          quantity: 1,
+          unit_price: '5000',
+          estado_cocina: 'pendiente',
+          notes: null,
+        },
+      ],
+    };
+    const { fixture, component } = await createComponent('tok-1', [], { withSession: true });
+    component.myOrders.set([order]);
+    component.section.set('pedidos');
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('sin banana');
+    expect(texto.split('sin banana').length - 1).toBe(1);
   });
 });

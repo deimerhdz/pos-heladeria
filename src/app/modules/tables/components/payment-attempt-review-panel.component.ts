@@ -21,6 +21,13 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
  * instancia por orden, completamente independiente de sus hermanas —
  * `confirm_order` (backend) exige un intento `confirmado` antes de dejar
  * avanzar la orden a comanda, así que este panel es el paso previo obligado.
+ *
+ * Spec 044: además, cuando el pago es en efectivo o es una transferencia que
+ * todavía no tiene comprobante subido, el cajero puede rechazar el **pedido
+ * completo** (con motivo obligatorio) — revierte, para esos dos casos, la
+ * Decisión D5 de spec 028 (que había dejado "Rechazar" con un único
+ * significado: el del intento de pago, con reintento). La transferencia con
+ * comprobante ya subido conserva su "Rechazar" de siempre, sin cambios.
  */
 @Component({
   selector: 'app-payment-attempt-review-panel',
@@ -55,6 +62,13 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
               class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
+            </button>
+            <button
+              (click)="showRejectOrder.set(!showRejectOrder())"
+              [disabled]="busy()"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+            >
+              Rechazar pedido
             </button>
           </div>
           @if (!cashShiftId) {
@@ -122,6 +136,37 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           }
         } @else {
           <p class="text-sm text-amber-700">Esperando que el comensal suba el comprobante…</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button
+              (click)="showRejectOrder.set(!showRejectOrder())"
+              [disabled]="busy()"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+            >
+              Rechazar pedido
+            </button>
+          </div>
+        }
+
+        @if (showRejectOrder()) {
+          <!-- Spec 044: rechaza el pedido completo (no solo el intento) con motivo
+               obligatorio -- solo disponible desde las ramas efectivo y "sin
+               comprobante aún" de arriba; la transferencia con comprobante conserva
+               su propio "Rechazar" (rechaza el intento, permite reintentar). -->
+          <div class="flex items-center gap-2 pt-1 flex-wrap">
+            <input
+              type="text"
+              [(ngModel)]="rejectOrderReason"
+              placeholder="Motivo del rechazo (obligatorio)"
+              class="flex-1 min-h-11 px-2 py-1 text-base border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300"
+            />
+            <button
+              (click)="rejectOrder(order)"
+              [disabled]="busy() || !rejectOrderReason.trim()"
+              class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-40 transition-colors"
+            >
+              Confirmar rechazo del pedido
+            </button>
+          </div>
         }
       </div>
     } @else if (lastResolved(); as last) {
@@ -186,6 +231,11 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   readonly receiptPreviewOpen = signal(false);
   rejectReason = '';
   amountReceived: number | null = null;
+  /** Spec 044 — rechazo de pedido completo (efectivo / sin comprobante aún).
+   *  Nombres distintos de `showReject`/`rejectReason` (que siguen siendo solo
+   *  del rechazo de intento con reintento, transferencia con comprobante). */
+  readonly showRejectOrder = signal(false);
+  rejectOrderReason = '';
 
   ngOnChanges(): void {
     this.receiptPreviewOpen.set(false);
@@ -299,6 +349,29 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
       this.resolved.emit();
     } catch (err) {
       this.toast.error(this.api.extractError(err, 'No se pudo confirmar el pago.'));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /**
+   * Rechaza el pedido completo (spec 044), no solo el intento de pago vigente
+   * -- reutiliza `cancelOrder` (mismo endpoint que ya usa el panel de cobro,
+   * `POST /orders/{id}/cancel`), que en la misma transacción también resuelve
+   * (marca `rechazado`) el intento `pendiente` de la orden. Solo se llama
+   * desde las ramas efectivo / "sin comprobante aún" del template.
+   */
+  async rejectOrder(order: DiningOrder): Promise<void> {
+    if (!this.rejectOrderReason.trim()) return;
+    this.busy.set(true);
+    try {
+      await this.api.cancelOrder(order.id, this.rejectOrderReason.trim());
+      this.toast.info('Pedido rechazado');
+      this.rejectOrderReason = '';
+      this.showRejectOrder.set(false);
+      this.resolved.emit();
+    } catch (err) {
+      this.toast.error(this.api.extractError(err, 'No se pudo rechazar el pedido.'));
     } finally {
       this.busy.set(false);
     }

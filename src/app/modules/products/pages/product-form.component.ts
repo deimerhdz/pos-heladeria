@@ -938,13 +938,14 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Devuelve una presentación desactivada a la carta y la trae al draft con su id real,
-   * su receta y sus grupos — así el guardado la actualiza (`PATCH`) en vez de intentar
+   * Devuelve una presentación desactivada a la carta y la trae al draft con su id real, su
+   * receta y sus grupos — así el guardado la actualiza (reactivándola) en vez de intentar
    * crearla otra vez, que es justo el choque que la constraint de nombre rechaza.
    *
-   * A diferencia del resto del formulario, se aplica en el momento: reactivar es la
-   * operación que libera el nombre, y diferirla al «Guardar» dejaría al usuario sin
-   * salida cuando el guardado es precisamente lo que está fallando.
+   * Spec 043 (research.md Decisión 4): a diferencia de antes, esto ya NO dispara ninguna
+   * petición de red por sí solo — solo mueve la presentación dentro del draft en memoria. La
+   * reactivación se persiste recién en el siguiente guardado consolidado, junto con el resto de
+   * los cambios (igual que agregar cualquier otra presentación nueva).
    */
   async restoreVariant(dv: DeactivatedVariant): Promise<void> {
     const enUso = this.draft().variants.some(
@@ -956,9 +957,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       );
       return;
     }
-
-    const ok = await this.service.restoreVariant(dv.id);
-    if (!ok) return; // el banner ya muestra el error
 
     const [recipe, optionGroups] = await Promise.all([
       this.service.getVariantRecipe(dv.id),
