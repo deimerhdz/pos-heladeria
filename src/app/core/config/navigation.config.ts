@@ -15,10 +15,10 @@ export const NAV_ITEMS: NavItem[] = [
   // ── CATÁLOGO ───────────────────────────────────────────────────────────
   { label: 'Productos', icon: 'products', route: '/dashboard/products', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
   { label: 'Categorías', icon: 'categories', route: '/dashboard/categories', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
-  { label: 'Promociones', icon: 'promotions', route: '/dashboard/promotions', group: 'CATÁLOGO', roles: [UserRole.ADMIN] },
+  { label: 'Promociones', icon: 'promotions', route: '/dashboard/promotions', group: 'CATÁLOGO', roles: [UserRole.ADMIN], moduleKey: 'promociones' },
 
   // ── ADMINISTRACIÓN ─────────────────────────────────────────────────────
-  { label: 'Inventario', icon: 'inventory', route: '/dashboard/inventario', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN] },
+  { label: 'Inventario', icon: 'inventory', route: '/dashboard/inventario', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN], moduleKey: 'inventario' },
   { label: 'Proveedores', icon: 'suppliers', route: '/dashboard/proveedores', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN] },
   { label: 'Caja', icon: 'cash', route: '/dashboard/caja', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN, UserRole.CASHIER] },
   { label: 'Usuarios', icon: 'users', route: '/dashboard/users', group: 'ADMINISTRACIÓN', roles: [UserRole.ADMIN] },

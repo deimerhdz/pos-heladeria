@@ -5,6 +5,7 @@ import { NAV_ITEMS, SUPER_ADMIN_NAV_ITEMS } from '../../../core/config/navigatio
 import { NAV_GROUP_ORDER, NavItem } from '../../../core/interfaces/navigation.interface';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { LayoutService } from './layout.service';
 
 interface NavGroup {
@@ -89,6 +90,8 @@ export class SidebarComponent {
   private authService = inject(AuthService);
   readonly layoutService = inject(LayoutService);
   private readonly tenantInfo = inject(TenantInfoService);
+  /** `DashboardLayoutComponent` la carga; aquí solo se lee (mismo patrón que `tenantInfo`). */
+  private readonly planSummaryService = inject(PlanSummaryService);
 
   /** Branding del negocio (lo carga `DashboardLayoutComponent`; aquí solo se lee). */
   readonly logoUrl = this.tenantInfo.logoUrl;
@@ -101,14 +104,24 @@ export class SidebarComponent {
 
   readonly isSuperAdmin = computed(() => !!this.authService.currentUser()?.isSuperAdmin);
 
-  /** Flat, role-filtered list (consumed by tests and by `groupedItems`). */
+  /** Flat, role- and plan-filtered list (consumed by tests and by `groupedItems`). */
   readonly visibleItems = computed<NavItem[]>(() => {
     const user = this.authService.currentUser();
     if (!user) return [];
     // Un super admin se identifica por el flag, no por un rol de tenant: muestra
     // su propia navegación (Tenants, Usuarios) en lugar de los ítems del POS.
+    // El plan no aplica a su navegación.
     if (user.isSuperAdmin) return SUPER_ADMIN_NAV_ITEMS;
-    return NAV_ITEMS.filter((item) => item.roles.includes(user.role));
+    const summary = this.planSummaryService.summary();
+    return NAV_ITEMS.filter((item) => item.roles.includes(user.role)).filter((item) => {
+      if (!item.moduleKey) return true;
+      // Mismo criterio de fail-open que `plan-module.guard.ts`: mientras el
+      // plan todavía no cargó (o falló), no ocultamos el ítem — el guard de
+      // la ruta es la fuente de verdad real si el tenant intenta entrar.
+      if (!summary) return true;
+      if (summary.vencido) return false;
+      return summary.modules[item.moduleKey];
+    });
   });
 
   /** Visible items grouped by section, in `NAV_GROUP_ORDER`; empty groups hidden. */

@@ -84,13 +84,15 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
           [hint]="periodLabel()"
           [loading]="svc.isLoading()"
         />
-        <app-stat-tile
-          label="Margen"
-          tone="positive"
-          [value]="money(svc.profitability()?.margin ?? 0)"
-          [hint]="marginHint()"
-          [loading]="svc.isLoading()"
-        />
+        @if (svc.inventarioIncluido()) {
+          <app-stat-tile
+            label="Margen"
+            tone="positive"
+            [value]="money(svc.profitability()?.margin ?? 0)"
+            [hint]="marginHint()"
+            [loading]="svc.isLoading()"
+          />
+        }
         <app-stat-tile
           label="Ticket promedio"
           [value]="money(svc.salesSummary()?.average ?? 0)"
@@ -237,7 +239,11 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
         <app-share-bar-chart [items]="categoryShares()" kind="money" />
       </app-chart-card>
 
-      <!-- Stock bajo: alerta operativa, no un informe del período -->
+      <!-- Stock bajo: alerta operativa, no un informe del período. Oculta
+           por completo sin el módulo Inventario (spec 062, FR-005) — el
+           dato depende de /reports/inventory, que ReportsService ya deja de
+           pedir en ese caso (inventarioIncluido()). -->
+      @if (svc.inventarioIncluido()) {
       <app-chart-card
         title="Insumos con stock bajo"
         subtitle="Independiente del período seleccionado"
@@ -319,6 +325,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
           </div>
         }
       </app-chart-card>
+      }
     </div>
   `,
 })

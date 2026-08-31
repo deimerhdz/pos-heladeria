@@ -1,9 +1,12 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { PlanSummary } from '../../plan/interfaces/plan-summary.interface';
 import { businessToday } from '../../../shared/date-format.util';
 import { ReportsService } from './reports.service';
 
@@ -13,6 +16,18 @@ const api = environment.apiBaseUrl;
  * `businessToday(tz)`, no contra el reloj del entorno de ejecución (que
  * puede no estar en UTC-5, quickstart.md Paso 16). */
 const TEST_TIMEZONE = 'America/Bogota';
+
+function makeSummary(partial: Partial<PlanSummary>): PlanSummary {
+  return {
+    plan_name: 'Pro',
+    ciclo_facturacion: 'mensual',
+    plan_vence_en: null,
+    vencido: false,
+    resources: {},
+    modules: { inventario: true, compras: true, promociones: true },
+    ...partial,
+  };
+}
 
 /**
  * El spec anterior probaba una versión del servicio que agregaba las ventas en
@@ -33,6 +48,12 @@ describe('ReportsService', () => {
           new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
         ),
         ReportsService,
+        // Por defecto, el tenant de prueba sí tiene el módulo Inventario —
+        // preserva el comportamiento de "seis informes al arrancar" para
+        // todos los tests de este describe que no dicen lo contrario. El
+        // gating cuando NO lo tiene se prueba aparte (spec 062, describe
+        // "gating de inventario/profitability").
+        { provide: PlanSummaryService, useValue: { summary: signal<PlanSummary | null>(makeSummary({})) } },
       ],
     });
     const tenantInfo = TestBed.inject(TenantInfoService);
@@ -153,5 +174,118 @@ describe('ReportsService', () => {
 
     expect(service.lowStockIngredients().map((i) => i.name)).toEqual(['Leche']);
     expect(service.lowStockIngredients()[0].current_stock).toBe(2);
+  });
+});
+
+/**
+ * Spec 062 (FR-006/FR-007, research.md Decisión 4): sin el módulo Inventario
+ * (o con el tenant vencido), `/reports/inventory` y `/reports/profitability`
+ * no deben pedirse — y el resto de la pantalla (isLoading/error) no debe
+ * quedar contaminado por esas dos queries deshabilitadas. Describe aparte
+ * (TestBed propio, mismo patrón que el segundo describe de
+ * sidebar.component.spec.ts) para controlar `PlanSummaryService.summary()`
+ * desde antes de que `ReportsService` se construya — así el `enabled:`
+ * inicial de las queries ya nace en el valor correcto, sin depender del
+ * orden de los `beforeEach` anidados.
+ */
+describe('ReportsService — gating de inventario/profitability (spec 062)', () => {
+  let http: HttpTestingController;
+
+  function crearServicio(summary: PlanSummary | null): ReportsService {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+        ReportsService,
+        { provide: PlanSummaryService, useValue: { summary: signal(summary) } },
+      ],
+    });
+    const tenantInfo = TestBed.inject(TenantInfoService);
+    tenantInfo.info.set({
+      id: 1,
+      name: 'Heladería de prueba',
+      host: 'prueba.skeilopos.com',
+      logo_url: null,
+      receipt_message: null,
+      timezone: TEST_TIMEZONE,
+    });
+    const service = TestBed.inject(ReportsService);
+    http = TestBed.inject(HttpTestingController);
+    TestBed.tick();
+    return service;
+  }
+
+  afterEach(() => {
+    http.match(() => true);
+    http.verify();
+  });
+
+  function recursosPedidos(): string[] {
+    return http
+      .match(() => true)
+      .map((r) => r.request.urlWithParams.replace(`${api}/reports/`, '').split('?')[0]);
+  }
+
+  it('no pide /reports/inventory ni /reports/profitability cuando el plan no incluye Inventario', () => {
+    crearServicio(makeSummary({ modules: { inventario: false, compras: true, promociones: true } }));
+
+    const recursos = recursosPedidos();
+    expect(recursos).not.toContain('inventory');
+    expect(recursos).not.toContain('profitability');
+    // El resto de informes no depende de Inventario — siguen pidiéndose.
+    expect(recursos.sort()).toEqual(['cashiers', 'categories', 'sales', 'top-products']);
+  });
+
+  it('no pide inventory/profitability mientras el resumen del plan no ha cargado (fail-closed)', () => {
+    crearServicio(null);
+
+    const recursos = recursosPedidos();
+    expect(recursos).not.toContain('inventory');
+    expect(recursos).not.toContain('profitability');
+  });
+
+  it('no pide inventory/profitability cuando el tenant está vencido, aunque el plan los incluya', () => {
+    crearServicio(
+      makeSummary({ vencido: true, modules: { inventario: true, compras: true, promociones: true } }),
+    );
+
+    const recursos = recursosPedidos();
+    expect(recursos).not.toContain('inventory');
+    expect(recursos).not.toContain('profitability');
+  });
+
+  it('isLoading() e error() no dependen de inventory/profitability cuando están excluidas', async () => {
+    const service = crearServicio(
+      makeSummary({ modules: { inventario: false, compras: true, promociones: true } }),
+    );
+
+    // Sin resolver la promesa de ninguna query real, isLoading() debe poder
+    // llegar a false apenas las cuatro queries restantes respondan — si
+    // inventory/profitability siguieran en el agregado pese a estar
+    // deshabilitadas, quedarían `isPending()` para siempre y esto no pasaría
+    // nunca (la regresión que esta spec existe para prevenir).
+    for (const recurso of ['sales', 'top-products', 'categories', 'cashiers']) {
+      const req = http.expectOne((r) => r.url === `${api}/reports/${recurso}`);
+      req.flush(recurso === 'sales'
+        ? { total_sales: '0', ticket_count: 0, avg_ticket: '0', by_day: [] }
+        : []);
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    TestBed.tick();
+
+    expect(service.isLoading()).toBe(false);
+    expect(service.error()).toBeNull();
+  });
+
+  it('sí pide inventory/profitability cuando el plan incluye Inventario y el tenant no está vencido', () => {
+    crearServicio(makeSummary({}));
+
+    const recursos = recursosPedidos();
+    expect(recursos).toContain('inventory');
+    expect(recursos).toContain('profitability');
   });
 });

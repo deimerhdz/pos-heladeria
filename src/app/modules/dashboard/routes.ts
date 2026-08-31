@@ -76,6 +76,7 @@ export const dashboardRoutes: Routes = [
               import('../unit-measures/pages/unit-measures-page.component').then(
                 (m) => m.UnitMeasuresPageComponent,
               ),
+            canActivate: [planModuleGuard('inventario')],
           },
           {
             path: 'grupos-opciones',

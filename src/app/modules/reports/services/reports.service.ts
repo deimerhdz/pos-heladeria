@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { businessToday } from '../../../shared/date-format.util';
 import {
   CashierReportRow,
@@ -55,6 +56,7 @@ export type ReportGroupBy = 'day' | 'month';
 export class ReportsService {
   private readonly http = inject(HttpClient);
   private readonly tenantInfo = inject(TenantInfoService);
+  private readonly planSummaryService = inject(PlanSummaryService);
   private readonly base = `${environment.apiBaseUrl}/reports`;
 
   readonly period = signal<ReportPeriod>('today');
@@ -62,6 +64,21 @@ export class ReportsService {
 
   /** Rango efectivo del periodo actual; entra en todas las claves de query. */
   readonly range = computed(() => this.getDateRange(this.period()));
+
+  /**
+   * Gobierna tanto `enabled:` de `inventoryQuery`/`profitabilityQuery` como su
+   * participación en el agregado `isLoading`/`error` de abajo (spec 062,
+   * research.md Decisión 4). A diferencia de `SidebarComponent`/
+   * `SettingsPageComponent` (fail-open mientras el plan no cargó), aquí es
+   * fail-closed: un `true` prematuro dispararía una petición real que, para un
+   * tenant sin Inventario, termina en 403 — y ese error se filtraría al
+   * agregado compartido por **toda** la pantalla de Reportes, no solo a estas
+   * dos tarjetas.
+   */
+  readonly inventarioIncluido = computed(() => {
+    const summary = this.planSummaryService.summary();
+    return summary !== null && summary.modules.inventario && !summary.vencido;
+  });
 
   /**
    * Un año por día son 365 puntos, que ninguna gráfica dibuja: para ese periodo
@@ -114,18 +131,25 @@ export class ReportsService {
       ),
   }));
 
-  /** El inventario no depende del rango: su clave no lo lleva. */
+  /** El inventario no depende del rango: su clave no lo lleva. `enabled`
+   *  evita disparar la petición para un tenant sin el módulo Inventario
+   *  (FR-006, spec 062). */
   private readonly inventoryQuery = injectQuery(() => ({
     queryKey: ['reports', 'inventory'],
     queryFn: () => firstValueFrom(this.http.get<InventoryRowRes[]>(`${this.base}/inventory`)),
+    enabled: this.inventarioIncluido(),
   }));
 
+  /** Ídem — evita disparar la petición para un tenant sin Inventario
+   *  (FR-007, spec 062): sin ese módulo el costo es siempre cero y el
+   *  margen calculado sería una cifra falsa, no solo un dato inaccesible. */
   private readonly profitabilityQuery = injectQuery(() => ({
     queryKey: ['reports', 'profitability', this.range()],
     queryFn: () =>
       firstValueFrom(
         this.http.get<ProfitabilityRes>(`${this.base}/profitability`, { params: this.params() }),
       ),
+    enabled: this.inventarioIncluido(),
   }));
 
   // ── Datos de dominio ─────────────────────────────────────────────────
@@ -213,26 +237,31 @@ export class ReportsService {
 
   // ── Estado agregado ──────────────────────────────────────────────────
 
-  /** Solo las banderas: seis queries de tipos distintos no forman una unión
-   *  llamable, y aquí no se lee el dato, solo el estado. */
-  private readonly queries: {
-    isPending: () => boolean;
-    isFetching: () => boolean;
-    isError: () => boolean;
-    error: () => unknown;
-  }[] = [
-    this.salesQuery,
-    this.topProductsQuery,
-    this.categoriesQuery,
-    this.cashiersQuery,
-    this.inventoryQuery,
-    this.profitabilityQuery,
-  ];
+  /**
+   * Solo las banderas: seis queries de tipos distintos no forman una unión
+   * llamable, y aquí no se lee el dato, solo el estado. `computed()` en vez
+   * de un arreglo fijo: mientras `inventarioIncluido()` es `false`,
+   * `inventoryQuery`/`profitabilityQuery` quedan `enabled: false` y por lo
+   * tanto `isPending()` para siempre — incluirlas igual aquí dejaría
+   * `isLoading` en `true` de forma indefinida para un tenant sin Inventario
+   * (spec 062, research.md Decisión 4).
+   */
+  private readonly queries = computed<
+    {
+      isPending: () => boolean;
+      isFetching: () => boolean;
+      isError: () => boolean;
+      error: () => unknown;
+    }[]
+  >(() => {
+    const base = [this.salesQuery, this.topProductsQuery, this.categoriesQuery, this.cashiersQuery];
+    return this.inventarioIncluido() ? [...base, this.inventoryQuery, this.profitabilityQuery] : base;
+  });
 
-  readonly isLoading = computed(() => this.queries.some((q) => q.isPending()));
-  readonly isFetching = computed(() => this.queries.some((q) => q.isFetching()));
+  readonly isLoading = computed(() => this.queries().some((q) => q.isPending()));
+  readonly isFetching = computed(() => this.queries().some((q) => q.isFetching()));
   readonly error = computed(() => {
-    const fallida = this.queries.find((q) => q.isError());
+    const fallida = this.queries().find((q) => q.isError());
     return fallida ? this.extractError(fallida.error()) : null;
   });
 
