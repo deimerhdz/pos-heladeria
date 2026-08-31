@@ -9,8 +9,16 @@
  *   paquete. Descuenta solo paquetes completos; el remanente va a precio normal.
  * - `combo`: `value` = precio del bundle, componentes en `combo_items`. Se
  *   selecciona explícitamente al vender; no participa del motor automático.
+ * - `qty_price_presentation` (spec 040): precio de paquete por presentación de
+ *   catálogo, reglas en `presentation_rules`. Como `combo`, se calcula agrupando
+ *   varias líneas y NO entra en `AUTO_TYPES`.
  */
-export type PromotionType = 'percent' | 'fixed' | 'combo' | 'qty_price';
+export type PromotionType =
+  | 'percent'
+  | 'fixed'
+  | 'combo'
+  | 'qty_price'
+  | 'qty_price_presentation';
 
 /**
  * Máquina de estados del backend (`PROMOTION_TRANSITIONS`). `draft` es el único
@@ -66,6 +74,29 @@ export interface ComboItem {
   quantity: number;
 }
 
+/**
+ * Regla de una promoción `qty_price_presentation` (spec 040): una presentación
+ * del catálogo, una cantidad mínima de paquete (≥1, `1` es válido) y el precio
+ * total del paquete. No puede repetirse la misma presentación dentro de una
+ * promoción (FR-006).
+ */
+export interface PresentationRuleForm {
+  presentation_id: string;
+  min_qty: number;
+  pack_price: number;
+}
+
+/** Regla tal como la devuelve el backend, con el alcance ya resuelto (FR-005). */
+export interface PresentationRule {
+  presentation_id: string;
+  presentation_name: string;
+  min_qty: number;
+  /** Decimal serializado como string (`"12000.00"`). */
+  pack_price: string;
+  /** Variantes ACTIVAS que referencian esa presentación ("Productos Aplicables"). */
+  applicable_variant_count: number;
+}
+
 export interface Promotion {
   id: string;
   name: string;
@@ -84,6 +115,8 @@ export interface Promotion {
   min_qty: number;
   targets: PromotionTarget[];
   combo_items: ComboItem[];
+  /** Solo para `qty_price_presentation` (spec 040). */
+  presentation_rules: PresentationRule[];
 }
 
 /** Promoción que puede competir con esta sobre el mismo producto. */
@@ -122,6 +155,9 @@ export interface PromotionForm {
   productTargets: ScopeTarget[];
   /** Solo aplica cuando `type === 'combo'`; requiere ≥2 variantes distintas. */
   comboItems: ComboItem[];
+  /** Solo aplica cuando `type === 'qty_price_presentation'`; ≥1 regla, sin
+   *  presentación repetida (spec 040). */
+  presentationRules: PresentationRuleForm[];
 }
 
 /** Campos escalares comunes a create y update. */
@@ -138,12 +174,29 @@ interface PromotionScalars {
   min_qty: number;
 }
 
-export interface PromotionCreatePayload extends PromotionScalars {
+/** Reglas por presentación en el payload de create/shape (spec 040). */
+export interface PresentationRuleIn {
+  presentation_id: string;
+  min_qty: number;
+  pack_price: number;
+}
+
+/** Flags de confirmación explícita de FR-017 (precio no uniforme) y FR-022 (la
+ *  regla no representa un descuento real). Sin el flag, el 422 no deja guardar. */
+export interface PresentationConfirmFlags {
+  confirm_precio_no_uniforme?: boolean;
+  confirm_sin_descuento?: boolean;
+}
+
+export interface PromotionCreatePayload
+  extends PromotionScalars,
+    PresentationConfirmFlags {
   type: PromotionType;
   /** El backend crea en `draft` por defecto; activar es explícito. */
   status: Extract<PromotionStatus, 'draft' | 'active'>;
   targets: PromotionTarget[];
   combo_items: ComboItem[];
+  presentation_rules?: PresentationRuleIn[];
 }
 
 /**
@@ -152,10 +205,11 @@ export interface PromotionCreatePayload extends PromotionScalars {
  */
 export type PromotionUpdatePayload = Partial<PromotionScalars>;
 
-export interface PromotionShapePayload {
+export interface PromotionShapePayload extends PresentationConfirmFlags {
   type?: PromotionType;
   targets?: PromotionTarget[];
   combo_items?: ComboItem[];
+  presentation_rules?: PresentationRuleIn[];
 }
 
 export interface PromotionStatusPayload {
@@ -164,4 +218,25 @@ export interface PromotionStatusPayload {
 
 export interface PromotionDuplicatePayload {
   name: string;
+}
+
+/** Cuerpo del 409 de FR-006 (spec 040): solape con otra promoción por presentación activa. */
+export interface PresentationOverlapError {
+  error: string;
+  conflicts: { promotion_id: string; promotion_name: string; presentation_id: string }[];
+}
+
+/**
+ * Cuerpo del 422 de FR-017 (precio no uniforme) o FR-022 (la regla no es un
+ * descuento real). El frontend lee el detalle y, al confirmar, reenvía el mismo
+ * payload con el flag correspondiente en `true`.
+ */
+export interface PresentationPriceCheckError {
+  error: string;
+  presentation_id: string;
+  reference_unit_price: string;
+  /** Presente solo en FR-017. */
+  variants?: { variant_id: string; description: string; price: string }[];
+  /** Presente solo en FR-022. */
+  pack_unit_price?: string;
 }
