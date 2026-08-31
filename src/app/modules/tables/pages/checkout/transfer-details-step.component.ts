@@ -3,8 +3,10 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { DinerService, DinerSessionExpiredError } from '../../services/diner.service';
 import { DinerTokenStore } from '../../services/diner-token.store';
 import { DiningCartService } from '../../services/dining-cart.service';
-import { DinerPaymentMethod } from '../../interfaces/diner.interface';
+import { DinerPaymentMethod, PaymentMethodField } from '../../interfaces/diner.interface';
 import { IconComponent } from '../../../../shared/icon/icon.component';
+import { ToastService } from '../../../../shared/feedback/toast.service';
+import { ToastContainerComponent } from '../../../../shared/feedback/toast-container.component';
 import { CheckoutStepIndicatorComponent } from './checkout-step-indicator.component';
 import { CheckoutProgressStore } from './checkout-progress.store';
 
@@ -17,8 +19,9 @@ import { CheckoutProgressStore } from './checkout-progress.store';
 @Component({
   selector: 'app-transfer-details-step',
   standalone: true,
-  imports: [IconComponent, CheckoutStepIndicatorComponent],
+  imports: [IconComponent, CheckoutStepIndicatorComponent, ToastContainerComponent],
   template: `
+    <app-toast-container />
     <div class="min-h-screen bg-gray-50 flex flex-col">
       <div class="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -55,13 +58,35 @@ import { CheckoutProgressStore } from './checkout-progress.store';
 
           <div class="bg-indigo-50 rounded-xl p-4 space-y-3">
             @for (f of textFields(); track f.key) {
-              <p class="text-sm text-indigo-900">
-                <span class="font-medium">{{ f.label ?? f.key }}:</span> {{ method()!.payment_info?.[f.key] }}
+              <p class="text-sm text-indigo-900 flex items-center gap-2">
+                <span>
+                  <span class="font-medium">{{ f.label ?? f.key }}:</span> {{ method()!.payment_info?.[f.key] }}
+                </span>
+                <button
+                  type="button"
+                  (click)="copyField(method()!.payment_info?.[f.key] ?? '')"
+                  title="Copiar"
+                  aria-label="Copiar"
+                  class="text-indigo-500 hover:text-indigo-700 transition-colors shrink-0"
+                >
+                  <span class="w-4 h-4 block"><app-icon name="copy" /></span>
+                </button>
               </p>
             }
             @for (f of imageFields(); track f.key) {
               <div>
-                <p class="text-xs font-medium text-indigo-900 mb-1">{{ f.label ?? f.key }}</p>
+                <p class="text-xs font-medium text-indigo-900 mb-1 flex items-center gap-2">
+                  {{ f.label ?? f.key }}
+                  <button
+                    type="button"
+                    (click)="downloadImage(method()!.payment_info?.[f.key] ?? '', qrFilename(f))"
+                    title="Descargar"
+                    aria-label="Descargar"
+                    class="text-indigo-500 hover:text-indigo-700 transition-colors shrink-0"
+                  >
+                    <span class="w-4 h-4 block"><app-icon name="download" /></span>
+                  </button>
+                </p>
                 <img
                   [src]="method()!.payment_info?.[f.key]"
                   [alt]="f.label ?? f.key"
@@ -143,6 +168,7 @@ export class TransferDetailsStepComponent implements OnInit, OnDestroy {
   private readonly tokenStore = inject(DinerTokenStore);
   private readonly cart = inject(DiningCartService);
   private readonly progress = inject(CheckoutProgressStore);
+  private readonly toast = inject(ToastService);
 
   private readonly token = this.route.snapshot.paramMap.get('token') ?? '';
 
@@ -316,6 +342,53 @@ export class TransferDetailsStepComponent implements OnInit, OnDestroy {
   private revokePreview(): void {
     const url = this.previewUrl();
     if (url) URL.revokeObjectURL(url);
+  }
+
+  /** Copia un valor de texto ya mostrado (p. ej. número de cuenta/celular) al
+   *  portapapeles del dispositivo (spec 060, FR-001/FR-003, research.md D1). */
+  async copyField(value: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(value);
+      this.toast.success('Copiado al portapapeles', 5000);
+    } catch {
+      this.toast.error('No se pudo copiar', 5000);
+    }
+  }
+
+  /** Descarga una imagen ya mostrada (p. ej. el QR) como archivo local, sin
+   *  requerir captura de pantalla (spec 060, FR-004/FR-006, research.md D2-D3).
+   *  Trae el archivo con `fetch` + `Blob` en vez de un `<a href>` directo
+   *  porque la imagen es una URL remota de otro origen (Cloudflare R2), no
+   *  una data URL local. */
+  async downloadImage(url: string, filename: string): Promise<void> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Respuesta no exitosa');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+      this.toast.success('Imagen descargada', 5000);
+    } catch {
+      this.toast.error('No se pudo descargar la imagen', 5000);
+    }
+  }
+
+  /** Nombre de archivo para la descarga de un campo de imagen (research.md D3):
+   *  `qr-<slug-del-método>.png`, agregando el campo solo si hay más de uno. */
+  qrFilename(f: PaymentMethodField): string {
+    const slug = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+    const base = `qr-${slug(this.method()?.name ?? '')}`;
+    return this.imageFields().length > 1 ? `${base}-${slug(f.label ?? f.key)}.png` : `${base}.png`;
   }
 
   /** Volver a elegir método (FR-003, T013) — sin restricción: no existe pedido todavía. */

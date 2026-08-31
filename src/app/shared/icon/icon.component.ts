@@ -196,6 +196,15 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
           <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
           <path d="M3 3l18 18" />
         }
+        @case ('copy') {
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        }
+        @case ('download') {
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M4 19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" />
+        }
         @default {
           <circle cx="12" cy="12" r="9" />
           <circle cx="12" cy="12" r="1" />

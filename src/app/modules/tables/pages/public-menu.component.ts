@@ -245,6 +245,9 @@ const REFRESH_DEBOUNCE_MS = 250;
                           @if (optionLabels(item)) {
                             <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
                           }
+                          @if (item.notes) {
+                            <span class="block text-xs text-gray-400 pl-5">📝 {{ item.notes }}</span>
+                          }
                           @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
                             <span class="block text-xs pl-5" [class]="kitchenClass(item)">
                               {{ kitchenLabel(item) }}
