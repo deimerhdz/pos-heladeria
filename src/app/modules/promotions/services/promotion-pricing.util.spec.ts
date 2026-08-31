@@ -30,6 +30,7 @@ function promo(overrides: Partial<Promotion> = {}): Promotion {
     min_qty: 1,
     targets: [],
     combo_items: [],
+    presentation_rules: [],
     ...overrides,
   };
 }

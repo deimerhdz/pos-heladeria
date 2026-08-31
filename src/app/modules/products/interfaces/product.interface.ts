@@ -97,6 +97,8 @@ export interface Variant {
   sku: string | null;
   price: number;
   active: boolean;
+  /** spec 040: presentación de catálogo a la que apunta, o null. */
+  presentation_id: string | null;
 }
 
 /** Editable fields captured by the variant form. */
@@ -104,6 +106,7 @@ export interface VariantForm {
   name: string;
   price: number;
   sku: string | null;
+  presentation_id?: string | null;
 }
 
 /** `POST /products/{id}/variants` (`VariantCreate`). */
@@ -111,6 +114,7 @@ export interface VariantCreatePayload {
   name: string;
   price: number;
   sku?: string | null;
+  presentation_id?: string | null;
 }
 
 /** `PATCH /variants/{id}` (`VariantUpdate`) — all optional. */
@@ -119,6 +123,7 @@ export interface VariantUpdatePayload {
   price?: number;
   sku?: string | null;
   active?: boolean;
+  presentation_id?: string | null;
 }
 
 /**
@@ -284,6 +289,9 @@ export interface VariantDraft {
   localId: string;
   name: string;
   price: number;
+  /** spec 040: presentación de catálogo asignada, o null (no participa de
+   *  promociones por presentación). */
+  presentationId: string | null;
   recipe: RecipeLineDraft[];
   optionGroups: VariantOptionGroupDraft[];
 }

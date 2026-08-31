@@ -2,7 +2,11 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
-import { DinerService, DinerSessionExpiredError } from '../services/diner.service';
+import {
+  DinerService,
+  DinerSessionExpiredError,
+  MenuPromotionAnnouncement,
+} from '../services/diner.service';
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup } from '../services/menu-lookup';
@@ -348,6 +352,21 @@ const REFRESH_DEBOUNCE_MS = 250;
                 </p>
               </div>
             } @else {
+              <!-- spec 040 (FR-021): promociones de precio por presentación vigentes -->
+              @if (promotionAnnouncements().length > 0) {
+                <div class="mb-4 space-y-2">
+                  @for (promo of promotionAnnouncements(); track promo.promotion_id) {
+                    <div class="rounded-xl bg-teal-50 border border-teal-100 px-4 py-3">
+                      <p class="text-sm font-semibold text-teal-900">🎉 {{ promo.promotion_name }}</p>
+                      <ul class="mt-1 text-xs text-teal-700 space-y-0.5">
+                        @for (rule of promo.rules; track rule.presentation_name) {
+                          <li>{{ rule.text }}</li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                </div>
+              }
               @if (searchOpen() && search()) {
                 <p class="text-sm text-gray-400 mb-3">
                   {{ visibleProducts().length }} resultado(s) en toda la carta
@@ -572,6 +591,8 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   readonly view = signal<MenuView>('loading');
   readonly categories = signal<MenuCategory[]>([]);
+  /** spec 040: promociones de precio por presentación vigentes ahora (FR-021). */
+  readonly promotionAnnouncements = signal<MenuPromotionAnnouncement[]>([]);
   readonly errorMessage = signal<string | null>(null);
 
   readonly tableNumber = signal<number | null>(null);
@@ -685,12 +706,13 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
     // 1. Resolver mesa + menú desde el token firmado.
     try {
-      const { table, business, categories } = await this.api.resolveByToken(this.token);
+      const { table, business, categories, promotions } = await this.api.resolveByToken(this.token);
       this.tableNumber.set(table.number);
       this.tableName.set(table.name);
       this.businessName.set(business?.name ?? null);
       this.businessLogo.set(business?.logo_url ?? null);
       this.categories.set(categories);
+      this.promotionAnnouncements.set(promotions ?? []);
       this.cart.indexMenu(categories);
     } catch (err) {
       this.handleResolveError(err);

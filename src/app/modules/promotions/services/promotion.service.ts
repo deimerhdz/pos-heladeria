@@ -6,6 +6,10 @@ import { environment } from '../../../../environments/environment';
 import { Page } from '../../../core/interfaces/page.interface';
 import { injectPagedQuery } from '../../../core/query/paged-query';
 import {
+  PresentationConfirmFlags,
+  PresentationOverlapError,
+  PresentationPriceCheckError,
+  PresentationRuleIn,
   Promotion,
   PromotionCreatePayload,
   PromotionDuplicatePayload,
@@ -39,6 +43,11 @@ export class PromotionService {
   /** Errores fuera de las queries: mutaciones, y el formulario del asistente
    *  (`promotions-page.component.ts` escribe acá directo para su banner). */
   readonly otherError = signal<string | null>(null);
+
+  /** spec 040: detalle del último 409 de solape entre promociones por presentación. */
+  readonly presentationConflicts = signal<PresentationOverlapError | null>(null);
+  /** spec 040: detalle del último 422 de FR-017/FR-022 (precio no uniforme / sin descuento). */
+  readonly presentationPriceCheck = signal<PresentationPriceCheckError | null>(null);
 
   // Entrada de las queries reactivas: las signals arman la query key.
   readonly page = signal(1);
@@ -188,9 +197,13 @@ export class PromotionService {
   // ── Los 7 endpoints ──────────────────────────────────────────────────
 
   /** `POST /promotions`. `status` decide si nace en borrador o ya activa. */
-  create(form: PromotionForm, status: 'draft' | 'active'): Promise<PromotionWithOverlaps | null> {
+  create(
+    form: PromotionForm,
+    status: 'draft' | 'active',
+    flags: PresentationConfirmFlags = {},
+  ): Promise<PromotionWithOverlaps | null> {
     return this.submit(() =>
-      this.http.post<PromotionWithOverlaps>(this.baseUrl, this.toCreate(form, status)),
+      this.http.post<PromotionWithOverlaps>(this.baseUrl, this.toCreate(form, status, flags)),
     );
   }
 
@@ -207,11 +220,17 @@ export class PromotionService {
    * responde 409 si la promoción ya salió de `draft`; la UI solo ofrece esta
    * ruta en borradores.
    */
-  updateShape(id: string, form: PromotionForm): Promise<PromotionWithOverlaps | null> {
+  updateShape(
+    id: string,
+    form: PromotionForm,
+    flags: PresentationConfirmFlags = {},
+  ): Promise<PromotionWithOverlaps | null> {
+    const isPresentation = form.type === 'qty_price_presentation';
     const payload: PromotionShapePayload = {
       type: form.type,
       targets: this.toTargets(form),
       combo_items: form.type === 'combo' ? form.comboItems : [],
+      ...(isPresentation ? { presentation_rules: this.toPresentationRules(form), ...flags } : {}),
     };
     return this.submit(() =>
       this.http.patch<PromotionWithOverlaps>(`${this.baseUrl}/${id}/shape`, payload),
@@ -248,13 +267,39 @@ export class PromotionService {
   private async submit<T>(request: () => Observable<T>): Promise<T | null> {
     this.isSubmitting.set(true);
     this.otherError.set(null);
+    this.presentationConflicts.set(null);
+    this.presentationPriceCheck.set(null);
     try {
       const body = await firstValueFrom(request());
       // 'promotions' matchea por prefijo las tres queries del servicio.
       await this.queryClient.invalidateQueries({ queryKey: ['promotions'] });
       return body ?? ({} as T);
     } catch (err) {
-      this.otherError.set(this.extractError(err));
+      const detail =
+        err instanceof HttpErrorResponse
+          ? (err.error as { detail?: unknown } | null)?.detail
+          : null;
+      if (
+        err instanceof HttpErrorResponse &&
+        err.status === 409 &&
+        detail &&
+        typeof detail === 'object' &&
+        'conflicts' in detail
+      ) {
+        // FR-006 (spec 040): solape con otra promoción por presentación activa.
+        this.presentationConflicts.set(detail as PresentationOverlapError);
+      } else if (
+        err instanceof HttpErrorResponse &&
+        err.status === 422 &&
+        detail &&
+        typeof detail === 'object' &&
+        ('reference_unit_price' in detail || 'pack_unit_price' in detail)
+      ) {
+        // FR-017 / FR-022 (spec 040): aviso con confirmación explícita.
+        this.presentationPriceCheck.set(detail as PresentationPriceCheckError);
+      } else {
+        this.otherError.set(this.extractError(err));
+      }
       return null;
     } finally {
       this.isSubmitting.set(false);
@@ -263,7 +308,12 @@ export class PromotionService {
 
   // ── Formulario → payload ─────────────────────────────────────────────
 
-  private toCreate(form: PromotionForm, status: 'draft' | 'active'): PromotionCreatePayload {
+  private toCreate(
+    form: PromotionForm,
+    status: 'draft' | 'active',
+    flags: PresentationConfirmFlags = {},
+  ): PromotionCreatePayload {
+    const isPresentation = form.type === 'qty_price_presentation';
     return {
       ...this.toScalars(form),
       type: form.type,
@@ -271,7 +321,19 @@ export class PromotionService {
       // Un combo define su alcance en `combo_items`; mandarle targets es 422.
       targets: this.toTargets(form),
       combo_items: form.type === 'combo' ? form.comboItems : [],
+      ...(isPresentation
+        ? { presentation_rules: this.toPresentationRules(form), ...flags }
+        : {}),
     };
+  }
+
+  /** spec 040: reglas por presentación del formulario -> payload. */
+  private toPresentationRules(form: PromotionForm): PresentationRuleIn[] {
+    return form.presentationRules.map((r) => ({
+      presentation_id: r.presentation_id,
+      min_qty: r.min_qty,
+      pack_price: r.pack_price,
+    }));
   }
 
   /**

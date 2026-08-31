@@ -9,7 +9,9 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
+import { PresentationService } from '../../presentations/services/presentation.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -18,6 +20,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
 import { formatMoney } from '../../../shared/money';
 import {
   PROMOTION_TRANSITIONS,
+  PresentationRuleForm,
   Promotion,
   PromotionForm,
   PromotionOverlap,
@@ -36,7 +39,15 @@ import {
   scopeOf,
 } from '../services/promotion-pricing.util';
 
-type Screen = 'list' | 'type' | 'discount' | 'pack' | 'combo' | 'review' | 'edit';
+type Screen =
+  | 'list'
+  | 'type'
+  | 'discount'
+  | 'pack'
+  | 'presentation'
+  | 'combo'
+  | 'review'
+  | 'edit';
 /** `pick` cubre categorías y productos a la vez: el backend acepta ambas formas
  *  de target en la misma promoción (`_matches` hace OR sobre la lista). */
 type ScopeMode = 'all' | 'pick';
@@ -76,6 +87,7 @@ function emptyForm(): PromotionForm {
     categoryTargets: [],
     productTargets: [],
     comboItems: [],
+    presentationRules: [],
   };
 }
 
@@ -136,6 +148,7 @@ function vigPhrase(v: VigInput): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule,
+    RouterLink,
     NgTemplateOutlet,
     PaginationBarComponent,
     ScopePickerComponent,
@@ -395,10 +408,10 @@ function vigPhrase(v: VigInput): string {
           </button>
           <h1 class="text-2xl font-bold text-gray-900 mb-2">¿Qué quieres crear?</h1>
           <p class="text-gray-500 text-sm mb-8 max-w-xl">
-            El descuento y el paquete se aplican solos cuando se cumplen las condiciones. El combo
-            lo elige el cajero al vender.
+            El descuento y el paquete por presentación se aplican solos cuando se cumplen las
+            condiciones del pedido.
           </p>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
             <button
               type="button"
               (click)="chooseKind('discount')"
@@ -417,18 +430,18 @@ function vigPhrase(v: VigInput): string {
             </button>
             <button
               type="button"
-              (click)="chooseKind('pack')"
-              class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all p-6"
+              (click)="chooseKind('presentation')"
+              class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm hover:border-teal-300 hover:shadow-md transition-all p-6"
             >
               <div
-                class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4 text-sm font-bold"
+                class="w-10 h-10 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center mb-4 text-sm font-bold"
               >
-                3x
+                8oz
               </div>
-              <div class="text-lg font-bold text-gray-900 mb-1.5">Paquete</div>
+              <div class="text-lg font-bold text-gray-900 mb-1.5">Paquete por presentación</div>
               <div class="text-sm text-gray-500">
-                Varias unidades del mismo tipo a precio cerrado. Ej: 3 conos por $10.000. Se aplica
-                solo, por paquetes completos.
+                Precio cerrado por tamaño, combinando sabores distintos. Ej: 2 de cualquier sabor en
+                8oz por $12.000.
               </div>
             </button>
             <!-- <button
@@ -595,6 +608,19 @@ function vigPhrase(v: VigInput): string {
           <ng-container [ngTemplateOutlet]="wizardActions" />
         }
 
+        @case ('presentation') {
+          <button
+            type="button"
+            (click)="backToType()"
+            class="text-sm font-medium text-gray-500 hover:text-gray-800 mb-5"
+          >
+            ← Volver
+          </button>
+          <h1 class="text-2xl font-bold text-gray-900 mb-6">Nuevo paquete por presentación</h1>
+          <ng-container [ngTemplateOutlet]="presentationForm" />
+          <ng-container [ngTemplateOutlet]="wizardActions" />
+        }
+
         @case ('combo') {
           <button
             type="button"
@@ -704,6 +730,40 @@ function vigPhrase(v: VigInput): string {
             >
           </div>
 
+          @if (!isReadOnly() && isDraft() && form.type === 'qty_price_presentation') {
+            <!-- spec 040: borrador de promoción por presentación → formulario dedicado a lo ancho -->
+            <div class="bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-4 mb-6">
+              <div class="text-sm font-semibold text-indigo-900 mb-1">
+                Es un borrador: todavía puedes cambiarlo todo
+              </div>
+              <p class="text-xs text-indigo-700">
+                El tipo y las reglas solo se pueden editar aquí. Al activarla quedan fijos.
+              </p>
+            </div>
+            <div class="mb-6">
+              <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
+                >Tipo</label
+              >
+              <div class="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                @for (t of editableTypes; track t) {
+                  <button
+                    type="button"
+                    (click)="switchType(t)"
+                    class="px-3.5 py-2 text-sm font-semibold border-l border-gray-200 first:border-l-0 transition-colors"
+                    [class]="
+                      form.type === t
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    "
+                  >
+                    {{ typeLabel(t) }}
+                  </button>
+                }
+              </div>
+            </div>
+            <ng-container [ngTemplateOutlet]="presentationForm" />
+            <ng-container [ngTemplateOutlet]="overlapsPanel" />
+          } @else {
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
             <div class="lg:col-span-5 space-y-6">
               @if (isDraft()) {
@@ -784,6 +844,13 @@ function vigPhrase(v: VigInput): string {
                       El precio y las unidades de este paquete se definen en cada fila de la tabla.
                     </p>
                   </div>
+                } @else if (form.type === 'qty_price_presentation') {
+                  <div class="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
+                    <p class="text-xs text-teal-700">
+                      El precio y las unidades se definen por regla, a la derecha. Cada regla cubre
+                      una presentación y combina sabores distintos que la compartan.
+                    </p>
+                  </div>
                 } @else if (form.type === 'combo') {
                   <div>
                     <label
@@ -854,14 +921,27 @@ function vigPhrase(v: VigInput): string {
                 @if (form.type === 'combo') {
                   <ng-container [ngTemplateOutlet]="comboItemsFields" />
                 } @else {
+                  <!-- Un borrador de "paquete por presentación" usa el formulario
+                       dedicado (rama de arriba), nunca esta columna. -->
                   <ng-container [ngTemplateOutlet]="scopeFields" />
                 }
+              } @else if (form.type === 'qty_price_presentation') {
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-2">
+                  <h3 class="text-sm font-semibold text-gray-800">Reglas por presentación</h3>
+                  @for (r of (editingPromo()?.presentation_rules ?? []); track r.presentation_id) {
+                    <p class="text-sm text-gray-700">
+                      {{ r.min_qty }} × {{ r.presentation_name }} por {{ money(+r.pack_price) }}
+                      <span class="text-gray-400">· {{ r.applicable_variant_count }} productos</span>
+                    </p>
+                  }
+                </div>
               } @else {
                 <ng-container [ngTemplateOutlet]="scopeReadonly" />
               }
               <ng-container [ngTemplateOutlet]="overlapsPanel" />
             </div>
           </div>
+          }
 
           <div
             class="sticky bottom-0 -mx-4 md:-mx-6 mt-6 px-4 md:px-6 py-3 bg-gray-50/95 backdrop-blur border-t border-gray-200"
@@ -961,6 +1041,79 @@ function vigPhrase(v: VigInput): string {
               class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold"
             >
               {{ svc.isSubmitting() ? 'Duplicando…' : 'Duplicar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- spec 040 · FR-006: solape con otra promoción por presentación activa -->
+    @if (svc.presentationConflicts(); as conflict) {
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <h2 class="text-lg font-bold text-red-700">{{ conflict.error }}</h2>
+          <ul class="text-sm text-gray-800 list-disc pl-5 space-y-1">
+            @for (c of conflict.conflicts; track c.promotion_id) {
+              <li>
+                <strong>{{ c.promotion_name }}</strong> ya cubre esa presentación.
+              </li>
+            }
+          </ul>
+          <p class="text-sm text-gray-600">
+            Edita o pausa esa promoción, o elige otra presentación para esta regla.
+          </p>
+          <div class="flex justify-end">
+            <button
+              type="button"
+              (click)="svc.presentationConflicts.set(null)"
+              class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- spec 040 · FR-017 / FR-022: confirmación explícita -->
+    @if (svc.presentationPriceCheck(); as check) {
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <h2 class="text-lg font-bold text-amber-700">{{ check.error }}</h2>
+          @if (check.variants?.length) {
+            <div class="text-sm text-gray-700 space-y-1">
+              <p>
+                Se cobrará el precio de referencia
+                <strong>{{ money(+check.reference_unit_price) }}</strong> a todas las unidades:
+              </p>
+              <ul class="list-disc pl-5">
+                @for (v of check.variants; track v.variant_id) {
+                  <li>{{ v.description }} — {{ money(+v.price) }}</li>
+                }
+              </ul>
+            </div>
+          } @else if (check.pack_unit_price) {
+            <p class="text-sm text-gray-700">
+              El precio por unidad del paquete ({{ money(+check.pack_unit_price) }}) no es menor que
+              el precio de referencia ({{ money(+check.reference_unit_price) }}): la regla no
+              representa un descuento.
+            </p>
+          }
+          <div class="flex justify-end gap-2">
+            <button
+              type="button"
+              (click)="svc.presentationPriceCheck.set(null)"
+              class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl"
+            >
+              Revisar
+            </button>
+            <button
+              type="button"
+              (click)="confirmPresentationPriceCheck()"
+              [disabled]="svc.isSubmitting()"
+              class="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-xl hover:bg-amber-700 disabled:opacity-50"
+            >
+              Guardar de todos modos
             </button>
           </div>
         </div>
@@ -1153,6 +1306,403 @@ function vigPhrase(v: VigInput): string {
         @if (scopeIncomplete() && (touched['name'] || touched['value'])) {
           <p class="text-xs text-red-500 mt-2">Elige a qué aplica: es el paso que más se olvida.</p>
         }
+      </div>
+    </ng-template>
+
+    <!--
+      spec 040 · formulario dedicado de "promoción por presentación" (crear + editar
+      borrador). Reproduce la estructura del mockup de spec.md §Assumptions —
+      "Información General" + "Configuración de Reglas" a la izquierda, "Productos
+      Aplicables" + "Resumen de la Regla" a la derecha — con el estilo Tailwind
+      actual de la app (sin Material 3).
+    -->
+    <ng-template #presentationForm>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start max-w-5xl">
+        <!-- ── Columna izquierda ─────────────────────────────────────────── -->
+        <div class="lg:col-span-2 space-y-5">
+          <!-- Card: Información General -->
+          <section class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-3">
+              <span
+                class="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4M12 8h.01" />
+                </svg>
+              </span>
+              <div>
+                <h3 class="text-sm font-bold text-gray-900">Información General</h3>
+                <p class="text-xs text-gray-500">
+                  Detalles básicos para identificar la promoción.
+                </p>
+              </div>
+            </div>
+            <div class="p-5 space-y-4">
+              <div>
+                <label
+                  class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                  >Nombre de la promoción</label
+                >
+                <input
+                  [(ngModel)]="form.name"
+                  (blur)="touch('name')"
+                  type="text"
+                  maxlength="255"
+                  placeholder="Ej: 2 x 8oz por $12.000 (Lun–Jue)"
+                  class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                @if (touched['name'] && !form.name.trim()) {
+                  <p class="text-xs text-red-500 mt-1">
+                    Ponle un nombre para reconocerla en la lista.
+                  </p>
+                }
+              </div>
+
+              <div>
+                <label
+                  class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                  >Descripción (opcional)</label
+                >
+                <textarea
+                  [(ngModel)]="form.description"
+                  rows="2"
+                  maxlength="2000"
+                  placeholder="Para qué es esta promoción, o cualquier detalle que el equipo deba saber."
+                  class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                ></textarea>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Fecha de inicio (opcional)</label
+                  >
+                  <input
+                    [(ngModel)]="form.starts_at"
+                    type="date"
+                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Fecha de fin (opcional)</label
+                  >
+                  <input
+                    [(ngModel)]="form.ends_at"
+                    type="date"
+                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+              </div>
+              @if (invalidDateRange()) {
+                <p class="text-xs text-red-500 -mt-2">
+                  La fecha de fin no puede ser anterior al inicio.
+                </p>
+              }
+
+              <div>
+                <label
+                  class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
+                  >Días de aplicación</label
+                >
+                <div class="flex flex-wrap gap-2">
+                  @for (d of days; track d.idx) {
+                    <button
+                      type="button"
+                      (click)="toggleDay(d.idx)"
+                      class="px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors"
+                      [class]="
+                        form.days_of_week.includes(d.idx)
+                          ? 'border-indigo-600 bg-indigo-600 text-white'
+                          : 'border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600'
+                      "
+                    >
+                      {{ d.label }}
+                    </button>
+                  }
+                </div>
+                <p class="text-[11px] text-gray-400 mt-1.5">Vacío = todos los días.</p>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Hora de inicio</label
+                  >
+                  <input
+                    [(ngModel)]="form.start_time"
+                    type="time"
+                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Hora de fin</label
+                  >
+                  <input
+                    [(ngModel)]="form.end_time"
+                    type="time"
+                    class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+              </div>
+              @if (halfTimeWindow()) {
+                <p class="text-xs text-red-500 -mt-2">
+                  Pon la hora de inicio y la de fin, o quita las dos.
+                </p>
+              } @else {
+                <p class="text-[11px] text-gray-400 -mt-2">
+                  Vacío = todo el día. Se admite cruzar la medianoche (ej. 10 p. m. a 2 a. m.).
+                </p>
+              }
+
+              @if (showAdvanced()) {
+                <div class="pt-3 border-t border-gray-100">
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2"
+                    >Prioridad</label
+                  >
+                  <div class="flex flex-wrap gap-2 items-center">
+                    @for (p of priorityPresets; track p.value) {
+                      <button
+                        type="button"
+                        (click)="form.priority = p.value"
+                        [class]="pickerChipClass(form.priority === p.value)"
+                      >
+                        {{ p.label }}
+                      </button>
+                    }
+                    <span class="text-[11px] text-gray-400">
+                      Cuando dos promociones aplican al mismo producto, gana la de mayor prioridad.
+                    </span>
+                  </div>
+                </div>
+              } @else {
+                <button
+                  type="button"
+                  (click)="toggleAdvanced()"
+                  class="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  + Más opciones (prioridad)
+                </button>
+              }
+            </div>
+          </section>
+
+          <!-- Card: Configuración de Reglas -->
+          <section
+            class="bg-white rounded-2xl border-2 border-indigo-200 shadow-sm overflow-hidden relative"
+          >
+            <div class="absolute inset-y-0 left-0 w-1 bg-indigo-600"></div>
+            <div class="px-5 py-4 border-b border-gray-100 bg-indigo-50/50 flex items-center gap-3">
+              <span
+                class="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                >
+                  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+                </svg>
+              </span>
+              <div>
+                <h3 class="text-sm font-bold text-gray-900">Configuración de Reglas</h3>
+                <p class="text-xs text-gray-500">Define el alcance y la mecánica del descuento.</p>
+              </div>
+            </div>
+            <div class="p-5 space-y-4">
+              @if (presentationOptions().length === 0) {
+                <p class="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                  No hay presentaciones activas. Crea alguna en
+                  <a routerLink="/dashboard/presentations" class="underline">Presentaciones</a>
+                  primero.
+                </p>
+              }
+
+              @for (rule of form.presentationRules; track $index) {
+                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 relative group">
+                  @if (form.presentationRules.length > 1) {
+                    <button
+                      type="button"
+                      (click)="removePresentationRule($index)"
+                      title="Quitar regla"
+                      class="absolute -right-2 -top-2 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center shadow opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                      </svg>
+                    </button>
+                  }
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label
+                        class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                        >Presentación</label
+                      >
+                      <select
+                        [(ngModel)]="rule.presentation_id"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      >
+                        <option value="">Elige una presentación…</option>
+                        @for (p of presentationOptionsFor($index); track p.id) {
+                          <option [value]="p.id">{{ p.name }}</option>
+                        }
+                      </select>
+                    </div>
+                    <div>
+                      <label
+                        class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                        >Cantidad</label
+                      >
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-xs text-gray-500 shrink-0">Al comprar</span>
+                        <input
+                          type="number"
+                          min="1"
+                          [(ngModel)]="rule.min_qty"
+                          class="w-full min-w-0 px-2 py-2 text-center border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        />
+                        <span class="text-xs text-gray-500 shrink-0">uds.</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label
+                        class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                        >Precio total</label
+                      >
+                      <div
+                        class="flex items-center gap-1 border border-indigo-300 rounded-lg px-2.5 py-1.5 bg-white"
+                      >
+                        <span class="text-indigo-600 text-sm font-bold">$</span>
+                        <app-money-input
+                          [ngModel]="rule.pack_price"
+                          (ngModelChange)="rule.pack_price = $event ?? 0"
+                          [bordered]="false"
+                          sizeClass="text-sm font-bold text-indigo-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <button
+                type="button"
+                (click)="addPresentationRule()"
+                [disabled]="form.presentationRules.length >= presentationOptions().length"
+                class="w-full py-3 border-2 border-dashed border-indigo-300 rounded-lg text-indigo-600 text-sm font-semibold hover:bg-indigo-50 hover:border-indigo-400 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                + Añadir regla de presentación
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <!-- ── Columna derecha ───────────────────────────────────────────── -->
+        <div class="space-y-5">
+          <section class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <h4 class="text-sm font-bold text-gray-900 flex items-center gap-2 mb-3">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                class="text-emerald-600"
+              >
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <path d="M22 4 12 14.01l-3-3" />
+              </svg>
+              Productos Aplicables
+            </h4>
+            @if (completePresentationRules().length === 0) {
+              <p class="text-sm text-gray-500 leading-relaxed">
+                Elige una presentación en cada regla y aquí verás a cuántos productos alcanza.
+              </p>
+            } @else {
+              <div class="space-y-3 text-sm text-gray-600 leading-relaxed">
+                @for (rule of form.presentationRules; track $index) {
+                  @if (rule.presentation_id) {
+                    <p>
+                      Aplica automáticamente a
+                      <strong>{{ ruleApplicableCount($index) ?? 0 }}</strong>
+                      producto(s) que cuenten con la presentación
+                      <span
+                        class="bg-gray-100 px-2 py-0.5 rounded text-gray-800 font-medium border border-gray-200"
+                        >{{ presentationRuleName(rule.presentation_id) }}</span
+                      >, sin importar su sabor o categoría (incluye los que se creen después).
+                    </p>
+                  }
+                }
+              </div>
+            }
+          </section>
+
+          <section class="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
+            <h4
+              class="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider mb-2 flex items-center gap-1.5"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+              </svg>
+              Resumen de la Regla
+            </h4>
+            @if (completePresentationRules().length === 0) {
+              <p class="text-sm text-indigo-900/70">Sin reglas completas todavía.</p>
+            } @else {
+              <p class="text-sm text-indigo-900 font-medium leading-relaxed">
+                Esta promoción aplicará las siguientes reglas:
+              </p>
+              <ul class="mt-2 space-y-1 text-sm text-indigo-900">
+                @for (rule of form.presentationRules; track $index) {
+                  @if (rule.presentation_id) {
+                    <li>
+                      • {{ rule.min_qty }}x
+                      <strong>{{ presentationRuleName(rule.presentation_id) }}</strong>:
+                      <strong>{{ money(rule.pack_price) }}</strong>
+                    </li>
+                  }
+                }
+              </ul>
+            }
+          </section>
+        </div>
       </div>
     </ng-template>
 
@@ -1490,6 +2040,7 @@ function vigPhrase(v: VigInput): string {
 export class PromotionsPageComponent implements OnInit {
   readonly svc = inject(PromotionService);
   readonly categories = inject(CategoryService);
+  readonly presentations = inject(PresentationService);
   /** Público: la plantilla se lo pasa a `<app-scope-picker>` como catálogo. */
   readonly menu = inject(MenuService);
   private readonly confirm = inject(ConfirmService);
@@ -1520,7 +2071,16 @@ export class PromotionsPageComponent implements OnInit {
   readonly days = DAY_SHORT.map((label, idx) => ({ label, idx }));
   readonly statusTabs = STATUS_TABS;
   readonly priorityPresets = PRIORITY_PRESETS;
-  readonly editableTypes: PromotionType[] = ['percent', 'fixed', 'qty_price', 'combo'];
+  readonly editableTypes: PromotionType[] = [
+    'percent',
+    'fixed',
+    'qty_price',
+    'qty_price_presentation',
+    'combo',
+  ];
+
+  /** spec 040: presentaciones activas para el editor de reglas. */
+  readonly presentationOptions = computed(() => this.presentations.activePresentations());
 
   /**
    * Catálogo completo desde `GET /menu` (una sola llamada, sin paginar). Antes
@@ -1629,6 +2189,7 @@ export class PromotionsPageComponent implements OnInit {
     this.svc.loadOverlapCandidates();
     if (this.categories.allCategories().length === 0) this.categories.loadAllCategories();
     if (this.menu.categories().length === 0) this.menu.loadMenu();
+    if (this.presentations.presentations().length === 0) void this.presentations.loadPresentations();
   }
 
   // ── Filtros de la lista ──────────────────────────────────────────────
@@ -1673,7 +2234,7 @@ export class PromotionsPageComponent implements OnInit {
   emptyMessage(): string {
     if (this.isFiltered())
       return 'Prueba con otro término de búsqueda o quita el filtro de estado.';
-    return 'Crea un descuento que se aplique solo, un paquete a precio cerrado, o un combo que el cajero elija al vender.';
+    return 'Crea un descuento que se aplique solo, o un paquete por presentación que combine sabores distintos a precio cerrado.';
   }
 
   // ── Navegación del asistente ─────────────────────────────────────────
@@ -1683,24 +2244,19 @@ export class PromotionsPageComponent implements OnInit {
     this.screen.set('type');
   }
 
-  chooseKind(kind: 'discount' | 'pack'): void {
-    // if (kind === 'combo') {
-    //   this.form.type = 'combo';
-    //   this.form.min_qty = 1;
-    // } else
-
-    if (kind === 'pack') {
-      this.form.type = 'qty_price';
-      // Un paquete no puede aplicar a "toda la venta": el precio vive en cada fila.
-      this.scopeMode.set('pick');
-      // El backend exige `min_qty >= 2` para `qty_price`: un paquete de 1 es un
-      // precio, no una promoción.
-      if (this.form.min_qty < 2) this.form.min_qty = 2;
-    } else {
-      this.form.type = 'percent';
-      this.form.min_qty = 1;
+  chooseKind(kind: 'discount' | 'presentation'): void {
+    // spec 040: "Paquete" (`qty_price`) salió del selector de creación. El tipo
+    // sigue soportado en el backend y editable — `@case ('pack')` / `switchType`
+    // se conservan para las promociones `qty_price` que ya existen.
+    if (kind === 'presentation') {
+      this.switchType('qty_price_presentation');
+      this.screen.set('presentation');
+      return;
     }
-    this.screen.set(kind);
+
+    this.form.type = 'percent';
+    this.form.min_qty = 1;
+    this.screen.set('discount');
   }
 
   backToType(): void {
@@ -1720,6 +2276,7 @@ export class PromotionsPageComponent implements OnInit {
   private formScreen(): Screen {
     if (this.form.type === 'combo') return 'combo';
     if (this.form.type === 'qty_price') return 'pack';
+    if (this.form.type === 'qty_price_presentation') return 'presentation';
     return 'discount';
   }
 
@@ -1778,6 +2335,11 @@ export class PromotionsPageComponent implements OnInit {
           min_qty: t.min_qty,
         })),
       comboItems: p.combo_items.map((c) => ({ ...c })),
+      presentationRules: (p.presentation_rules ?? []).map((r) => ({
+        presentation_id: r.presentation_id,
+        min_qty: r.min_qty,
+        pack_price: Number(r.pack_price),
+      })),
     };
   }
 
@@ -1799,7 +2361,91 @@ export class PromotionsPageComponent implements OnInit {
     } else {
       this.form.comboItems = [];
     }
+    if (type === 'qty_price_presentation') {
+      // spec 040: el alcance vive en las reglas, no en targets ni "toda la venta".
+      this.form.categoryTargets = [];
+      this.form.productTargets = [];
+      if (this.form.presentationRules.length === 0) this.addPresentationRule();
+    } else {
+      this.form.presentationRules = [];
+    }
     if (type === 'percent' && this.form.value > 100) this.form.value = 0;
+  }
+
+  // ── Reglas por presentación (spec 040) ───────────────────────────────
+
+  addPresentationRule(): void {
+    this.form.presentationRules = [
+      ...this.form.presentationRules,
+      { presentation_id: '', min_qty: 2, pack_price: 0 },
+    ];
+  }
+
+  removePresentationRule(index: number): void {
+    this.form.presentationRules = this.form.presentationRules.filter((_, i) => i !== index);
+  }
+
+  presentationRuleName(id: string): string {
+    return this.presentationOptions().find((p) => p.id === id)?.name ?? '';
+  }
+
+  /** "Productos aplicables" de la regla (FR-005): del catálogo de presentaciones. */
+  ruleApplicableCount(index: number): number | null {
+    const id = this.form.presentationRules[index]?.presentation_id;
+    if (!id) return null;
+    return this.presentations.presentations().find((p) => p.id === id)?.applicable_variant_count ?? null;
+  }
+
+  /** Reglas con presentación elegida — alimenta los paneles "Productos
+   *  Aplicables" y "Resumen de la Regla" del formulario (FR-005). */
+  completePresentationRules(): PresentationRuleForm[] {
+    return this.form.presentationRules.filter((r) => !!r.presentation_id);
+  }
+
+  /** Presentaciones ya elegidas en otra fila — no se pueden repetir (FR-006). */
+  private usedPresentationIds(exceptIndex: number): Set<string> {
+    return new Set(
+      this.form.presentationRules
+        .filter((_, i) => i !== exceptIndex)
+        .map((r) => r.presentation_id)
+        .filter(Boolean),
+    );
+  }
+
+  presentationOptionsFor(index: number): { id: string; name: string }[] {
+    const used = this.usedPresentationIds(index);
+    return this.presentationOptions().filter(
+      (p) => !used.has(p.id) || p.id === this.form.presentationRules[index]?.presentation_id,
+    );
+  }
+
+  private presentationRulesValid(): boolean {
+    const rules = this.form.presentationRules;
+    if (rules.length === 0) return false;
+    const ids = rules.map((r) => r.presentation_id);
+    if (ids.some((id) => !id) || new Set(ids).size !== ids.length) return false;
+    return rules.every((r) => r.min_qty >= 1 && r.pack_price >= 0);
+  }
+
+  /** Reenvía el guardado con el flag de confirmación de FR-017 o FR-022. */
+  async confirmPresentationPriceCheck(): Promise<void> {
+    const check = this.svc.presentationPriceCheck();
+    if (!check) return;
+    const flags = check.pack_unit_price
+      ? { confirm_sin_descuento: true }
+      : { confirm_precio_no_uniforme: true };
+    this.svc.presentationPriceCheck.set(null);
+    const id = this.editingId();
+    const result = id
+      ? await this.svc.updateShape(id, this.form, flags)
+      : await this.svc.create(this.form, 'draft', flags);
+    if (result) {
+      this.toast.success('Regla guardada');
+      this.backToList();
+    } else if (this.svc.presentationPriceCheck()) {
+      // el otro chequeo (uniformidad + sin descuento a la vez): repetir
+      await this.confirmPresentationPriceCheck();
+    }
   }
 
   // ── Validación ───────────────────────────────────────────────────────
@@ -1845,6 +2491,7 @@ export class PromotionsPageComponent implements OnInit {
     if (!this.form.name.trim()) return false;
     if (this.halfTimeWindow() || this.invalidDateRange()) return false;
     if (this.form.type === 'combo') return this.comboDistinctCount() >= 2 && this.numberValue() > 0;
+    if (this.form.type === 'qty_price_presentation') return this.presentationRulesValid();
     // En un paquete el precio está en cada fila; `form.value` es inerte.
     if (this.form.type !== 'qty_price') {
       if (this.numberValue() <= 0) return false;
@@ -1867,6 +2514,12 @@ export class PromotionsPageComponent implements OnInit {
         return 'Elige a qué productos aplica el paquete';
       const faltan = this.targetsSinPrecio();
       if (faltan) return `Falta el precio de ${faltan} ${faltan === 1 ? 'fila' : 'filas'}`;
+    } else if (this.form.type === 'qty_price_presentation') {
+      if (this.form.presentationRules.length === 0) return 'Agrega al menos una regla';
+      if (this.form.presentationRules.some((r) => !r.presentation_id))
+        return 'Elige la presentación de cada regla';
+      const ids = this.form.presentationRules.map((r) => r.presentation_id);
+      if (new Set(ids).size !== ids.length) return 'Hay una presentación repetida';
     } else {
       if (this.numberValue() <= 0)
         return this.form.type === 'percent' ? 'Falta el porcentaje' : 'Falta el precio';
@@ -2174,6 +2827,8 @@ export class PromotionsPageComponent implements OnInit {
         return 'Combo';
       case 'qty_price':
         return 'Paquete';
+      case 'qty_price_presentation':
+        return 'Paquete por presentación';
       case 'fixed':
         return 'Monto fijo';
       default:
@@ -2184,6 +2839,7 @@ export class PromotionsPageComponent implements OnInit {
   typeBadgeClass(type: PromotionType): string {
     if (type === 'combo') return 'bg-gray-100 text-gray-600';
     if (type === 'qty_price') return 'bg-violet-50 text-violet-700';
+    if (type === 'qty_price_presentation') return 'bg-teal-50 text-teal-700';
     return 'bg-indigo-50 text-indigo-700';
   }
 
@@ -2202,6 +2858,15 @@ export class PromotionsPageComponent implements OnInit {
           return `${p.targets[0].min_qty} por ${this.money(Number(p.targets[0].value))}`;
         }
         return `Precio por producto (${terms.length})`;
+      }
+      case 'qty_price_presentation': {
+        // spec 040: el precio vive por regla. Si hay una sola, se muestra; si no,
+        // se resume el número de presentaciones cubiertas.
+        const rules = p.presentation_rules ?? [];
+        if (rules.length === 1) {
+          return `${rules[0].min_qty} × ${rules[0].presentation_name} por ${this.money(Number(rules[0].pack_price))}`;
+        }
+        return `Precio por presentación (${rules.length})`;
       }
       default:
         return `${this.money(value)} el combo`;
@@ -2341,6 +3006,16 @@ export class PromotionsPageComponent implements OnInit {
 
   draftSummary(): string {
     const val = this.numberValue();
+    if (this.form.type === 'qty_price_presentation') {
+      const reglas = this.form.presentationRules
+        .filter((r) => r.presentation_id)
+        .map(
+          (r) =>
+            `${r.min_qty}x ${this.presentationRuleName(r.presentation_id)} por ${this.money(r.pack_price)}`,
+        )
+        .join('; ');
+      return `Paquetes por presentación (${reglas}), ${vigPhrase(this.form)}.`;
+    }
     if (this.form.type === 'combo') {
       const itemsTxt = this.form.comboItems
         .map((it) => {
@@ -2434,6 +3109,8 @@ export class PromotionsPageComponent implements OnInit {
   async save(status: 'draft' | 'active'): Promise<void> {
     const created = await this.svc.create(this.form, status);
     if (!created) {
+      // spec 040: los diálogos de FR-006 / FR-017 / FR-022 tienen su propio panel.
+      if (this.svc.presentationConflicts() || this.svc.presentationPriceCheck()) return;
       this.toast.error(this.svc.error() ?? 'No se pudo guardar');
       return;
     }
@@ -2468,6 +3145,7 @@ export class PromotionsPageComponent implements OnInit {
     if (original && this.isDraft() && this.shapeChanged(original)) {
       const shaped = await this.svc.updateShape(id, this.form);
       if (!shaped) {
+        if (this.svc.presentationConflicts() || this.svc.presentationPriceCheck()) return;
         this.toast.error(this.svc.error() ?? 'No se pudo cambiar el tipo o el alcance');
         return;
       }
@@ -2492,7 +3170,13 @@ export class PromotionsPageComponent implements OnInit {
         .map((i) => `${i.product_variant_id}:${i.quantity}`)
         .sort()
         .join('|');
-    return key(before.comboItems) !== key(this.form.comboItems);
+    if (key(before.comboItems) !== key(this.form.comboItems)) return true;
+    const ruleKey = (rules: { presentation_id: string; min_qty: number; pack_price: number }[]) =>
+      rules
+        .map((r) => `${r.presentation_id}:${r.min_qty}:${r.pack_price}`)
+        .sort()
+        .join('|');
+    return ruleKey(before.presentationRules) !== ruleKey(this.form.presentationRules);
   }
 
   // ── Duplicar ─────────────────────────────────────────────────────────

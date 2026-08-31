@@ -24,11 +24,23 @@ export interface ResolvedBusiness {
   logo_url: string | null;
 }
 
+/**
+ * Anuncio de una promoción de precio por presentación vigente en ese momento
+ * (spec 040, FR-021). Solo para mostrar la condición — no cambia precios.
+ */
+export interface MenuPromotionAnnouncement {
+  promotion_id: string;
+  promotion_name: string;
+  rules: { presentation_name: string; min_qty: number; pack_price: number; text: string }[];
+}
+
 /** Resultado de resolver el QR firmado: mesa + negocio + menú activo. */
 export interface ResolvedMenu {
   table: DinerTable;
   business: ResolvedBusiness | null;
   categories: MenuCategory[];
+  /** spec 040: anuncios de promociones por presentación vigentes ahora. */
+  promotions: MenuPromotionAnnouncement[];
 }
 
 /** Mapea grupos de opciones crudos; se usa a nivel de variante y de producto. */
@@ -314,6 +326,16 @@ export class DinerService {
           }
         : null,
       categories: (categoriesRaw as Record<string, unknown>[]).map((c) => this.mapCategory(c)),
+      promotions: ((raw['promotions'] as Record<string, unknown>[]) ?? []).map((p) => ({
+        promotion_id: p['promotion_id'] as string,
+        promotion_name: p['promotion_name'] as string,
+        rules: ((p['rules'] as Record<string, unknown>[]) ?? []).map((r) => ({
+          presentation_name: r['presentation_name'] as string,
+          min_qty: (r['min_qty'] as number) ?? 0,
+          pack_price: Number(r['pack_price']),
+          text: r['text'] as string,
+        })),
+      })),
     };
   }
 
