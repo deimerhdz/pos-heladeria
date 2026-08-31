@@ -5,67 +5,11 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { PromotionsPageComponent } from './promotions-page.component';
 
 /**
- * Spec 030, Historia 5 (FR-006): la ventana de vigencia de una promoción
- * (`starts_at`/`ends_at`) es string-a-string vía `[(ngModel)]` sobre
- * `input[type=date]` — nunca pasa por un `new Date(string)` intermedio que
- * pudiera correr el día por el offset del navegador. Test de regresión
- * preventivo (research.md Decisión 11): no hay defecto activo hoy, solo se
- * fija el comportamiento correcto. `Promotion.starts_at`/`ends_at` quedan
- * fuera del resto de esta spec (FR-009) — este test cubre únicamente el
- * formulario, no el motor de evaluación (A-07, protegido).
+ * spec 063 — el formulario pasó a "dos tipos + conjunto de variantes"
+ * (decisión de negocio A-58…A-65). Estos tests cubren el formulario en el
+ * cliente; el motor de evaluación y el bloqueo de solape los prueba el backend.
  */
-describe('PromotionsPageComponent — ventana de vigencia (FR-006)', () => {
-  let http: HttpTestingController;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideTanStackQuery(
-          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
-        ),
-      ],
-    });
-    http = TestBed.inject(HttpTestingController);
-  });
-
-  afterEach(() => {
-    http.match(() => true); // vacía las peticiones que el test no necesitó
-    http.verify();
-  });
-
-  it('starts_at/ends_at vuelven idénticos, sin corrimiento de día', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges(); // ngOnInit: dispara las cargas iniciales
-
-    const { form } = fixture.componentInstance;
-    form.starts_at = '2026-08-24';
-    form.ends_at = '2026-09-01';
-
-    expect(form.starts_at).toBe('2026-08-24');
-    expect(form.ends_at).toBe('2026-09-01');
-  });
-
-  it('un rango que cruza fin/inicio de año conserva ambos extremos tal cual', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges();
-
-    const { form } = fixture.componentInstance;
-    form.starts_at = '2025-12-31';
-    form.ends_at = '2026-01-01';
-
-    expect(form.starts_at).toBe('2025-12-31');
-    expect(form.ends_at).toBe('2026-01-01');
-  });
-});
-
-/**
- * Spec 040 — el selector "¿Qué quieres crear?" ya no ofrece "Paquete"
- * (`qty_price`); la única forma de paquete que se puede crear es "Paquete por
- * presentación" (`qty_price_presentation`), que abre el formulario dedicado.
- */
-describe('PromotionsPageComponent — spec 040', () => {
+describe('PromotionsPageComponent', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
@@ -86,42 +30,74 @@ describe('PromotionsPageComponent — spec 040', () => {
     http.verify();
   });
 
-  it('la pantalla de tipo no ofrece "Paquete" suelto, sí "Paquete por presentación"', () => {
+  it('la ventana de vigencia (date) va string-a-string, sin corrimiento de día', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
-    fixture.componentInstance.screen.set('type');
-    fixture.detectChanges();
 
-    const cards = Array.from(
-      fixture.nativeElement.querySelectorAll('button'),
-    ) as HTMLButtonElement[];
-    const titles = cards.map((b) => b.textContent?.trim() ?? '');
-    expect(titles.some((t) => t.includes('Paquete por presentación'))).toBe(true);
-    expect(titles.some((t) => /^Paquete\b/.test(t))).toBe(false);
+    const { form } = fixture.componentInstance;
+    form.starts_at = '2026-08-24';
+    form.ends_at = '2026-09-01';
+
+    expect(form.starts_at).toBe('2026-08-24');
+    expect(form.ends_at).toBe('2026-09-01');
   });
 
-  it('elegir "Paquete por presentación" abre el formulario dedicado con una regla vacía', () => {
+  it('el resumen (FR-005) describe el conjunto en lenguaje llano', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
-
-    fixture.componentInstance.chooseKind('presentation');
-
-    expect(fixture.componentInstance.screen()).toBe('presentation');
-    expect(fixture.componentInstance.form.type).toBe('qty_price_presentation');
-    expect(fixture.componentInstance.form.presentationRules.length).toBe(1);
-  });
-
-  it('el resumen y la validación reflejan las reglas por presentación', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges();
-
     const c = fixture.componentInstance;
-    c.chooseKind('presentation');
-    c.form.name = 'Promo 8oz';
-    c.form.presentationRules = [{ presentation_id: 'p1', min_qty: 2, pack_price: 12000 }];
 
-    expect(c.completePresentationRules().length).toBe(1);
-    expect(c.canSaveDraft()).toBe(true);
-    expect(c.draftSummary()).toContain('Paquetes por presentación');
+    c.form.type = 'package_price';
+    c.form.value = 12000;
+    c.form.min_qty = 2;
+    c.form.variantIds = ['a', 'b', 'c'];
+    expect(c.conditionPreview()).toContain('Llevando 2 de estas 3 variantes');
+
+    c.form.type = 'percent';
+    c.form.value = 10;
+    c.form.min_qty = 1;
+    expect(c.conditionPreview()).toBe('10% en estas 3 variantes');
+  });
+
+  it('FR-018: en una promoción activa el tipo/valor no son editables', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.editingSource.set({
+      id: 'p1',
+      name: 'activa',
+      description: null,
+      type: 'percent',
+      value: '10',
+      status: 'active',
+      starts_at: null,
+      ends_at: null,
+      days_of_week: null,
+      start_time: null,
+      end_time: null,
+      min_qty: 1,
+      closed_by_refactor_at: null,
+      condition_text: null,
+      variants: [],
+    });
+
+    expect(c.canEditShape()).toBe(false);
+    expect(c.canEditValue()).toBe(false);
+  });
+
+  it('el conjunto vacío invalida el formulario (FR-001)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    c.form.name = 'x';
+    c.form.value = 10;
+    c.form.variantIds = [];
+    expect(c.formValid()).toBe(false);
+
+    c.form.variantIds = ['a'];
+    expect(c.formValid()).toBe(true);
   });
 });
