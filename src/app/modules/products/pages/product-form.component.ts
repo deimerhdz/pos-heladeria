@@ -18,7 +18,6 @@ import {
 } from '@angular/cdk/drag-drop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
-import { PresentationService } from '../../presentations/services/presentation.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { buildUnitLookup, formatQuantity } from '../../inventory/services/unit-lookup';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
@@ -258,26 +257,6 @@ interface SlotBreakdown {
 
           @if (activeVariant(); as av) {
             <div class="mt-4 space-y-5">
-              <!-- spec 040: presentación de catálogo (opcional). -->
-              <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                  Presentación
-                </label>
-                <select
-                  [ngModel]="av.presentationId ?? ''"
-                  (ngModelChange)="setVariantField(av.localId, 'presentationId', $event || null)"
-                  class="w-56 px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                >
-                  <option value="">Sin presentación</option>
-                  @for (p of presentationService.activePresentations(); track p.id) {
-                    <option [value]="p.id">{{ p.name }}</option>
-                  }
-                </select>
-                <p class="text-xs text-gray-400 mt-1">
-                  Una variante sin presentación no participa de promociones por presentación.
-                </p>
-              </div>
-
               @if (!draft().hasSizes) {
                 <!-- Sin tamaños: una sola presentación; el nombre y el orden no aplican. -->
                 <div class="flex flex-wrap items-end gap-3">
@@ -461,7 +440,6 @@ interface SlotBreakdown {
 export class ProductFormComponent implements OnInit, OnDestroy {
   readonly service = inject(ProductService);
   readonly categoryService = inject(CategoryService);
-  readonly presentationService = inject(PresentationService);
   readonly inventoryService = inject(InventoryService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly unitMeasureService = inject(UnitMeasureService);
@@ -746,9 +724,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
         ? this.unitMeasureService.loadUnitMeasures()
         : null,
       this.optionGroupService.groups().length === 0 ? this.optionGroupService.loadGroups() : null,
-      this.presentationService.presentations().length === 0
-        ? this.presentationService.loadPresentations()
-        : null,
     ]);
 
     const id = this.route.snapshot.paramMap.get('id');
@@ -792,7 +767,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: this.nextLid(),
       name,
       price,
-      presentationId: null,
       recipe: [],
       optionGroups: [],
     };
@@ -967,7 +941,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: dv.id,
       name: dv.name,
       price: dv.price,
-      presentationId: null,
       recipe,
       optionGroups,
     };
@@ -1009,7 +982,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
 
   setVariantField(
     localId: string,
-    field: 'name' | 'price' | 'presentationId',
+    field: 'name' | 'price',
     value: string | number | null,
   ): void {
     this.draft.update((d) => ({

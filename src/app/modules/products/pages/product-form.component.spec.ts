@@ -13,7 +13,6 @@ import type { VariantDraft } from '../interfaces/product.interface';
 import { environment } from '../../../../environments/environment';
 import { ProductFormComponent } from './product-form.component';
 import { CategoryService } from '../../categories/services/category.service';
-import { PresentationService } from '../../presentations/services/presentation.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
@@ -35,11 +34,6 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 class FakeCategoryService {
   allCategories = signal<{ id: string; name: string }[]>([{ id: 'c1', name: 'Helados' }]);
   loadAllCategories(): void {}
-}
-class FakePresentationService {
-  presentations = signal<unknown[]>([]);
-  activePresentations = signal<unknown[]>([]);
-  async loadPresentations(): Promise<void> {}
 }
 class FakeInventoryService {
   allItems = signal<unknown[]>([]);
@@ -73,7 +67,6 @@ describe('ProductFormComponent', () => {
           new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
         ),
         { provide: CategoryService, useClass: FakeCategoryService },
-        { provide: PresentationService, useClass: FakePresentationService },
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
@@ -283,7 +276,6 @@ describe('ProductFormComponent', () => {
           new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
         ),
         { provide: CategoryService, useClass: FakeCategoryService },
-        { provide: PresentationService, useClass: FakePresentationService },
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
