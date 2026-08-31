@@ -8,6 +8,8 @@ import { LayoutService } from './layout.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { User, UserRole } from '../../../core/interfaces/user.interface';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { PlanSummary } from '../../plan/interfaces/plan-summary.interface';
 
 function makeUser(partial: Partial<User>): User {
   return {
@@ -21,8 +23,21 @@ function makeUser(partial: Partial<User>): User {
   };
 }
 
+function makeSummary(partial: Partial<PlanSummary>): PlanSummary {
+  return {
+    plan_name: 'Pro',
+    ciclo_facturacion: 'mensual',
+    plan_vence_en: null,
+    vencido: false,
+    resources: {},
+    modules: { inventario: true, compras: true, promociones: true },
+    ...partial,
+  };
+}
+
 describe('SidebarComponent.visibleItems', () => {
   const currentUser = signal<User | null>(null);
+  const planSummary = signal<PlanSummary | null>(null);
 
   function createComponent(): SidebarComponent {
     TestBed.configureTestingModule({
@@ -33,6 +48,7 @@ describe('SidebarComponent.visibleItems', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: AuthService, useValue: { currentUser } },
+        { provide: PlanSummaryService, useValue: { summary: planSummary } },
       ],
     });
     return TestBed.createComponent(SidebarComponent).componentInstance;
@@ -47,6 +63,7 @@ describe('SidebarComponent.visibleItems', () => {
       '/super-admin/tenants',
       '/super-admin/users',
       '/super-admin/payment-methods-catalog',
+      '/super-admin/plans',
     ]);
     expect(sidebar.isSuperAdmin()).toBe(true);
   });
@@ -65,6 +82,59 @@ describe('SidebarComponent.visibleItems', () => {
     currentUser.set(null);
     const sidebar = createComponent();
     expect(sidebar.visibleItems()).toEqual([]);
+  });
+
+  // Spec 033 (Historias 4/5): un ítem con `moduleKey` (Inventario, Promociones)
+  // no debe aparecer en el sidebar si el plan vigente del tenant no lo incluye,
+  // ni si el tenant está vencido — mismo criterio que `plan-module.guard.ts`,
+  // que ya bloquea el acceso directo por URL a esas mismas rutas.
+  it('hides module-gated items the plan does not include', () => {
+    currentUser.set(makeUser({ isSuperAdmin: false, role: UserRole.ADMIN }));
+    planSummary.set(makeSummary({ modules: { inventario: false, compras: true, promociones: true } }));
+    const sidebar = createComponent();
+
+    const routes = sidebar.visibleItems().map((i) => i.route);
+    expect(routes).not.toContain('/dashboard/inventario');
+    expect(routes).toContain('/dashboard/promotions');
+  });
+
+  it('shows module-gated items the plan does include', () => {
+    currentUser.set(makeUser({ isSuperAdmin: false, role: UserRole.ADMIN }));
+    planSummary.set(makeSummary({ modules: { inventario: true, compras: true, promociones: true } }));
+    const sidebar = createComponent();
+
+    expect(sidebar.visibleItems().map((i) => i.route)).toContain('/dashboard/inventario');
+  });
+
+  it('hides all module-gated items when the tenant is vencido, regardless of module flags', () => {
+    currentUser.set(makeUser({ isSuperAdmin: false, role: UserRole.ADMIN }));
+    planSummary.set(makeSummary({ vencido: true, modules: { inventario: true, compras: true, promociones: true } }));
+    const sidebar = createComponent();
+
+    const routes = sidebar.visibleItems().map((i) => i.route);
+    expect(routes).not.toContain('/dashboard/inventario');
+    expect(routes).not.toContain('/dashboard/promotions');
+  });
+
+  it('fails open (keeps items visible) while the plan summary has not loaded yet', () => {
+    currentUser.set(makeUser({ isSuperAdmin: false, role: UserRole.ADMIN }));
+    planSummary.set(null);
+    const sidebar = createComponent();
+
+    expect(sidebar.visibleItems().map((i) => i.route)).toContain('/dashboard/inventario');
+  });
+
+  it('does not apply plan gating to super admin navigation', () => {
+    currentUser.set(makeUser({ isSuperAdmin: true, role: UserRole.SUPER_ADMIN, tenantId: null }));
+    planSummary.set(makeSummary({ modules: { inventario: false, compras: false, promociones: false } }));
+    const sidebar = createComponent();
+
+    expect(sidebar.visibleItems().map((i) => i.route)).toEqual([
+      '/super-admin/tenants',
+      '/super-admin/users',
+      '/super-admin/payment-methods-catalog',
+      '/super-admin/plans',
+    ]);
   });
 });
 

@@ -76,6 +76,7 @@ export const dashboardRoutes: Routes = [
               import('../unit-measures/pages/unit-measures-page.component').then(
                 (m) => m.UnitMeasuresPageComponent,
               ),
+            canActivate: [planModuleGuard('inventario')],
           },
           {
             path: 'grupos-opciones',
@@ -105,6 +106,15 @@ export const dashboardRoutes: Routes = [
         loadComponent: () =>
           import('../categories/pages/categories-page.component').then(
             (m) => m.CategoriesPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
+      {
+        // spec 040: catálogo de presentaciones compartido del tenant.
+        path: 'presentations',
+        loadComponent: () =>
+          import('../presentations/pages/presentations-page.component').then(
+            (m) => m.PresentationsPageComponent,
           ),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },

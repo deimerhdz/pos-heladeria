@@ -6,6 +6,7 @@ import { SidebarComponent } from './sidebar.component';
 import { HeaderComponent } from './header.component';
 import { LayoutService } from './layout.service';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { ToastContainerComponent } from '../../../shared/feedback/toast-container.component';
 import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.component';
 
@@ -51,10 +52,16 @@ import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.
 export class DashboardLayoutComponent implements OnInit {
   readonly layoutService = inject(LayoutService);
   private readonly tenantInfo = inject(TenantInfoService);
+  private readonly planSummaryService = inject(PlanSummaryService);
 
-  /** Carga el branding del negocio una vez para todo el dashboard (lo pinta el sidebar). */
+  /** Carga branding y plan una vez para todo el dashboard (los lee el sidebar
+   * para pintar el logo/nombre y para ocultar ítems que el plan no incluye,
+   * spec 033 Historias 4/5). Para super admin `GET /plan` no aplica (sin
+   * tenant); falla en silencio igual que ya hace `tenantInfo` en ese caso, y
+   * el sidebar de super admin no usa `moduleKey` de todos modos. */
   ngOnInit(): void {
     void this.tenantInfo.load();
+    void this.planSummaryService.load();
   }
 
   constructor() {
