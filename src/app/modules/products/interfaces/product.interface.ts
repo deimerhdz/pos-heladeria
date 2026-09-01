@@ -9,6 +9,14 @@
 /** How a product is prepared. `prepared` = hecho al momento; `packaged` = empacado. */
 export type PreparationType = 'prepared' | 'packaged';
 
+/**
+ * Tipo de precio de un grupo de opciones (spec 064). `incluido` = ya cubierto por el
+ * precio de la presentación (un sabor de helado); sus opciones no pueden llevar
+ * `extra_price` distinto de $0. `con_recargo` = cada opción cobra su propio precio (un
+ * topping).
+ */
+export type OptionGroupPricingType = 'incluido' | 'con_recargo';
+
 // --- Products ---
 
 /** A product (list/detail). Mirrors backend `ProductResponse`/`ProductListResponse`. */
@@ -160,6 +168,7 @@ export interface OptionGroup {
   min_select: number;
   max_select: number;
   active: boolean;
+  pricing_type: OptionGroupPricingType;
   options: Option[];
 }
 
@@ -168,13 +177,16 @@ export interface OptionGroupForm {
   name: string;
   min_select: number;
   max_select: number;
+  pricing_type: OptionGroupPricingType | null;
 }
 
-/** `POST /option-groups` (`OptionGroupCreate`). */
+/** `POST /option-groups` (`OptionGroupCreate`). `pricing_type` es obligatorio (FR-001):
+ *  sin default de negocio razonable entre "incluido" y "con_recargo". */
 export interface OptionGroupCreatePayload {
   name: string;
   min_select: number;
   max_select: number;
+  pricing_type: OptionGroupPricingType;
 }
 
 /** `PATCH /option-groups/{id}` (`OptionGroupUpdate`). Partial: only sent fields apply. */
@@ -183,6 +195,7 @@ export interface OptionGroupUpdatePayload {
   min_select?: number;
   max_select?: number;
   active?: boolean;
+  pricing_type?: OptionGroupPricingType;
 }
 
 /** Editable fields captured by the option form. */

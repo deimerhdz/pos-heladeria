@@ -10,6 +10,7 @@ import {
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { OptionGroup, OptionGroupForm } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 
 @Component({
   selector: 'app-option-group-form',
@@ -51,6 +52,28 @@ import { OptionGroupService } from '../services/option-group.service';
           </div>
           <p class="text-xs text-gray-400">Ej. Sabores 1–3, Toppings 0–5. El mínimo obliga a elegir; el máximo limita.</p>
 
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de precio *</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="flex items-start gap-2 border rounded-xl p-3 cursor-pointer text-sm"
+                [class]="form.value.pricing_type === 'incluido' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                <input type="radio" formControlName="pricing_type" value="incluido" class="mt-0.5">
+                <span>
+                  <span class="block font-medium text-gray-800">Incluido</span>
+                  <span class="block text-xs text-gray-500">Ya cubierto por el precio de la presentación (un sabor de helado). Sus opciones no pueden cobrar recargo.</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 border rounded-xl p-3 cursor-pointer text-sm"
+                [class]="form.value.pricing_type === 'con_recargo' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                <input type="radio" formControlName="pricing_type" value="con_recargo" class="mt-0.5">
+                <span>
+                  <span class="block font-medium text-gray-800">Con recargo</span>
+                  <span class="block text-xs text-gray-500">Cada opción cobra su propio precio (un topping).</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           @if (service.error()) {
             <p class="text-red-600 text-sm">{{ service.error() }}</p>
           }
@@ -78,11 +101,16 @@ export class OptionGroupFormComponent implements OnInit {
 
   readonly service = inject(OptionGroupService);
   private readonly fb = inject(FormBuilder);
+  private readonly confirm = inject(ConfirmService);
 
   form: FormGroup = this.fb.group({
     name: ['', Validators.required],
     min_select: [0, [Validators.required, Validators.min(0)]],
     max_select: [1, [Validators.required, Validators.min(1)]],
+    // Sin default (FR-001): el administrador debe elegir un tipo explícito antes de
+    // poder guardar, tanto al crear como -- si el grupo se migró antes de esta
+    // funcionalidad -- al editar uno existente.
+    pricing_type: [null, Validators.required],
   });
 
   ngOnInit(): void {
@@ -92,6 +120,7 @@ export class OptionGroupFormComponent implements OnInit {
         name: this.group.name,
         min_select: this.group.min_select,
         max_select: this.group.max_select,
+        pricing_type: this.group.pricing_type,
       });
     }
   }
@@ -106,7 +135,31 @@ export class OptionGroupFormComponent implements OnInit {
       name: val.name.trim(),
       min_select: Number(val.min_select),
       max_select: Number(val.max_select),
+      pricing_type: val.pricing_type,
     };
+
+    // FR-004: reclasificar de "con_recargo" a "incluido" fuerza $0 en todas las
+    // opciones del grupo -- pedir confirmación explícita si alguna ya tiene precio.
+    if (
+      this.group &&
+      this.group.pricing_type === 'con_recargo' &&
+      formData.pricing_type === 'incluido' &&
+      this.group.options.some((o) => o.extra_price > 0)
+    ) {
+      const ok = await this.confirm.ask({
+        title: 'Cambiar a "Incluido"',
+        message:
+          'Todas las opciones de este grupo quedarán en $0 -- ya no podrán cobrar recargo. ' +
+          'Los demás datos (insumo, cantidad de consumo) no se ven afectados.',
+        confirmText: 'Cambiar a Incluido',
+        tone: 'danger',
+      });
+      if (!ok) {
+        this.form.patchValue({ pricing_type: this.group.pricing_type });
+        return;
+      }
+    }
+
     const ok = this.group
       ? await this.service.updateGroup(this.group.id, formData)
       : await this.service.createGroup(formData);
