@@ -5,9 +5,10 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { PromotionsPageComponent } from './promotions-page.component';
 
 /**
- * spec 063 — el formulario pasó a "dos tipos + conjunto de variantes"
- * (decisión de negocio A-58…A-65). Estos tests cubren el formulario en el
- * cliente; el motor de evaluación y el bloqueo de solape los prueba el backend.
+ * spec 063 — el formulario pasó a "vigencia + una o varias reglas" (partición
+ * `Promoción`/`Regla`, revisión 2026-09-01, decisión de negocio A-58…A-65).
+ * Estos tests cubren el formulario en el cliente; el motor de evaluación y el
+ * bloqueo de solape los prueba el backend.
  */
 describe('PromotionsPageComponent', () => {
   let http: HttpTestingController;
@@ -42,24 +43,25 @@ describe('PromotionsPageComponent', () => {
     expect(form.ends_at).toBe('2026-09-01');
   });
 
-  it('el resumen (FR-005) describe el conjunto en lenguaje llano', () => {
+  it('el resumen (FR-005) describe el conjunto de una regla en lenguaje llano', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
     const c = fixture.componentInstance;
 
-    c.form.type = 'package_price';
-    c.form.value = 12000;
-    c.form.min_qty = 2;
-    c.form.variantIds = ['a', 'b', 'c'];
-    expect(c.conditionPreview()).toContain('Llevando 2 de estas 3 variantes');
+    const rule = c.form.rules[0];
+    rule.type = 'package_price';
+    rule.value = 12000;
+    rule.min_qty = 2;
+    rule.variantIds = ['a', 'b', 'c'];
+    expect(c.ruleConditionPreview(rule)).toContain('Llevando 2 de estas 3 variantes');
 
-    c.form.type = 'percent';
-    c.form.value = 10;
-    c.form.min_qty = 1;
-    expect(c.conditionPreview()).toBe('10% en estas 3 variantes');
+    rule.type = 'percent';
+    rule.value = 10;
+    rule.min_qty = 1;
+    expect(c.ruleConditionPreview(rule)).toBe('10% en estas 3 variantes');
   });
 
-  it('FR-018: en una promoción activa el tipo/valor no son editables', () => {
+  it('FR-018: en una promoción activa las reglas no son editables', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
     const c = fixture.componentInstance;
@@ -68,36 +70,73 @@ describe('PromotionsPageComponent', () => {
       id: 'p1',
       name: 'activa',
       description: null,
-      type: 'percent',
-      value: '10',
       status: 'active',
       starts_at: null,
       ends_at: null,
       days_of_week: null,
       start_time: null,
       end_time: null,
-      min_qty: 1,
       closed_by_refactor_at: null,
-      condition_text: null,
-      variants: [],
+      rules: [
+        {
+          id: 'r1', type: 'percent', value: '10', min_qty: 1,
+          condition_text: null, variants: [],
+        },
+      ],
     });
 
     expect(c.canEditShape()).toBe(false);
-    expect(c.canEditValue()).toBe(false);
   });
 
-  it('el conjunto vacío invalida el formulario (FR-001)', () => {
+  it('el conjunto vacío de una regla invalida el formulario (FR-001)', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
     const c = fixture.componentInstance;
 
     c.openNew();
     c.form.name = 'x';
-    c.form.value = 10;
-    c.form.variantIds = [];
+    c.form.rules[0].value = 10;
+    c.form.rules[0].variantIds = [];
     expect(c.formValid()).toBe(false);
 
-    c.form.variantIds = ['a'];
+    c.form.rules[0].variantIds = ['a'];
     expect(c.formValid()).toBe(true);
+  });
+
+  it('FR-001: creación por lote — agregar y quitar reglas', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    expect(c.form.rules.length).toBe(1);
+
+    c.addRule();
+    c.addRule();
+    expect(c.form.rules.length).toBe(3);
+    expect(c.ruleFilters.length).toBe(3);
+
+    c.removeRule(1);
+    expect(c.form.rules.length).toBe(2);
+    expect(c.ruleFilters.length).toBe(2);
+  });
+
+  it('FR-001a: una variante repetida entre dos reglas se detecta en el cliente', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    c.addRule();
+    c.form.rules[0].variantIds = ['a', 'b'];
+    c.form.rules[1].variantIds = ['b', 'c'];
+
+    const conflict = c.sharedVariantConflict();
+    expect(conflict).not.toBeNull();
+    expect(conflict?.a).toBe(0);
+    expect(conflict?.b).toBe(1);
+
+    c.form.name = 'x';
+    expect(c.formValid()).toBe(false);
   });
 });

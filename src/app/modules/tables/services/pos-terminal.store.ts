@@ -402,18 +402,23 @@ export class PosTerminalStore {
       : Number(i.unit_price);
   }
 
-  /** Insignia de descuento para un producto, si alguna promoción vigente por
-   *  conjunto de variantes lo cubre. Solo decide si se muestra la insignia. */
+  /** Insignia de descuento para un producto, si alguna **regla** de una
+   *  promoción vigente cubre el conjunto de sus variantes (spec 063,
+   *  revisión 2026-09-01: cruza `rule.variants`, no `promo.variants`
+   *  directo — una promoción ya no tiene conjunto propio). Solo decide si
+   *  se muestra la insignia. */
   private productDiscountBadge(variantIds: string[]): string | null {
     const now = currentNow(this.promotionService);
     if (now === null || variantIds.length === 0) return null;
     const set = new Set(variantIds);
     for (const p of this.promotionService.activePromotions()) {
       if (!isPromoActiveNow(p, now)) continue;
-      if (!p.variants.some((v) => set.has(v.product_variant_id))) continue;
-      return p.type === 'percent'
-        ? `-${Number(p.value)}%`
-        : `Paquete ${this.fmt(Number(p.value))}`;
+      for (const rule of p.rules) {
+        if (!rule.variants.some((v) => set.has(v.product_variant_id))) continue;
+        return rule.type === 'percent'
+          ? `-${Number(rule.value)}%`
+          : `Paquete ${this.fmt(Number(rule.value))}`;
+      }
     }
     return null;
   }
@@ -1316,33 +1321,15 @@ export class PosTerminalStore {
     this.catalogSearchText.set('');
   }
 
-  /** Selección explícita de un combo (paralelo a `addDraftFromSelection`). */
-  addComboDraft(promo: Promotion, quantity: number): void {
-    const key = 'combo:' + promo.id;
-    this.draftLines.update((lines) => {
-      const existing = lines.find((l) => l.key === key);
-      if (existing) {
-        return lines.map((l) => (l.key === key ? { ...l, quantity: l.quantity + quantity } : l));
-      }
-      const line: ComboDraftLine = {
-        kind: 'combo',
-        key,
-        comboId: promo.id,
-        comboName: promo.name,
-        quantity,
-        notes: null,
-        unitPrice: Number(promo.value),
-      };
-      return [...lines, line];
-    });
-    this.configuringProduct.set(null);
-    this.catalogOpen.set(false);
-    this.catalogSearchText.set('');
-  }
-
-  // spec 063 (FR-024, A-61): el mecanismo de combo se retira. Los helpers se
-  // conservan como no-ops para las columnas históricas (`combo_id`), que se
-  // pintan a su precio normal — ninguna línea nueva lleva `combo_id`.
+  // spec 063 (FR-024, A-61): el mecanismo de combo se retira. `addComboDraft`
+  // (paralelo a `addDraftFromSelection`) ya no tenía ningún caller —
+  // `combos` es un stub vacío permanente desde A-61 — y referenciaba
+  // `Promotion.value`, retirado por la partición Promoción/Regla (revisión
+  // 2026-09-01): se borra en vez de parchear una referencia a un campo que
+  // ya no representa nada (el valor ahora vive en cada `PromotionRule`, no
+  // en la promoción). Los helpers de abajo se conservan como no-ops para las
+  // columnas históricas (`combo_id`), que se pintan a su precio normal —
+  // ninguna línea nueva lleva `combo_id`.
   private comboBullets(_comboId: string): string[] {
     return [];
   }

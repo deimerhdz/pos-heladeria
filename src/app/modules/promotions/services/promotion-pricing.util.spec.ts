@@ -11,24 +11,29 @@ import { Promotion } from '../interfaces/promotion.interface';
  * spec 063 — el util se redujo a vigencia local + insignia + elección de precio.
  * `bestProductDiscount` / `discountedUnitPrice` / `findOverlaps` se fueron
  * (A-58/A-59/A-60): el descuento y el bloqueo de solape los resuelve el backend.
+ *
+ * `isPromoActiveNow`/`getPromoDisplay` operan sobre la **promoción**
+ * (vigencia + estado) sin cambio tras la partición `Promoción`/`Regla`
+ * (revisión 2026-09-01) — esos campos no se movieron a la regla.
  */
 function promo(overrides: Partial<Promotion> = {}): Promotion {
   return {
     id: 'p1',
     name: 'promo',
     description: null,
-    type: 'percent',
-    value: '10',
     status: 'active',
     starts_at: null,
     ends_at: null,
     days_of_week: null,
     start_time: null,
     end_time: null,
-    min_qty: 1,
     closed_by_refactor_at: null,
-    condition_text: '10% en estas 3 variantes',
-    variants: [],
+    rules: [
+      {
+        id: 'r1', type: 'percent', value: '10', min_qty: 1,
+        condition_text: '10% en estas 3 variantes', variants: [],
+      },
+    ],
     ...overrides,
   };
 }

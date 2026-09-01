@@ -39,7 +39,8 @@ export interface ResolvedMenu {
   table: DinerTable;
   business: ResolvedBusiness | null;
   categories: MenuCategory[];
-  /** spec 040: anuncios de promociones por presentación vigentes ahora. */
+  /** spec 063 (FR-022): anuncios de promociones vigentes ahora — cada
+   *  elemento de `promotions[].rules[]` es una regla (research.md D-R3). */
   promotions: MenuPromotionAnnouncement[];
 }
 

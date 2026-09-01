@@ -1,11 +1,20 @@
 import { Promotion } from '../interfaces/promotion.interface';
 
 /**
- * spec 063 — modelo por conjunto explícito de variantes. Este util se reduce a:
+ * spec 063 — modelo por conjunto explícito de variantes, partición
+ * `Promoción`/`Regla` (revisión 2026-09-01). Este util se reduce a:
  *  - vigencia local (`inTimeWindow` / `isPromoActiveNow`) — port de `_valid_now`;
  *  - `getPromoDisplay` (insignia de la lista de administración);
  *  - `effectivePrice` / `discountInfo` — elegir cuál de los dos números que ya
  *    resolvió el backend pintar.
+ *
+ * `isPromoActiveNow`/`getPromoDisplay` siguen operando sobre la
+ * **promoción** (`status`/`starts_at`/`ends_at`/`days_of_week`/
+ * `start_time`/`end_time`) sin cambio: esos campos no se movieron a la
+ * regla — la vigencia y el estado son de la promoción y los comparten todas
+ * sus reglas (FR-001). Lo que sí vive en cada regla (`condition_text`,
+ * `type`, `value`) se consume directo desde `PromotionRule` donde haga
+ * falta, no por este util.
  *
  * Se van: `bestProductDiscount` / `discountedUnitPrice` (cálculo local por
  * targets, A-58/A-60) y `findOverlaps` (el solape real lo bloquea el backend con

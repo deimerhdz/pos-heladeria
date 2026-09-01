@@ -12,17 +12,20 @@ import {
   PromotionCreatePayload,
   PromotionDuplicatePayload,
   PromotionForm,
+  PromotionRuleInPayload,
   PromotionShapePayload,
   PromotionStatus,
   PromotionStatusPayload,
   PromotionUpdatePayload,
+  RuleVariantConflictError,
 } from '../interfaces/promotion.interface';
 
 /**
- * spec 063 — modelo por conjunto explícito de variantes (decisión de negocio
- * A-58…A-65). Se van del servicio: `overlapCandidates` (el solape real lo
- * bloquea el backend con 409, ya no se calcula en cliente), targets, combos,
- * reglas por presentación y `priority`.
+ * spec 063 — modelo por conjunto explícito de variantes, partición
+ * `Promoción`/`Regla` (revisión 2026-09-01). Se van del servicio:
+ * `overlapCandidates` (el solape real lo bloquea el backend con 409, ya no
+ * se calcula en cliente), targets, combos, reglas por presentación y
+ * `priority`.
  */
 interface PromotionErrorBody {
   detail?: string | { msg?: string }[];
@@ -38,10 +41,14 @@ export class PromotionService {
   readonly isSubmitting = signal(false);
   readonly otherError = signal<string | null>(null);
 
-  /** spec 063 (FR-014): detalle del último 409 de solape real bloqueado. */
+  /** spec 063 (FR-014): detalle del último 409 de solape real bloqueado
+   *  (entre reglas de promociones distintas). */
   readonly overlapConflict = signal<OverlapConflictError | null>(null);
   /** spec 063 (FR-016): detalle del último 409 de "precio de paquete sin descuento". */
   readonly packageNotDiscount = signal<PackageNotDiscountError | null>(null);
+  /** spec 063 (revisión 2026-09-01, FR-001a): detalle del último 409 de
+   *  variante repetida entre dos reglas de la misma promoción. */
+  readonly ruleVariantConflict = signal<RuleVariantConflictError | null>(null);
 
   readonly page = signal(1);
   readonly size = signal(20);
@@ -174,12 +181,10 @@ export class PromotionService {
     return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}`, payload));
   }
 
-  /** `PATCH /promotions/{id}/shape` — tipo y conjunto de variantes, solo en `draft`. */
+  /** `PATCH /promotions/{id}/shape` — reemplaza la lista **completa** de
+   *  reglas, solo en `draft` (FR-001a/FR-018). */
   updateShape(id: string, form: PromotionForm): Promise<Promotion | null> {
-    const payload: PromotionShapePayload = {
-      type: form.type,
-      variant_ids: [...new Set(form.variantIds)],
-    };
+    const payload: PromotionShapePayload = { rules: this.toRules(form) };
     return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}/shape`, payload));
   }
 
@@ -203,6 +208,7 @@ export class PromotionService {
     this.otherError.set(null);
     this.overlapConflict.set(null);
     this.packageNotDiscount.set(null);
+    this.ruleVariantConflict.set(null);
     try {
       const body = await firstValueFrom(request());
       await this.queryClient.invalidateQueries({ queryKey: ['promotions'] });
@@ -228,6 +234,14 @@ export class PromotionService {
         'cheapest_unit_price' in detail
       ) {
         this.packageNotDiscount.set(detail as PackageNotDiscountError); // FR-016
+      } else if (
+        err instanceof HttpErrorResponse &&
+        err.status === 409 &&
+        detail &&
+        typeof detail === 'object' &&
+        'rule_index_a' in detail
+      ) {
+        this.ruleVariantConflict.set(detail as RuleVariantConflictError); // FR-001a
       } else {
         this.otherError.set(this.extractError(err));
       }
@@ -242,10 +256,9 @@ export class PromotionService {
   private toCreate(form: PromotionForm, status: 'draft' | 'active'): PromotionCreatePayload {
     return {
       ...this.toScalars(form),
-      type: form.type,
       status,
       starts_at: form.starts_at ?? new Date().toISOString(),
-      variant_ids: [...new Set(form.variantIds)],
+      rules: this.toRules(form),
     };
   }
 
@@ -253,13 +266,22 @@ export class PromotionService {
     return {
       name: form.name.trim(),
       description: form.description.trim() || null,
-      value: form.value,
       ends_at: form.ends_at || null,
       days_of_week: this.daysToStr(form.days_of_week),
       start_time: form.start_time || null,
       end_time: form.end_time || null,
-      min_qty: form.min_qty,
     };
+  }
+
+  /** spec 063 (revisión 2026-09-01): una fila del formulario por regla — la
+   *  creación/edición por lote de FR-001. */
+  private toRules(form: PromotionForm): PromotionRuleInPayload[] {
+    return form.rules.map((rule) => ({
+      type: rule.type,
+      value: rule.value,
+      min_qty: rule.min_qty,
+      variant_ids: [...new Set(rule.variantIds)],
+    }));
   }
 
   private daysToStr(days: number[]): string | null {
