@@ -109,15 +109,8 @@ export const dashboardRoutes: Routes = [
           ),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
-      {
-        // spec 040: catálogo de presentaciones compartido del tenant.
-        path: 'presentations',
-        loadComponent: () =>
-          import('../presentations/pages/presentations-page.component').then(
-            (m) => m.PresentationsPageComponent,
-          ),
-        canActivate: [roleGuard([UserRole.ADMIN])],
-      },
+      // spec 063 (A-63): la ruta `/dashboard/presentations` se elimina con la
+      // entidad `Presentation` (revierte la parte de modelo de datos de spec 040).
       {
         path: 'products',
         loadComponent: () =>

@@ -71,13 +71,8 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [UserRole.ADMIN],
     moduleKey: 'promociones',
   },
-  {
-    label: 'Presentaciones',
-    icon: 'categories',
-    route: '/dashboard/presentations',
-    group: 'CATÁLOGO',
-    roles: [UserRole.ADMIN],
-  },
+  // spec 063 (A-63): "Presentaciones" se elimina — la entidad `Presentation` y
+  // su modelo de datos (spec 040) se revierten.
 
   // ── ADMINISTRACIÓN ─────────────────────────────────────────────────────
   {

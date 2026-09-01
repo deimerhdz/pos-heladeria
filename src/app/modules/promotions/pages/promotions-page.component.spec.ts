@@ -5,67 +5,12 @@ import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-exper
 import { PromotionsPageComponent } from './promotions-page.component';
 
 /**
- * Spec 030, Historia 5 (FR-006): la ventana de vigencia de una promoción
- * (`starts_at`/`ends_at`) es string-a-string vía `[(ngModel)]` sobre
- * `input[type=date]` — nunca pasa por un `new Date(string)` intermedio que
- * pudiera correr el día por el offset del navegador. Test de regresión
- * preventivo (research.md Decisión 11): no hay defecto activo hoy, solo se
- * fija el comportamiento correcto. `Promotion.starts_at`/`ends_at` quedan
- * fuera del resto de esta spec (FR-009) — este test cubre únicamente el
- * formulario, no el motor de evaluación (A-07, protegido).
+ * spec 063 — el formulario pasó a "vigencia + una o varias reglas" (partición
+ * `Promoción`/`Regla`, revisión 2026-09-01, decisión de negocio A-58…A-65).
+ * Estos tests cubren el formulario en el cliente; el motor de evaluación y el
+ * bloqueo de solape los prueba el backend.
  */
-describe('PromotionsPageComponent — ventana de vigencia (FR-006)', () => {
-  let http: HttpTestingController;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideTanStackQuery(
-          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
-        ),
-      ],
-    });
-    http = TestBed.inject(HttpTestingController);
-  });
-
-  afterEach(() => {
-    http.match(() => true); // vacía las peticiones que el test no necesitó
-    http.verify();
-  });
-
-  it('starts_at/ends_at vuelven idénticos, sin corrimiento de día', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges(); // ngOnInit: dispara las cargas iniciales
-
-    const { form } = fixture.componentInstance;
-    form.starts_at = '2026-08-24';
-    form.ends_at = '2026-09-01';
-
-    expect(form.starts_at).toBe('2026-08-24');
-    expect(form.ends_at).toBe('2026-09-01');
-  });
-
-  it('un rango que cruza fin/inicio de año conserva ambos extremos tal cual', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges();
-
-    const { form } = fixture.componentInstance;
-    form.starts_at = '2025-12-31';
-    form.ends_at = '2026-01-01';
-
-    expect(form.starts_at).toBe('2025-12-31');
-    expect(form.ends_at).toBe('2026-01-01');
-  });
-});
-
-/**
- * Spec 040 — el selector "¿Qué quieres crear?" ya no ofrece "Paquete"
- * (`qty_price`); la única forma de paquete que se puede crear es "Paquete por
- * presentación" (`qty_price_presentation`), que abre el formulario dedicado.
- */
-describe('PromotionsPageComponent — spec 040', () => {
+describe('PromotionsPageComponent', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
@@ -86,42 +31,112 @@ describe('PromotionsPageComponent — spec 040', () => {
     http.verify();
   });
 
-  it('la pantalla de tipo no ofrece "Paquete" suelto, sí "Paquete por presentación"', () => {
+  it('la ventana de vigencia (date) va string-a-string, sin corrimiento de día', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
-    fixture.componentInstance.screen.set('type');
-    fixture.detectChanges();
 
-    const cards = Array.from(
-      fixture.nativeElement.querySelectorAll('button'),
-    ) as HTMLButtonElement[];
-    const titles = cards.map((b) => b.textContent?.trim() ?? '');
-    expect(titles.some((t) => t.includes('Paquete por presentación'))).toBe(true);
-    expect(titles.some((t) => /^Paquete\b/.test(t))).toBe(false);
+    const { form } = fixture.componentInstance;
+    form.starts_at = '2026-08-24';
+    form.ends_at = '2026-09-01';
+
+    expect(form.starts_at).toBe('2026-08-24');
+    expect(form.ends_at).toBe('2026-09-01');
   });
 
-  it('elegir "Paquete por presentación" abre el formulario dedicado con una regla vacía', () => {
+  it('el resumen (FR-005) describe el conjunto de una regla en lenguaje llano', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
-
-    fixture.componentInstance.chooseKind('presentation');
-
-    expect(fixture.componentInstance.screen()).toBe('presentation');
-    expect(fixture.componentInstance.form.type).toBe('qty_price_presentation');
-    expect(fixture.componentInstance.form.presentationRules.length).toBe(1);
-  });
-
-  it('el resumen y la validación reflejan las reglas por presentación', () => {
-    const fixture = TestBed.createComponent(PromotionsPageComponent);
-    fixture.detectChanges();
-
     const c = fixture.componentInstance;
-    c.chooseKind('presentation');
-    c.form.name = 'Promo 8oz';
-    c.form.presentationRules = [{ presentation_id: 'p1', min_qty: 2, pack_price: 12000 }];
 
-    expect(c.completePresentationRules().length).toBe(1);
-    expect(c.canSaveDraft()).toBe(true);
-    expect(c.draftSummary()).toContain('Paquetes por presentación');
+    const rule = c.form.rules[0];
+    rule.type = 'package_price';
+    rule.value = 12000;
+    rule.min_qty = 2;
+    rule.variantIds = ['a', 'b', 'c'];
+    expect(c.ruleConditionPreview(rule)).toContain('Llevando 2 de estas 3 variantes');
+
+    rule.type = 'percent';
+    rule.value = 10;
+    rule.min_qty = 1;
+    expect(c.ruleConditionPreview(rule)).toBe('10% en estas 3 variantes');
+  });
+
+  it('FR-018: en una promoción activa las reglas no son editables', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.editingSource.set({
+      id: 'p1',
+      name: 'activa',
+      description: null,
+      status: 'active',
+      starts_at: null,
+      ends_at: null,
+      days_of_week: null,
+      start_time: null,
+      end_time: null,
+      closed_by_refactor_at: null,
+      rules: [
+        {
+          id: 'r1', type: 'percent', value: '10', min_qty: 1,
+          condition_text: null, variants: [],
+        },
+      ],
+    });
+
+    expect(c.canEditShape()).toBe(false);
+  });
+
+  it('el conjunto vacío de una regla invalida el formulario (FR-001)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    c.form.name = 'x';
+    c.form.rules[0].value = 10;
+    c.form.rules[0].variantIds = [];
+    expect(c.formValid()).toBe(false);
+
+    c.form.rules[0].variantIds = ['a'];
+    expect(c.formValid()).toBe(true);
+  });
+
+  it('FR-001: creación por lote — agregar y quitar reglas', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    expect(c.form.rules.length).toBe(1);
+
+    c.addRule();
+    c.addRule();
+    expect(c.form.rules.length).toBe(3);
+    expect(c.ruleFilters.length).toBe(3);
+
+    c.removeRule(1);
+    expect(c.form.rules.length).toBe(2);
+    expect(c.ruleFilters.length).toBe(2);
+  });
+
+  it('FR-001a: una variante repetida entre dos reglas se detecta en el cliente', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    c.openNew();
+    c.addRule();
+    c.form.rules[0].variantIds = ['a', 'b'];
+    c.form.rules[1].variantIds = ['b', 'c'];
+
+    const conflict = c.sharedVariantConflict();
+    expect(conflict).not.toBeNull();
+    expect(conflict?.a).toBe(0);
+    expect(conflict?.b).toBe(1);
+
+    c.form.name = 'x';
+    expect(c.formValid()).toBe(false);
   });
 });
