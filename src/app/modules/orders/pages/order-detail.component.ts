@@ -141,7 +141,9 @@ export class OrderDetailComponent implements OnInit {
   }
 
   optionLabels(item: DiningOrderItem): string {
-    return (item.options ?? []).map((o) => this.lookup().optionLabel(o.option_id)).filter(Boolean).join(', ');
+    return (item.options ?? [])
+      .map((o) => this.lookup().optionLabelWithQuantity(o.option_id, o.quantity ?? 1))
+      .filter(Boolean).join(', ');
   }
 
   statusLabel = orderStatusLabel;

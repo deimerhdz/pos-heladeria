@@ -1,9 +1,9 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import {
-  MenuOption,
   MenuProduct,
   MenuVariant,
 } from '../../products/interfaces/product.interface';
+import { ChosenMenuOption } from '../components/product-select.component';
 import { CartResponse } from '../interfaces/diner.interface';
 import { DinerService } from './diner.service';
 import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
@@ -85,7 +85,7 @@ export class DiningCartService {
   async add(
     _product: MenuProduct,
     variant: MenuVariant,
-    options: MenuOption[],
+    options: ChosenMenuOption[],
     quantity: number,
     notes: string | null,
   ): Promise<void> {
@@ -93,7 +93,7 @@ export class DiningCartService {
       this.api.addItem({
         product_variant_id: variant.id,
         quantity,
-        option_ids: options.map((o) => o.id),
+        options: options.map((c) => ({ option_id: c.option.id, quantity: c.quantity })),
         notes: notes || null,
       }),
     );
@@ -144,7 +144,11 @@ export class DiningCartService {
           productName: variant?.productName ?? 'Producto',
           variantName: variant?.variantName ?? '',
           optionNames: it.options
-            .map((o) => this.index.options.get(o.option_id))
+            .map((o) => {
+              const name = this.index.options.get(o.option_id);
+              if (!name) return null;
+              return o.quantity > 1 ? `${o.quantity}x ${name}` : name;
+            })
             .filter((n): n is string => !!n),
           quantity: it.quantity,
           notes: it.notes,

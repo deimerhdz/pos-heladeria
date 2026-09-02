@@ -1,3 +1,4 @@
+import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -17,6 +18,9 @@ function makeGroup(partial: Partial<OptionGroup> = {}): OptionGroup {
     max_select: 1,
     active: true,
     pricing_type: 'con_recargo',
+    selection_mode: 'conteo',
+    max_quantity_per_option: null,
+    max_total_quantity: null,
     options: [],
     ...partial,
   };
@@ -73,7 +77,10 @@ describe('OptionGroupFormComponent', () => {
 
   it('crea un grupo "incluido" con normalidad', async () => {
     await create(null);
-    component.form.setValue({ name: 'Sabores', min_select: 1, max_select: 1, pricing_type: 'incluido' });
+    component.form.setValue({
+      name: 'Sabores', min_select: 1, max_select: 1, pricing_type: 'incluido',
+      selection_mode: 'conteo', max_quantity_per_option: null, max_total_quantity: null,
+    });
     fixture.detectChanges();
 
     const submitPromise = component.onSubmit();
@@ -88,7 +95,10 @@ describe('OptionGroupFormComponent', () => {
 
   it('crea un grupo "con_recargo" con normalidad', async () => {
     await create(null);
-    component.form.setValue({ name: 'Toppings', min_select: 0, max_select: 2, pricing_type: 'con_recargo' });
+    component.form.setValue({
+      name: 'Toppings', min_select: 0, max_select: 2, pricing_type: 'con_recargo',
+      selection_mode: 'conteo', max_quantity_per_option: null, max_total_quantity: null,
+    });
     fixture.detectChanges();
 
     const submitPromise = component.onSubmit();
@@ -104,6 +114,61 @@ describe('OptionGroupFormComponent', () => {
     await create(makeGroup({ pricing_type: 'incluido' }));
 
     expect(component.form.value.pricing_type).toBe('incluido');
+  });
+
+  // ── spec 065: selection_mode y topes de cantidad ───────────────────────────
+
+  it('un grupo nuevo arranca en modo "conteo" por default', async () => {
+    await create(null);
+    expect(component.form.value.selection_mode).toBe('conteo');
+  });
+
+  it('editar un grupo precarga su selection_mode y sus topes', async () => {
+    await create(makeGroup({ selection_mode: 'cantidad', max_quantity_per_option: 3, max_total_quantity: 5 }));
+
+    expect(component.form.value.selection_mode).toBe('cantidad');
+    expect(component.form.value.max_quantity_per_option).toBe(3);
+    expect(component.form.value.max_total_quantity).toBe(5);
+  });
+
+  it('crea un grupo "cantidad" con sus topes', async () => {
+    await create(null);
+    component.form.setValue({
+      name: 'Toppings', min_select: 0, max_select: 1, pricing_type: 'con_recargo',
+      selection_mode: 'cantidad', max_quantity_per_option: 3, max_total_quantity: 5,
+    });
+    fixture.detectChanges();
+
+    const submitPromise = component.onSubmit();
+    const req = http.expectOne(GROUPS);
+    expect(req.request.body.selection_mode).toBe('cantidad');
+    expect(req.request.body.max_quantity_per_option).toBe(3);
+    expect(req.request.body.max_total_quantity).toBe(5);
+    req.flush(makeGroup({ selection_mode: 'cantidad', max_quantity_per_option: 3, max_total_quantity: 5 }));
+    await Promise.resolve();
+    http.expectOne(GROUPS).flush([]);
+    await submitPromise;
+  });
+
+  it('modo "conteo" oculta los topes de cantidad y muestra min/max a elegir', async () => {
+    await create(null);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[formcontrolname="min_select"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[formcontrolname="max_quantity_per_option"]')).toBeFalsy();
+  });
+
+  it('modo "cantidad" oculta min/max a elegir y muestra los topes de cantidad', async () => {
+    await create(null);
+    component.form.patchValue({ selection_mode: 'cantidad' });
+    // OnPush: patchValue() desde fuera del template no origina un evento DOM propio,
+    // así que no marca la vista sucia por sí solo (a diferencia de un clic real del
+    // usuario en el radio) -- se fuerza aquí para simular el resultado del clic.
+    fixture.debugElement.injector.get(ChangeDetectorRef).markForCheck();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[formcontrolname="min_select"]')).toBeFalsy();
+    expect(fixture.nativeElement.querySelector('[formcontrolname="max_quantity_per_option"]')).toBeTruthy();
   });
 
   // ── FR-004: confirmación al reclasificar "con_recargo" -> "incluido" ──────
