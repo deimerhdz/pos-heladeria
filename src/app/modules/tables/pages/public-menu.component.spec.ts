@@ -8,7 +8,11 @@ import { DinerService } from '../services/diner.service';
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
 import { RealtimeService } from '../../../core/realtime/realtime.service';
-import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
+import {
+  MenuCategory,
+  MenuProduct,
+  MenuVariantPromotion,
+} from '../../products/interfaces/product.interface';
 import { ResolvedBusiness } from '../services/diner.service';
 import { DiningOrder } from '../interfaces/dining.interface';
 
@@ -240,5 +244,93 @@ describe('PublicMenuComponent', () => {
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(texto).toContain('sin banana');
     expect(texto.split('sin banana').length - 1).toBe(1);
+  });
+
+  // ── spec 066 (A-67, FR-013 a FR-015) — insignia genérica en la tarjeta ────
+
+  function promocion(over: Partial<MenuVariantPromotion> = {}): MenuVariantPromotion {
+    return {
+      condition_text: 'Llevando 2 Pequeño 8oz pagas $12.000',
+      short_condition: '2 x $12.000',
+      unit_equivalent: 6000,
+      unit_equivalent_approx: false,
+      unit_equivalent_text: '$6.000 c/u',
+      display_text: '2 x $12.000 · $6.000 c/u',
+      type: 'package_price',
+      min_qty: 2,
+      value: 12000,
+      ...over,
+    };
+  }
+
+  async function carta(variants: MenuProduct['variants']): Promise<HTMLElement> {
+    const categories: MenuCategory[] = [
+      { id: 'c1', name: 'Granizados', products: [product({ variants })] },
+    ];
+    const { fixture } = await createComponent('tok-1', categories, { withSession: true });
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('CA1: una promoción de paquete vigente produce insignia — hoy no produce ninguna señal', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
+        promotion: promocion(),
+      },
+    ]);
+
+    expect(el.textContent).toContain('🎉 Promo');
+  });
+
+  it('CA2: una regla de porcentaje produce la MISMA insignia, no una distinta por tipo', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
+        promotion: promocion({
+          type: 'percent', min_qty: 3, value: 15,
+          short_condition: '3 x -15%', display_text: '3 x -15% · $6.800 c/u',
+        }),
+      },
+    ]);
+
+    expect(el.textContent).toContain('🎉 Promo');
+    // La insignia por tipo que gobernaba antes ya no se pinta en la tarjeta.
+    expect(el.textContent).not.toContain('🏷️');
+  });
+
+  it('CA3: un producto sin presentaciones cubiertas no lleva insignia', async () => {
+    const el = await carta([
+      { id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true },
+    ]);
+
+    expect(el.textContent).not.toContain('🎉 Promo');
+  });
+
+  it('CA4: fuera de su ventana el backend no pobló promotion -> sin insignia', async () => {
+    // La vigencia la resolvió el backend; la tarjeta solo lee lo que llegó (FR-013).
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
+        promotion: null,
+      },
+    ]);
+
+    expect(el.textContent).not.toContain('🎉 Promo');
+  });
+
+  it('CA5: con porcentaje de cantidad mínima 1 se conserva el tachado Y ADEMÁS hay insignia (FR-015)', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, discounted_price: 7200,
+        discount_kind: 'percent', option_groups: [], available: true,
+        promotion: promocion({
+          type: 'percent', min_qty: 1, value: 10,
+          short_condition: '1 x -10%', display_text: '1 x -10% · $7.200 c/u',
+        }),
+      },
+    ]);
+
+    expect(el.textContent).toContain('🎉 Promo');
+    expect(el.querySelector('.line-through')).not.toBeNull();
   });
 });

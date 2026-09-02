@@ -3,7 +3,11 @@ import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ApiErrorBody } from '../auth/auth.models';
-import { MenuCategory, MenuOptionGroup } from '../../modules/products/interfaces/product.interface';
+import {
+  MenuCategory,
+  MenuOptionGroup,
+  MenuVariantPromotion,
+} from '../../modules/products/interfaces/product.interface';
 
 /** Raw backend menu (decimals arrive as strings). */
 interface MenuOptionResponse {
@@ -27,6 +31,16 @@ interface MenuVariantResponse {
   id: string;
   name: string;
   price: string;
+  /**
+   * spec 066 (FR-016): la terminal gana la **condición** de la promoción.
+   *
+   * `discounted_price` y `discount_kind` siguen **deliberadamente ausentes** de
+   * este tipo: es así como la terminal los descarta. Mapearlos haría que
+   * `effectivePrice` empezara a mostrar precios con descuento en la terminal, lo
+   * que choca con FR-017 y con la spec 063 FR-023 — el importe de la terminal lo
+   * resuelve el preview del cobro, no el menú (research.md D-10). No añadirlos.
+   */
+  promotion?: MenuVariantPromotion | null;
   option_groups?: MenuOptionGroupResponse[];
   available?: boolean;
 }
@@ -101,6 +115,9 @@ export class MenuService {
           id: v.id,
           name: v.name,
           price: Number(v.price),
+          // spec 066 (FR-016): solo la condición. Ningún importe con descuento
+          // entra a la terminal por aquí (FR-017, research.md D-10).
+          promotion: v.promotion ?? null,
           option_groups: (v.option_groups ?? []).map(toGroup),
           available: v.available ?? true,
         })),

@@ -24,7 +24,6 @@ import {
   puedeCancelarComensal,
 } from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
-import { MoneyPipe } from '../../../shared/money.pipe';
 import { formatMoney } from '../../../shared/money';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { normalizeText } from '../../../shared/normalize-text';
@@ -52,7 +51,10 @@ const REFRESH_DEBOUNCE_MS = 250;
 @Component({
   selector: 'app-public-menu',
   standalone: true,
-  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe],
+  // spec 066: `MoneyPipe` sale de aquí porque su único uso en esta plantilla era la
+  // insignia por tipo (`🏷️ -{{ disc.amountOff | money }}`) que A-67 reemplaza por la
+  // genérica. Los precios de la tarjeta usan `priceWithPrefix`/`priceLabel`.
+  imports: [CartComponent, ProductSelectComponent, IconComponent],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -379,13 +381,13 @@ const REFRESH_DEBOUNCE_MS = 250;
                     class="text-left bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:border-indigo-300 hover:shadow-md active:scale-[0.98] transition-all"
                   >
                     <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center text-4xl overflow-hidden">
-                      @if (productDiscount(product); as disc) {
+                      <!-- spec 066 (A-67, FR-013): insignia **genérica**, la misma para
+                           porcentaje y para paquete. La anterior se derivaba de que
+                           hubiera precio unitario con descuento, así que una promoción
+                           de paquete no producía ninguna señal en la carta. -->
+                      @if (hasPromotion(product)) {
                         <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                          @if (disc.kind === 'fixed') {
-                            🏷️ -{{ disc.amountOff | money }}
-                          } @else {
-                            🏷️ -{{ disc.percent }}%
-                          }
+                          🎉 Promo
                         </span>
                       }
                       @if (product.image_url) {
@@ -780,6 +782,22 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       product.variants[0],
     );
     return discountInfo(cheapest.price, cheapest.discounted_price, cheapest.discount_kind);
+  }
+
+  /**
+   * spec 066 (A-67, FR-013): un producto tiene promoción si alguna de sus
+   * presentaciones trae información de promoción del backend.
+   *
+   * Es una **lectura**, no una evaluación de reglas ni de vigencia: eso ya lo hizo
+   * el backend al poblar `promotion`. Por eso no se añadió un `has_promotion` al
+   * DTO del producto — sería superficie de contrato derivable de un campo que ya
+   * viaja, y podría desincronizarse (research.md D-11).
+   *
+   * `productDiscount` se conserva y sigue gobernando el **tachado** (FR-015); lo
+   * que pierde es el gobierno de la insignia.
+   */
+  hasPromotion(product: MenuProduct): boolean {
+    return product.variants.some((v) => v.promotion != null);
   }
 
   async confirmName(): Promise<void> {

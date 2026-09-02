@@ -2,7 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { MenuCategory, MenuOptionGroup } from '../../products/interfaces/product.interface';
+import {
+  MenuCategory,
+  MenuOptionGroup,
+  MenuVariantPromotion,
+} from '../../products/interfaces/product.interface';
 import { DiningOrder } from '../interfaces/dining.interface';
 import {
   CartItemPayload,
@@ -355,6 +359,9 @@ export class DinerService {
           price: Number(v['price']),
           discounted_price: v['discounted_price'] != null ? Number(v['discounted_price']) : null,
           discount_kind: (v['discount_kind'] as string) ?? null,
+          // spec 066 (FR-007): el bloque llega ya calculado y ya renderizado.
+          // `?? null` para no romper contra un backend aún sin desplegar.
+          promotion: (v['promotion'] as MenuVariantPromotion) ?? null,
           // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
           // con el tamaño.
           option_groups: mapGroups(v['option_groups']),
