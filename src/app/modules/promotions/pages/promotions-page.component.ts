@@ -24,7 +24,7 @@ import {
 } from '../interfaces/promotion.interface';
 import { PromotionService } from '../services/promotion.service';
 import { PromoDisplay, getPromoDisplay } from '../services/promotion-pricing.util';
-import { conditionText } from '../services/promotion-condition.util';
+import { conditionText, setDescriptor } from '../services/promotion-condition.util';
 
 type Screen = 'list' | 'form' | 'review';
 type StatusTab = PromotionStatus | '';
@@ -68,7 +68,7 @@ interface RuleFilter {
 }
 
 function emptyRule(): PromotionRuleForm {
-  return { type: 'percent', value: 0, min_qty: 1, variantIds: [] };
+  return { type: 'percent', value: 0, min_qty: 1, variantIds: [], isExisting: false };
 }
 
 function emptyForm(): PromotionForm {
@@ -300,11 +300,18 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
 
           @if (isReadOnly()) {
             <p class="text-sm text-amber-600 mb-4">Esta promoción está finalizada — solo lectura.</p>
+          } @else if (isPaused()) {
+            <p class="text-sm text-gray-500 mb-4">
+              Promoción pausada: puedes agregar o quitar reglas completas, y agregar o quitar
+              productos del conjunto de cualquiera de ellas. El tipo, el valor y la cantidad
+              mínima de una regla que ya existía siguen bloqueados — para cambiarlos, quítala y
+              agrega una nueva, o duplica la promoción.
+            </p>
           } @else if (!isDraft()) {
             <p class="text-sm text-gray-500 mb-4">
               En una promoción activa solo puedes editar nombre, descripción, vigencia y horario —
               afecta a todas sus reglas de una vez. Para cambiar el tipo, el valor, la cantidad o el
-              conjunto de una regla, o agregar/quitar reglas, duplícala.
+              conjunto de una regla, o agregar/quitar reglas, páusala primero, o duplícala.
             </p>
           }
 
@@ -363,7 +370,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 Reglas
                 <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">{{ form.rules.length }}</span>
               </h2>
-              @if (canEditShape()) {
+              @if (canEditRuleSet()) {
                 <button
                   type="button"
                   (click)="addRule()"
@@ -387,7 +394,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                   <div class="rounded-xl border border-gray-200 p-4">
                     <div class="flex items-center justify-between mb-3">
                       <span class="text-xs font-semibold text-gray-400">Regla {{ ruleIndex + 1 }}</span>
-                      @if (canEditShape() && form.rules.length > 1) {
+                      @if (canEditRuleSet() && form.rules.length > 1) {
                         <button
                           type="button"
                           (click)="removeRule(ruleIndex)"
@@ -406,7 +413,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                             @for (t of typeOptions; track t.value) {
                               <button
                                 type="button"
-                                [disabled]="!canEditShape()"
+                                [disabled]="!canEditRuleTypeValue(rule)"
                                 (click)="setRuleType(ruleIndex, t.value)"
                                 class="rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-60"
                                 [class]="rule.type === t.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'"
@@ -424,16 +431,16 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                               {{ rule.type === 'percent' ? 'Porcentaje' : 'Precio del paquete' }}
                             </span>
                             @if (rule.type === 'percent') {
-                              <input type="number" [(ngModel)]="rule.value" [disabled]="!canEditShape()" min="0" max="100" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                              <input type="number" [(ngModel)]="rule.value" [disabled]="!canEditRuleTypeValue(rule)" min="0" max="100" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                             } @else {
-                              <app-money-input [(ngModel)]="rule.value" [disabled]="!canEditShape()" class="mt-1 block" />
+                              <app-money-input [(ngModel)]="rule.value" [disabled]="!canEditRuleTypeValue(rule)" class="mt-1 block" />
                             }
                           </label>
                           <label class="block">
                             <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                               {{ rule.type === 'percent' ? 'Unidades mínimas' : 'Unidades del paquete' }}
                             </span>
-                            <input type="number" [(ngModel)]="rule.min_qty" [disabled]="!canEditShape()" min="1" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            <input type="number" [(ngModel)]="rule.min_qty" [disabled]="!canEditRuleTypeValue(rule)" min="1" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                           </label>
                         </div>
                       </div>
@@ -443,12 +450,12 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                           <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                             Conjunto ({{ rule.variantIds.length }})
                           </span>
-                          @if (canEditShape() && rule.variantIds.length > 0) {
+                          @if (canEditRuleSet() && rule.variantIds.length > 0) {
                             <button type="button" (click)="clearRuleVariants(ruleIndex)" class="text-[11px] text-gray-400 hover:text-gray-600">Vaciar</button>
                           }
                         </div>
 
-                        @if (canEditShape()) {
+                        @if (canEditRuleSet()) {
                           <div class="flex flex-wrap gap-2">
                             <select [(ngModel)]="ruleFilters[ruleIndex].category" class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
                               <option value="">Todas las categorías</option>
@@ -461,17 +468,31 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                               Agregar visibles
                             </button>
                           </div>
+
+                          @if (searchResultsForRule(ruleIndex).length > 0) {
+                            <div class="border border-gray-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-gray-50">
+                              @for (v of searchResultsForRule(ruleIndex); track v.id) {
+                                <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                                  <input type="checkbox" [checked]="rule.variantIds.includes(v.id)" [disabled]="!canEditRuleSet()" (change)="toggleVariantForRule(ruleIndex, v.id)" />
+                                  <span class="flex-1">{{ v.productName }} - {{ v.variantName }}</span>
+                                  <span class="text-xs text-gray-400">{{ money(v.price) }}</span>
+                                </label>
+                              }
+                            </div>
+                          } @else if (ruleFilters[ruleIndex].category || ruleFilters[ruleIndex].text) {
+                            <p class="text-xs text-gray-400">Sin variantes que coincidan con el filtro.</p>
+                          }
                         }
 
                         <div class="border border-gray-200 rounded-lg max-h-[220px] overflow-y-auto divide-y divide-gray-50">
-                          @for (v of visibleVariantsForRule(ruleIndex); track v.id) {
+                          @for (v of selectedVariantsForRule(ruleIndex); track v.id) {
                             <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                              <input type="checkbox" [checked]="rule.variantIds.includes(v.id)" [disabled]="!canEditShape()" (change)="toggleVariantForRule(ruleIndex, v.id)" />
+                              <input type="checkbox" [checked]="true" [disabled]="!canEditRuleSet()" (change)="toggleVariantForRule(ruleIndex, v.id)" />
                               <span class="flex-1">{{ v.productName }} - {{ v.variantName }}</span>
                               <span class="text-xs text-gray-400">{{ money(v.price) }}</span>
                             </label>
                           } @empty {
-                            <p class="px-3 py-4 text-xs text-gray-400">Sin variantes que coincidan con el filtro.</p>
+                            <p class="px-3 py-4 text-xs text-gray-400">Sin productos seleccionados.</p>
                           }
                         </div>
                       </div>
@@ -488,7 +509,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                         }
                       </div>
                     </div>
-                    <p class="mt-1 text-sm text-gray-600">{{ typeLabel(rule.type) }} - {{ ruleSummaryText(rule) }}</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ typeLabel(rule.type) }} - {{ ruleSummaryText(ruleIndex) }}</p>
                     <p class="text-xs text-gray-400">
                       {{ rule.variantIds.length }} producto{{ rule.variantIds.length === 1 ? '' : 's' }} seleccionado{{ rule.variantIds.length === 1 ? '' : 's' }}
                     </p>
@@ -670,6 +691,7 @@ export class PromotionsPageComponent implements OnInit {
 
   readonly editingStatus = computed<PromotionStatus>(() => this.editingSource()?.status ?? 'draft');
   readonly isDraft = computed(() => this.editingStatus() === 'draft');
+  readonly isPaused = computed(() => this.editingStatus() === 'paused');
   readonly isReadOnly = computed(() => this.editingStatus() === 'finished');
 
   readonly showMigrationBanner = computed(
@@ -784,6 +806,7 @@ export class PromotionsPageComponent implements OnInit {
           value: Number(r.value),
           min_qty: r.min_qty,
           variantIds: r.variants.map((v) => v.product_variant_id),
+          isExisting: true,
         }))
       : [emptyRule()];
     this.form = {
@@ -805,21 +828,41 @@ export class PromotionsPageComponent implements OnInit {
     this.screen.set('list');
   }
 
-  /** FR-018: las reglas (agregar/quitar/editar cualquier campo) solo se
-   *  cambian en `draft` (si no, se duplica). */
-  canEditShape(): boolean {
-    return !this.isReadOnly() && this.isDraft();
+  /**
+   * spec 063 FR-018 + spec 071 (A-69, FR-013/FR-014): agregar o quitar
+   * reglas, y agregar/quitar productos del conjunto de cualquiera de ellas,
+   * se habilita en `draft` y también en `paused` (antes solo en `draft`; en
+   * `active` sigue bloqueado sin cambio).
+   */
+  canEditRuleSet(): boolean {
+    return !this.isReadOnly() && (this.isDraft() || this.isPaused());
   }
 
+  /**
+   * spec 071 (FR-015): tipo, valor y cantidad mínima de una regla que ya
+   * existía al pausar la promoción siguen bloqueados **in situ** en
+   * `paused` — solo `draft`, o una regla agregada en esta misma sesión de
+   * edición (`!rule.isExisting`), los habilita.
+   */
+  canEditRuleTypeValue(rule: PromotionRuleForm): boolean {
+    if (this.isReadOnly()) return false;
+    if (this.isDraft()) return true;
+    return this.isPaused() && !rule.isExisting;
+  }
+
+  /** spec 071 (FR-012): la regla nueva entra en la primera posición, no al
+   *  final — las existentes conservan su orden relativo, corridas una
+   *  posición hacia abajo. `ruleFilters` es un arreglo paralelo por índice y
+   *  se mueve igual. */
   addRule(): void {
-    if (!this.canEditShape()) return;
-    this.form.rules.push(emptyRule());
-    this.ruleFilters.push({ category: '', text: '' });
-    this.expandedRuleIndex.set(this.form.rules.length - 1);
+    if (!this.canEditRuleSet()) return;
+    this.form.rules.unshift(emptyRule());
+    this.ruleFilters.unshift({ category: '', text: '' });
+    this.expandedRuleIndex.set(0);
   }
 
   removeRule(index: number): void {
-    if (!this.canEditShape() || this.form.rules.length <= 1) return;
+    if (!this.canEditRuleSet() || this.form.rules.length <= 1) return;
     this.form.rules.splice(index, 1);
     this.ruleFilters.splice(index, 1);
     if (this.expandedRuleIndex() >= this.form.rules.length) {
@@ -828,9 +871,9 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   /** Acordeón: solo una regla se muestra expandida a la vez (fuera de
-   *  `canEditShape()`, donde todas son de solo lectura y se ven completas). */
+   *  `canEditRuleSet()`, donde todas son de solo lectura y se ven completas). */
   isRuleExpanded(index: number): boolean {
-    return !this.canEditShape() || this.expandedRuleIndex() === index;
+    return !this.canEditRuleSet() || this.expandedRuleIndex() === index;
   }
 
   expandRule(index: number): void {
@@ -838,8 +881,8 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   setRuleType(index: number, t: PromotionType): void {
-    if (!this.canEditShape()) return;
     const rule = this.form.rules[index];
+    if (!this.canEditRuleTypeValue(rule)) return;
     rule.type = t;
     if (rule.min_qty < 1) rule.min_qty = 1;
   }
@@ -852,7 +895,7 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   toggleVariantForRule(ruleIndex: number, variantId: string): void {
-    if (!this.canEditShape()) return;
+    if (!this.canEditRuleSet()) return;
     const ids = this.form.rules[ruleIndex].variantIds;
     const i = ids.indexOf(variantId);
     if (i >= 0) ids.splice(i, 1);
@@ -860,13 +903,22 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   clearRuleVariants(ruleIndex: number): void {
-    if (!this.canEditShape()) return;
+    if (!this.canEditRuleSet()) return;
     this.form.rules[ruleIndex].variantIds = [];
   }
 
-  visibleVariantsForRule(ruleIndex: number): CatalogVariant[] {
+  /**
+   * spec 071 (FR-006 a FR-008): reemplaza a `visibleVariantsForRule`. Solo
+   * devuelve resultados cuando hay una categoría específica elegida o texto
+   * de búsqueda — con "Todas las categorías" y el buscador vacío devuelve
+   * `[]` para no volver a listar el catálogo completo por defecto (FR-006).
+   * Es independiente de qué esté ya seleccionado: ver `selectedVariantsForRule`
+   * para el listado del conjunto (contracts/busqueda-y-seleccion.md).
+   */
+  searchResultsForRule(ruleIndex: number): CatalogVariant[] {
     const filter = this.ruleFilters[ruleIndex] ?? { category: '', text: '' };
     const text = filter.text.trim().toLowerCase();
+    if (!filter.category && !text) return [];
     return this.catalogVariants().filter((v) => {
       if (filter.category && v.categoryId !== filter.category) return false;
       if (text && !`${v.productName} ${v.variantName}`.toLowerCase().includes(text)) return false;
@@ -875,10 +927,10 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   selectAllFilteredForRule(ruleIndex: number): void {
-    if (!this.canEditShape()) return;
+    if (!this.canEditRuleSet()) return;
     const rule = this.form.rules[ruleIndex];
     const ids = new Set(rule.variantIds);
-    for (const v of this.visibleVariantsForRule(ruleIndex)) ids.add(v.id);
+    for (const v of this.searchResultsForRule(ruleIndex)) ids.add(v.id);
     rule.variantIds = [...ids];
   }
 
@@ -895,7 +947,7 @@ export class PromotionsPageComponent implements OnInit {
     if (!this.form.start_time !== !this.form.end_time) return false;
     if (this.sharedVariantConflict()) return false;
     for (const rule of this.form.rules) {
-      if (this.canEditShape() && rule.variantIds.length === 0) return false;
+      if (this.canEditRuleSet() && rule.variantIds.length === 0) return false;
       if (rule.type === 'percent' && (rule.value <= 0 || rule.value > 100)) return false;
       if (rule.type === 'package_price' && rule.value <= 0) return false;
       if (rule.min_qty < 1) return false;
@@ -924,7 +976,9 @@ export class PromotionsPageComponent implements OnInit {
     let res: Promotion | null;
     if (!id) {
       res = await this.svc.create(this.form, status);
-    } else if (this.isDraft()) {
+    } else if (this.isDraft() || this.isPaused()) {
+      // spec 071 (FR-014): en `paused`, igual que en `draft`, hay que
+      // reemplazar la lista de reglas antes de los escalares.
       res = await this.svc.updateShape(id, this.form);
       if (res) res = await this.svc.update(id, this.form);
       if (res && status === 'active') res = await this.svc.changeStatus(id, 'active');
@@ -1040,13 +1094,33 @@ export class PromotionsPageComponent implements OnInit {
     return parts.length ? parts.join(', ') : 'Todos los días, sin límite';
   }
 
-  /** Línea corta para la regla colapsada en el acordeón (Reglas). */
-  ruleSummaryText(rule: PromotionRuleForm): string {
+  /**
+   * spec 071 (FR-001 a FR-005): línea corta para la regla colapsada en el
+   * acordeón (Reglas), nombrando el/los producto(s) del conjunto — nunca solo
+   * la cantidad de unidades. Reutiliza `setDescriptor` (spec 066) para el
+   * orden alfabético y el tope de tres nombres; la oración final es propia de
+   * esta spec (contracts/resumen-de-regla.md), distinta de
+   * `ruleConditionPreview` (pantalla de revisión).
+   */
+  ruleSummaryText(ruleIndex: number): string {
+    const rule = this.form.rules[ruleIndex];
+    if (!rule) return '';
+    const names = this.selectedVariantsForRule(ruleIndex)
+      .map((v) => v.variantName?.trim() || v.productName?.trim() || '')
+      .filter((n) => n !== '');
+    const descriptor = setDescriptor(names);
+    if (!descriptor) return 'Sin productos seleccionados.';
+
+    const d = descriptor.multiple ? `entre ${descriptor.text}` : descriptor.text;
     const unidad = rule.min_qty === 1 ? 'unidad' : 'unidades';
+
     if (rule.type === 'package_price') {
-      return `Paga ${this.money(rule.value)} llevando ${rule.min_qty} ${unidad}.`;
+      return `Paga ${this.money(rule.value)} llevando ${rule.min_qty} ${unidad} ${d}.`;
     }
-    return `${rule.value}% de descuento a partir de ${rule.min_qty} ${unidad}.`;
+    if (rule.min_qty === 1) {
+      return `${rule.value}% en ${d}.`;
+    }
+    return `${rule.value}% llevando ${rule.min_qty} ${unidad} ${d}.`;
   }
 
   totalAffectedProducts(): number {
