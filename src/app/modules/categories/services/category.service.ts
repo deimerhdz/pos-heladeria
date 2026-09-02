@@ -110,6 +110,7 @@ export class CategoryService {
     const payload: CategoryCreatePayload = {
       name: data.name,
       description: data.description || null,
+      display_order: data.display_order,
     };
 
     try {
@@ -132,6 +133,7 @@ export class CategoryService {
     const payload: CategoryUpdatePayload = {
       name: data.name,
       description: data.description || null,
+      display_order: data.display_order,
     };
 
     try {
@@ -148,7 +150,7 @@ export class CategoryService {
     this.isSubmitting.set(true);
     this.otherError.set(null);
 
-    const payload: CategoryUpdatePayload = { active: !current };
+    const payload: CategoryUpdatePayload = { active: !current, display_order: null };
 
     try {
       await firstValueFrom(this.http.patch<Category>(`${this.baseUrl}/${id}`, payload));

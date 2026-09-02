@@ -74,6 +74,25 @@ import { CategoryService } from '../services/category.service';
             ></textarea>
           </div>
 
+          <!-- Order -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Orden <span class="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="number"
+              formControlName="display_order"
+              placeholder="Automático"
+              min="0"
+              step="1"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <p class="text-gray-400 text-xs mt-1">
+              Define la posición en el filtro del Menú QR: a mayor valor, aparece primero. Si se
+              deja vacío, la categoría se ubicará primero en el filtro.
+            </p>
+          </div>
+
           <!-- Service error -->
           @if (categoryService.error()) {
             <p class="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">
@@ -116,6 +135,7 @@ export class CategoryFormComponent implements OnChanges {
       validators: [Validators.required],
     }),
     description: new FormControl('', { nonNullable: true }),
+    display_order: new FormControl<number | null>(null),
   });
 
   get nameControl(): AbstractControl {
@@ -128,6 +148,7 @@ export class CategoryFormComponent implements OnChanges {
       this.form.setValue({
         name: this.category.name,
         description: this.category.description ?? '',
+        display_order: this.category.display_order,
       });
     } else {
       this.form.reset();
@@ -153,6 +174,7 @@ export class CategoryFormComponent implements OnChanges {
     const data: CategoryForm = {
       name: this.form.controls.name.value.trim(),
       description: this.form.controls.description.value.trim(),
+      display_order: this.form.controls.display_order.value,
     };
 
     if (this.category) {
