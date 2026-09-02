@@ -38,19 +38,57 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
               class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Mínimo a elegir</label>
-              <input formControlName="min_select" type="number" min="0" step="1"
-                class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Máximo a elegir</label>
-              <input formControlName="max_select" type="number" min="1" step="1"
-                class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Modo de selección *</label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="flex items-start gap-2 border rounded-xl p-3 cursor-pointer text-sm"
+                [class]="form.value.selection_mode === 'conteo' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                <input type="radio" formControlName="selection_mode" value="conteo" class="mt-0.5">
+                <span>
+                  <span class="block font-medium text-gray-800">Conteo</span>
+                  <span class="block text-xs text-gray-500">El cliente marca hasta un máximo de opciones distintas (comportamiento actual).</span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 border rounded-xl p-3 cursor-pointer text-sm"
+                [class]="form.value.selection_mode === 'cantidad' ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200'">
+                <input type="radio" formControlName="selection_mode" value="cantidad" class="mt-0.5">
+                <span>
+                  <span class="block font-medium text-gray-800">Cantidad</span>
+                  <span class="block text-xs text-gray-500">El cliente elige libremente cuántas unidades de cada opción, nunca obligatorio.</span>
+                </span>
+              </label>
             </div>
           </div>
-          <p class="text-xs text-gray-400">Ej. Sabores 1–3, Toppings 0–5. El mínimo obliga a elegir; el máximo limita.</p>
+
+          @if (form.value.selection_mode === 'conteo') {
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Mínimo a elegir</label>
+                <input formControlName="min_select" type="number" min="0" step="1"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Máximo a elegir</label>
+                <input formControlName="max_select" type="number" min="1" step="1"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+            </div>
+            <p class="text-xs text-gray-400">Ej. Sabores 1–3, Toppings 0–5. El mínimo obliga a elegir; el máximo limita.</p>
+          } @else {
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tope por opción</label>
+                <input formControlName="max_quantity_per_option" type="number" min="1" step="1" placeholder="Sin tope"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tope total del grupo</label>
+                <input formControlName="max_total_quantity" type="number" min="1" step="1" placeholder="Sin tope"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              </div>
+            </div>
+            <p class="text-xs text-gray-400">Opcionales -- vacío significa sin tope. Nunca hay un mínimo obligatorio en modo "Cantidad".</p>
+          }
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de precio *</label>
@@ -111,6 +149,10 @@ export class OptionGroupFormComponent implements OnInit {
     // poder guardar, tanto al crear como -- si el grupo se migró antes de esta
     // funcionalidad -- al editar uno existente.
     pricing_type: [null, Validators.required],
+    // spec 065: "conteo" sí tiene default de negocio razonable (FR-001).
+    selection_mode: ['conteo', Validators.required],
+    max_quantity_per_option: [null as number | null],
+    max_total_quantity: [null as number | null],
   });
 
   ngOnInit(): void {
@@ -121,6 +163,9 @@ export class OptionGroupFormComponent implements OnInit {
         min_select: this.group.min_select,
         max_select: this.group.max_select,
         pricing_type: this.group.pricing_type,
+        selection_mode: this.group.selection_mode,
+        max_quantity_per_option: this.group.max_quantity_per_option,
+        max_total_quantity: this.group.max_total_quantity,
       });
     }
   }
@@ -136,6 +181,15 @@ export class OptionGroupFormComponent implements OnInit {
       min_select: Number(val.min_select),
       max_select: Number(val.max_select),
       pricing_type: val.pricing_type,
+      selection_mode: val.selection_mode,
+      max_quantity_per_option:
+        val.max_quantity_per_option === null || val.max_quantity_per_option === ''
+          ? null
+          : Number(val.max_quantity_per_option),
+      max_total_quantity:
+        val.max_total_quantity === null || val.max_total_quantity === ''
+          ? null
+          : Number(val.max_total_quantity),
     };
 
     // FR-004: reclasificar de "con_recargo" a "incluido" fuerza $0 en todas las

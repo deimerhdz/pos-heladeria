@@ -57,7 +57,7 @@ describe('SalesService', () => {
     const p = service.checkout({
       cash_shift_id: 'sh1',
       dining_session_id: 'sess1',
-      items: [{ product_variant_id: 'v1', quantity: 2, option_ids: ['o1'] }],
+      items: [{ product_variant_id: 'v1', quantity: 2, options: [{ option_id: 'o1' }] }],
       payments: [{ payment_method_id: 'pm1', amount: 10 }],
     });
     const req = http.expectOne(base);

@@ -18,11 +18,18 @@ import {
 import { normalizeText } from '../../../shared/normalize-text';
 import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
+/** Una opción elegida junto con cuántas unidades de ella (spec 065). Siempre
+ *  `quantity: 1` para una opción de un grupo "conteo". */
+export interface ChosenMenuOption {
+  option: MenuOption;
+  quantity: number;
+}
+
 /** Emitted when the diner confirms their selection for a product. */
 export interface ProductSelection {
   product: MenuProduct;
   variant: MenuVariant;
-  options: MenuOption[];
+  options: ChosenMenuOption[];
   quantity: number;
   notes: string | null;
 }
@@ -127,34 +134,63 @@ export interface ProductSelection {
                       class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
                   }
 
-                  <!-- Rejilla de 2 columnas: 24 sabores caben en 12 filas. -->
-                  <div class="grid grid-cols-2 gap-2">
-                    @for (opt of visibleOptions(group); track opt.id) {
-                      <button
-                        type="button"
-                        (click)="toggleOption(group, opt)"
-                        class="min-h-[3rem] px-3 py-2 rounded-xl border text-sm text-left leading-tight transition-colors"
-                        [class]="isSelected(opt.id)
-                          ? 'border-indigo-600 bg-indigo-600 text-white'
-                          : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'"
-                      >
-                        <span class="flex items-start justify-between gap-1">
-                          <span class="font-medium">{{ opt.name }}</span>
-                          @if (isSelected(opt.id) && group.max_select > 1) {
-                            <span class="shrink-0 w-4 h-4 rounded-full bg-white/25 text-[10px] font-bold flex items-center justify-center">
-                              {{ selectionOrder(group, opt.id) }}
+                  @if (group.selection_mode === 'cantidad') {
+                    <!-- Modo "cantidad": stepper +/- por opción, nunca obligatorio. -->
+                    <div class="space-y-2">
+                      @for (opt of visibleOptions(group); track opt.id) {
+                        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-gray-200">
+                          <span class="min-w-0">
+                            <span class="block text-sm font-medium text-gray-700 truncate">{{ opt.name }}</span>
+                            @if (opt.extra_price > 0) {
+                              <span class="block text-xs text-gray-500">+ {{ opt.extra_price | money }}</span>
+                            }
+                          </span>
+                          <div class="flex items-center gap-2 shrink-0">
+                            <button type="button" (click)="decrementOption(group, opt)"
+                              [disabled]="optionQuantity(group.id, opt.id) === 0"
+                              aria-label="Quitar una unidad"
+                              class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-base font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
+                            >−</button>
+                            <span class="w-5 text-center text-sm font-semibold">{{ optionQuantity(group.id, opt.id) }}</span>
+                            <button type="button" (click)="incrementOption(group, opt)"
+                              [disabled]="!canIncrement(group, opt)"
+                              aria-label="Añadir una unidad"
+                              class="w-8 h-8 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-base font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
+                            >+</button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <!-- Rejilla de 2 columnas: 24 sabores caben en 12 filas. -->
+                    <div class="grid grid-cols-2 gap-2">
+                      @for (opt of visibleOptions(group); track opt.id) {
+                        <button
+                          type="button"
+                          (click)="toggleOption(group, opt)"
+                          class="min-h-[3rem] px-3 py-2 rounded-xl border text-sm text-left leading-tight transition-colors"
+                          [class]="isSelected(opt.id)
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'"
+                        >
+                          <span class="flex items-start justify-between gap-1">
+                            <span class="font-medium">{{ opt.name }}</span>
+                            @if (isSelected(opt.id) && group.max_select > 1) {
+                              <span class="shrink-0 w-4 h-4 rounded-full bg-white/25 text-[10px] font-bold flex items-center justify-center">
+                                {{ selectionOrder(group, opt.id) }}
+                              </span>
+                            }
+                          </span>
+                          @if (opt.extra_price > 0) {
+                            <span class="block text-xs mt-0.5"
+                              [class]="isSelected(opt.id) ? 'text-indigo-100' : 'text-gray-500'">
+                              + {{ opt.extra_price | money }}
                             </span>
                           }
-                        </span>
-                        @if (opt.extra_price > 0) {
-                          <span class="block text-xs mt-0.5"
-                            [class]="isSelected(opt.id) ? 'text-indigo-100' : 'text-gray-500'">
-                            + {{ opt.extra_price | money }}
-                          </span>
-                        }
-                      </button>
-                    }
-                  </div>
+                        </button>
+                      }
+                    </div>
+                  }
 
                   @if (visibleOptions(group).length === 0) {
                     <p class="text-sm text-gray-400 text-center py-2">Ningún sabor coincide.</p>
@@ -243,8 +279,14 @@ export class ProductSelectComponent implements OnInit {
   @Output() cancelled = new EventEmitter<void>();
 
   readonly variantId = signal<string | null>(null);
-  /** group.id → selected option ids, **en orden de selección** (de ahí sale el 1, 2, 3). */
-  readonly selected = signal<Record<string, string[]>>({});
+  /**
+   * group.id → option.id → cantidad elegida (spec 065). Para un grupo "conteo"
+   * el valor sigue siendo efectivamente `0` o `1` por opción -- ninguna lógica de
+   * "conteo" cambia de forma, solo de representación interna (research.md
+   * Decisión 8). El orden de inserción de las claves es lo que alimenta el
+   * badge numerado (1, 2, 3…) de un grupo "conteo" con `max_select > 1`.
+   */
+  readonly selected = signal<Record<string, Record<string, number>>>({});
   readonly quantity = signal(1);
   readonly notes = signal('');
   /** Grupos desplegados. Ver `syncExpanded`: se abre lo que falta, se cierra lo completo. */
@@ -273,20 +315,31 @@ export class ProductSelectComponent implements OnInit {
 
   /**
    * Cambiar de tamaño reconcilia lo ya elegido en vez de dejarlo obsoleto: se conserva
-   * lo que el tamaño nuevo sigue ofreciendo y se recorta a su `max_select`. Sin esto,
-   * pasar de "Mediana" (2 sabores) a "Pequeña" (1) dejaría dos elegidos y el backend
-   * respondería 422 al añadir al carrito.
+   * lo que el tamaño nuevo sigue ofreciendo y se recorta a su `max_select` (grupos
+   * "conteo" -- un grupo "cantidad" no tiene ese tope de opciones distintas). Sin
+   * esto, pasar de "Mediana" (2 sabores) a "Pequeña" (1) dejaría dos elegidos y el
+   * backend respondería 422 al añadir al carrito.
    */
   selectVariant(v: MenuVariant): void {
     if (v.available === false || v.id === this.variantId()) return;
     this.variantId.set(v.id);
     this.selected.update((map) => {
-      const next: Record<string, string[]> = {};
+      const next: Record<string, Record<string, number>> = {};
       for (const group of v.option_groups) {
-        const previos = (map[group.id] ?? []).filter((id) =>
-          group.options.some((o) => o.id === id && o.available),
+        const previo = map[group.id] ?? {};
+        const validIds = Object.keys(previo).filter((id) =>
+          group.options.some((o) => o.id === id && o.available) && previo[id] > 0,
         );
-        if (previos.length) next[group.id] = previos.slice(0, group.max_select);
+        if (validIds.length === 0) continue;
+        if (group.selection_mode === 'cantidad') {
+          const entry: Record<string, number> = {};
+          for (const id of validIds) entry[id] = previo[id];
+          next[group.id] = entry;
+        } else {
+          const entry: Record<string, number> = {};
+          for (const id of validIds.slice(0, group.max_select)) entry[id] = 1;
+          next[group.id] = entry;
+        }
       }
       return next;
     });
@@ -294,22 +347,25 @@ export class ProductSelectComponent implements OnInit {
     this.syncExpanded();
   }
 
-  private readonly selectedOptions = computed<MenuOption[]>(() => {
+  private readonly selectedOptions = computed<ChosenMenuOption[]>(() => {
     const map = this.selected();
-    const opts: MenuOption[] = [];
+    const chosen: ChosenMenuOption[] = [];
     for (const group of this.activeGroups()) {
-      const ids = map[group.id] ?? [];
+      const entry = map[group.id] ?? {};
       for (const opt of group.options) {
-        if (ids.includes(opt.id)) opts.push(opt);
+        const quantity = entry[opt.id] ?? 0;
+        if (quantity > 0) chosen.push({ option: opt, quantity });
       }
     }
-    return opts;
+    return chosen;
   });
 
   readonly lineTotal = computed(() => {
     const variant = this.selectedVariant();
     const base = variant ? effectivePrice(variant.price, variant.discounted_price) : 0;
-    const extra = this.selectedOptions().reduce((s, o) => s + o.extra_price, 0);
+    const extra = this.selectedOptions().reduce(
+      (s, c) => s + c.option.extra_price * c.quantity, 0,
+    );
     return (base + extra) * this.quantity();
   });
 
@@ -322,20 +378,34 @@ export class ProductSelectComponent implements OnInit {
     return discountInfo(v.price, v.discounted_price, v.discount_kind);
   }
 
+  optionQuantity(groupId: string, optId: string): number {
+    return this.selected()[groupId]?.[optId] ?? 0;
+  }
+
   isSelected(optId: string): boolean {
-    return Object.values(this.selected()).some((ids) => ids.includes(optId));
+    return Object.values(this.selected()).some((entry) => (entry[optId] ?? 0) > 0);
   }
 
   /** Posición de la opción dentro del grupo (1, 2, 3…), o 0 si no está elegida. */
   selectionOrder(group: MenuOptionGroup, optId: string): number {
-    return (this.selected()[group.id] ?? []).indexOf(optId) + 1;
+    const ids = Object.keys(this.selected()[group.id] ?? {});
+    return ids.indexOf(optId) + 1;
   }
 
+  /** Distintas opciones elegidas (grupo "conteo") -- ver `chosenTotal` para "cantidad". */
   chosenCount(group: MenuOptionGroup): number {
-    return (this.selected()[group.id] ?? []).length;
+    return Object.keys(this.selected()[group.id] ?? {}).length;
+  }
+
+  /** Unidades totales elegidas en un grupo "cantidad" (research.md Decisión 8). */
+  chosenTotal(group: MenuOptionGroup): number {
+    const entry = this.selected()[group.id] ?? {};
+    return Object.values(entry).reduce((s, q) => s + q, 0);
   }
 
   isComplete(group: MenuOptionGroup): boolean {
+    // spec 065, FR-003: un grupo "cantidad" nunca bloquea -- no hay mínimo posible.
+    if (group.selection_mode === 'cantidad') return true;
     const n = this.chosenCount(group);
     return n >= group.min_select && n >= group.max_select;
   }
@@ -404,9 +474,14 @@ export class ProductSelectComponent implements OnInit {
 
   /** Nombres elegidos, para el resumen de la cabecera cuando el grupo está plegado. */
   chosenNames(group: MenuOptionGroup): string {
-    const ids = this.selected()[group.id] ?? [];
-    return ids
-      .map((id) => group.options.find((o) => o.id === id)?.name)
+    const entry = this.selected()[group.id] ?? {};
+    return Object.keys(entry)
+      .filter((id) => entry[id] > 0)
+      .map((id) => {
+        const name = group.options.find((o) => o.id === id)?.name;
+        if (!name) return null;
+        return entry[id] > 1 ? `${entry[id]}x ${name}` : name;
+      })
       .filter(Boolean)
       .join(', ');
   }
@@ -421,12 +496,20 @@ export class ProductSelectComponent implements OnInit {
    *
    * Un grupo que descuenta pero es opcional (`min_select = 0`) se queda como
    * está: no elegir es una respuesta válida y el consumo cuadra con lo servido.
+   *
+   * Un grupo "cantidad" nunca exige nada (spec 065, FR-003, research.md
+   * Decisión 3): no hay equivalente de `min_select` para ese modo.
    */
   requiredCount(group: MenuOptionGroup): number {
+    if (group.selection_mode === 'cantidad') return 0;
     return group.consume && group.min_select > 0 ? group.max_select : group.min_select;
   }
 
   groupHint(group: MenuOptionGroup): string {
+    if (group.selection_mode === 'cantidad') {
+      const total = this.chosenTotal(group);
+      return total === 0 ? 'Opcional' : `${total} unidad(es)`;
+    }
     const disponibles = group.options.filter((o) => o.available).length;
     if (disponibles === 0) return 'Sin existencias';
     const requeridas = this.requiredCount(group);
@@ -449,6 +532,7 @@ export class ProductSelectComponent implements OnInit {
     if (!variant) return 'Elige una presentación';
     if (variant.available === false) return 'Presentación agotada';
     for (const g of this.activeGroups()) {
+      if (g.selection_mode === 'cantidad') continue; // FR-003: nunca bloquea.
       const faltan = this.requiredCount(g) - this.chosenCount(g);
       if (faltan > 0) {
         return faltan === 1
@@ -460,7 +544,8 @@ export class ProductSelectComponent implements OnInit {
   }
 
   groupError(group: MenuOptionGroup): string | null {
-    const n = (this.selected()[group.id] ?? []).length;
+    if (group.selection_mode === 'cantidad') return null; // FR-003: nunca bloquea.
+    const n = this.chosenCount(group);
     const requeridas = this.requiredCount(group);
     if (n < requeridas) {
       const disponibles = group.options.filter((o) => o.available).length;
@@ -478,17 +563,18 @@ export class ProductSelectComponent implements OnInit {
   toggleOption(group: MenuOptionGroup, opt: MenuOption): void {
     if (!opt.available) return;
     this.selected.update((map) => {
-      const current = map[group.id] ?? [];
-      const has = current.includes(opt.id);
-      let next: string[];
+      const current = map[group.id] ?? {};
+      const has = (current[opt.id] ?? 0) > 0;
+      let next: Record<string, number>;
       if (has) {
-        next = current.filter((id) => id !== opt.id);
+        next = { ...current };
+        delete next[opt.id];
       } else if (group.max_select === 1) {
-        next = [opt.id]; // single-select replaces
-      } else if (group.max_select > 0 && current.length >= group.max_select) {
+        next = { [opt.id]: 1 }; // single-select replaces
+      } else if (group.max_select > 0 && Object.keys(current).length >= group.max_select) {
         return map; // at limit, ignore
       } else {
-        next = [...current, opt.id];
+        next = { ...current, [opt.id]: 1 };
       }
       return { ...map, [group.id]: next };
     });
@@ -507,11 +593,47 @@ export class ProductSelectComponent implements OnInit {
     }
   }
 
+  // --- Cantidad libre por opción (spec 065, US2/US4) ---
+
+  /** `true` si el botón `+` de esta opción debe estar habilitado (US4, FR-008/FR-009). */
+  canIncrement(group: MenuOptionGroup, opt: MenuOption): boolean {
+    if (!opt.available) return false;
+    const current = this.optionQuantity(group.id, opt.id);
+    if (group.max_quantity_per_option !== null && current >= group.max_quantity_per_option) {
+      return false;
+    }
+    if (group.max_total_quantity !== null && this.chosenTotal(group) >= group.max_total_quantity) {
+      return false;
+    }
+    return true;
+  }
+
+  incrementOption(group: MenuOptionGroup, opt: MenuOption): void {
+    if (!this.canIncrement(group, opt)) return;
+    this.selected.update((map) => {
+      const current = map[group.id] ?? {};
+      return { ...map, [group.id]: { ...current, [opt.id]: (current[opt.id] ?? 0) + 1 } };
+    });
+  }
+
+  decrementOption(group: MenuOptionGroup, opt: MenuOption): void {
+    this.selected.update((map) => {
+      const current = map[group.id] ?? {};
+      const qty = current[opt.id] ?? 0;
+      if (qty <= 0) return map;
+      const next = { ...current };
+      if (qty <= 1) delete next[opt.id];
+      else next[opt.id] = qty - 1;
+      return { ...map, [group.id]: next };
+    });
+  }
+
   canConfirm(): boolean {
     const variant = this.selectedVariant();
     if (!variant || variant.available === false) return false;
     return this.activeGroups().every((g) => {
-      const chosen = this.selected()[g.id] ?? [];
+      if (g.selection_mode === 'cantidad') return true; // FR-003: nunca bloquea.
+      const chosen = Object.keys(this.selected()[g.id] ?? {});
       if (chosen.length < this.requiredCount(g) || chosen.length > g.max_select) return false;
       // El menú pudo refrescarse con el modal abierto y dejar agotado algo ya elegido.
       return chosen.every((id) => g.options.find((o) => o.id === id)?.available !== false);

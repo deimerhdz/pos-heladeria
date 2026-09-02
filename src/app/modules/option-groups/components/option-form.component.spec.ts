@@ -29,6 +29,9 @@ function makeGroup(partial: Partial<OptionGroup> = {}): OptionGroup {
     max_select: 1,
     active: true,
     pricing_type: 'con_recargo',
+    selection_mode: 'conteo',
+    max_quantity_per_option: null,
+    max_total_quantity: null,
     options: [],
     ...partial,
   };

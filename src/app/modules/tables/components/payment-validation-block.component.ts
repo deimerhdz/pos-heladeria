@@ -128,7 +128,7 @@ export class PaymentValidationBlockComponent {
   optionLabels(item: DiningOrderItem): string | null {
     const lookup = buildMenuLookup(this.categories);
     const names = (item.options ?? [])
-      .map((o) => lookup.optionLabel(o.option_id))
+      .map((o) => lookup.optionLabelWithQuantity(o.option_id, o.quantity ?? 1))
       .filter(Boolean);
     return names.length ? names.join(', ') : null;
   }

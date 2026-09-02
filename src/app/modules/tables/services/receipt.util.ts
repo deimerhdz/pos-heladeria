@@ -85,7 +85,9 @@ export function saleToReceipt(sale: Sale, ctx: ReceiptContext): ReceiptData {
       quantity: it.quantity,
       description: it.description,
       lineTotal: Number(it.line_total),
-      options: (it.options ?? []).map((o) => o.name).filter(Boolean),
+      options: (it.options ?? [])
+        .map((o) => ((o.quantity ?? 1) > 1 ? `${o.quantity}x ${o.name}` : o.name))
+        .filter(Boolean),
     })),
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),

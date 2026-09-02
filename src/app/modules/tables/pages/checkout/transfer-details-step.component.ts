@@ -54,13 +54,16 @@ import { CheckoutProgressStore } from './checkout-progress.store';
           <p class="text-sm text-gray-400 text-center py-8">Cargando datos de pago…</p>
         } @else {
           <h1 class="text-lg font-bold text-gray-900 mb-1">{{ method()!.name }}</h1>
-          <p class="text-sm text-gray-500 mb-4">Transfiere y sube tu comprobante para enviar el pedido.</p>
+          <p class="text-sm text-gray-500 mb-4">
+            Transfiere y sube tu comprobante para enviar el pedido.
+          </p>
 
           <div class="bg-indigo-50 rounded-xl p-4 space-y-3">
             @for (f of textFields(); track f.key) {
               <p class="text-sm text-indigo-900 flex items-center gap-2">
                 <span>
-                  <span class="font-medium">{{ f.label ?? f.key }}:</span> {{ method()!.payment_info?.[f.key] }}
+                  <span class="font-medium">{{ f.label ?? f.key }}:</span>
+                  {{ method()!.payment_info?.[f.key] }}
                 </span>
                 <button
                   type="button"
@@ -362,7 +365,7 @@ export class TransferDetailsStepComponent implements OnInit, OnDestroy {
    *  una data URL local. */
   async downloadImage(url: string, filename: string): Promise<void> {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { mode: 'cors' });
       if (!response.ok) throw new Error('Respuesta no exitosa');
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);

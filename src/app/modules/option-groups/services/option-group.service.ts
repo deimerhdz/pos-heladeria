@@ -32,6 +32,9 @@ interface OptionGroupResponse {
   max_select: number;
   active: boolean;
   pricing_type: OptionGroup['pricing_type'];
+  selection_mode: OptionGroup['selection_mode'];
+  max_quantity_per_option: number | null;
+  max_total_quantity: number | null;
   options?: OptionResponse[];
 }
 
@@ -73,6 +76,9 @@ export class OptionGroupService {
       min_select: form.min_select,
       max_select: form.max_select,
       pricing_type: form.pricing_type,
+      selection_mode: form.selection_mode,
+      max_quantity_per_option: form.max_quantity_per_option,
+      max_total_quantity: form.max_total_quantity,
     };
     return this.submit(() => this.http.post<OptionGroupResponse>(this.baseUrl, payload));
   }
@@ -83,6 +89,9 @@ export class OptionGroupService {
       min_select: form.min_select,
       max_select: form.max_select,
       pricing_type: form.pricing_type ?? undefined,
+      selection_mode: form.selection_mode,
+      max_quantity_per_option: form.max_quantity_per_option,
+      max_total_quantity: form.max_total_quantity,
     };
     return this.submit(() => this.http.patch<OptionGroupResponse>(`${this.baseUrl}/${id}`, payload));
   }
@@ -164,6 +173,9 @@ export class OptionGroupService {
       max_select: g.max_select,
       active: g.active,
       pricing_type: g.pricing_type,
+      selection_mode: g.selection_mode,
+      max_quantity_per_option: g.max_quantity_per_option,
+      max_total_quantity: g.max_total_quantity,
       options: (g.options ?? []).map((o) => this.toOption(o)),
     };
   }

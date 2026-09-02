@@ -1,7 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import {
   MenuCategory,
-  MenuOption,
   MenuProduct,
   MenuVariant,
 } from '../../products/interfaces/product.interface';
@@ -28,7 +27,7 @@ import {
   SessionBill,
 } from '../interfaces/dining.interface';
 import { KITCHEN_NOT_READY, hasPendingKitchenWork } from '../../orders/order-status.util';
-import { ProductSelection } from '../components/product-select.component';
+import { ChosenMenuOption, ProductSelection } from '../components/product-select.component';
 import { buildMenuLookup, MenuLookup } from './menu-lookup';
 import { TableService } from './table.service';
 import { DiningSessionService } from './dining-session.service';
@@ -51,7 +50,7 @@ interface ProductDraftLine {
   key: string;
   product: MenuProduct;
   variant: MenuVariant;
-  options: MenuOption[];
+  options: ChosenMenuOption[];
   quantity: number;
   notes: string | null;
   unitPrice: number;
@@ -791,7 +790,7 @@ export class PosTerminalStore {
         qty: i.quantity,
         name: lk.variantLabel(i.product_variant_id),
         bullets: [
-          ...(i.options ?? []).map((o) => lk.optionLabel(o.option_id)).filter(Boolean),
+          ...(i.options ?? []).map((o) => lk.optionLabelWithQuantity(o.option_id, o.quantity ?? 1)).filter(Boolean),
           ...(i.notes ? [i.notes] : []),
         ],
         unitPrice,
@@ -862,7 +861,10 @@ export class PosTerminalStore {
         comboId: undefined as string | undefined,
         qty: l.quantity,
         name: l.product.name,
-        bullets: [...l.options.map((o) => o.name), ...(l.notes ? [l.notes] : [])],
+        bullets: [
+          ...l.options.map((c) => (c.quantity > 1 ? `${c.quantity}x ${c.option.name}` : c.option.name)),
+          ...(l.notes ? [l.notes] : []),
+        ],
         unitPrice,
         subtotal: unitPrice * l.quantity,
         ready: true,
@@ -1208,7 +1210,7 @@ export class PosTerminalStore {
           : {
               product_variant_id: l.variant.id,
               quantity: l.quantity,
-              option_ids: l.options.map((o) => o.id),
+              options: l.options.map((c) => ({ option_id: c.option.id, quantity: c.quantity })),
               notes: l.notes,
             },
       );
@@ -1287,12 +1289,13 @@ export class PosTerminalStore {
   }
 
   addDraftFromSelection(sel: ProductSelection): void {
-    const unitPrice = sel.variant.price + sel.options.reduce((s, o) => s + o.extra_price, 0);
+    const unitPrice =
+      sel.variant.price + sel.options.reduce((s, c) => s + c.option.extra_price * c.quantity, 0);
     const key =
       sel.variant.id +
       '|' +
       sel.options
-        .map((o) => o.id)
+        .map((c) => `${c.option.id}:${c.quantity}`)
         .sort()
         .join(',') +
       '|' +
@@ -1389,7 +1392,7 @@ export class PosTerminalStore {
             : {
                 product_variant_id: l.variant.id,
                 quantity: l.quantity,
-                option_ids: l.options.map((o) => o.id),
+                options: l.options.map((c) => ({ option_id: c.option.id, quantity: c.quantity })),
                 notes: l.notes,
               },
         );

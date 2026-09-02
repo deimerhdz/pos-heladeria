@@ -77,11 +77,18 @@ export interface PaymentMethodCheckoutOption {
 
 // ── Checkout (`POST /sales`) ───────────────────────────────────────────────
 
+/** Una opción elegida junto con cuántas unidades de ella (spec 065,
+ *  `OptionSelectionIn`). `quantity` es opcional, default 1. */
+export interface SaleOptionSelectionPayload {
+  option_id: string;
+  quantity?: number;
+}
+
 /** One line of a sale (`SaleItemIn`). */
 export interface SaleItemPayload {
   product_variant_id: string;
   quantity: number;
-  option_ids?: string[];
+  options?: SaleOptionSelectionPayload[];
 }
 
 /** One payment of a sale (`PaymentIn`). Split payments = multiple entries. */
@@ -113,7 +120,8 @@ export interface SaleItem {
    * Snapshot de las opciones elegidas, congelado al vender. Se conserva el nombre
    * para que el ticket siga siendo legible aunque la opción se desactive después.
    */
-  options?: { option_id: string; name: string; extra_price: string }[];
+  /** `quantity` ausente = 1 (snapshot anterior a spec 065, sin esa clave). */
+  options?: { option_id: string; name: string; extra_price: string; quantity?: number }[];
   quantity: number;
   unit_price: string;
   line_total: string;

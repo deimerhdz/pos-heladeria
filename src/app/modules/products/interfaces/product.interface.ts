@@ -17,6 +17,14 @@ export type PreparationType = 'prepared' | 'packaged';
  */
 export type OptionGroupPricingType = 'incluido' | 'con_recargo';
 
+/**
+ * Modo de selección de un grupo de opciones (spec 065). `conteo` (default) = el
+ * comportamiento de hoy, `min_select`/`max_select` cuentan opciones distintas.
+ * `cantidad` = el cliente elige unidades libres por opción, sin mínimo posible;
+ * `min_select`/`max_select` se ignoran en ese modo.
+ */
+export type OptionGroupSelectionMode = 'conteo' | 'cantidad';
+
 // --- Products ---
 
 /** A product (list/detail). Mirrors backend `ProductResponse`/`ProductListResponse`. */
@@ -169,6 +177,9 @@ export interface OptionGroup {
   max_select: number;
   active: boolean;
   pricing_type: OptionGroupPricingType;
+  selection_mode: OptionGroupSelectionMode;
+  max_quantity_per_option: number | null;
+  max_total_quantity: number | null;
   options: Option[];
 }
 
@@ -178,15 +189,22 @@ export interface OptionGroupForm {
   min_select: number;
   max_select: number;
   pricing_type: OptionGroupPricingType | null;
+  selection_mode: OptionGroupSelectionMode;
+  max_quantity_per_option: number | null;
+  max_total_quantity: number | null;
 }
 
 /** `POST /option-groups` (`OptionGroupCreate`). `pricing_type` es obligatorio (FR-001):
- *  sin default de negocio razonable entre "incluido" y "con_recargo". */
+ *  sin default de negocio razonable entre "incluido" y "con_recargo". `selection_mode`
+ *  sí tiene default de negocio ("conteo", spec 065) -- es opcional. */
 export interface OptionGroupCreatePayload {
   name: string;
   min_select: number;
   max_select: number;
   pricing_type: OptionGroupPricingType;
+  selection_mode: OptionGroupSelectionMode;
+  max_quantity_per_option: number | null;
+  max_total_quantity: number | null;
 }
 
 /** `PATCH /option-groups/{id}` (`OptionGroupUpdate`). Partial: only sent fields apply. */
@@ -196,6 +214,9 @@ export interface OptionGroupUpdatePayload {
   max_select?: number;
   active?: boolean;
   pricing_type?: OptionGroupPricingType;
+  selection_mode?: OptionGroupSelectionMode;
+  max_quantity_per_option?: number | null;
+  max_total_quantity?: number | null;
 }
 
 /** Editable fields captured by the option form. */
@@ -362,6 +383,16 @@ export interface MenuOptionGroup {
    * `requiredCount()` en `product-select.component.ts`.
    */
   consume: boolean;
+  /**
+   * Modo de selección (spec 065). `conteo` (default) = el comportamiento de
+   * siempre, `min_select`/`max_select` cuentan opciones distintas. `cantidad` =
+   * el cliente elige unidades libres por opción, sin mínimo posible;
+   * `min_select`/`max_select` se ignoran en ese modo.
+   */
+  selection_mode: OptionGroupSelectionMode;
+  /** Solo tienen efecto en modo "cantidad"; `null` = sin tope. */
+  max_quantity_per_option: number | null;
+  max_total_quantity: number | null;
   options: MenuOption[];
 }
 
