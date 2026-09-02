@@ -18,12 +18,12 @@ import {
 } from '@angular/cdk/drag-drop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CategoryService } from '../../categories/services/category.service';
-import { PresentationService } from '../../presentations/services/presentation.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { buildUnitLookup, formatQuantity } from '../../inventory/services/unit-lookup';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import {
   DeactivatedVariant,
   PreparationType,
@@ -170,17 +170,27 @@ interface SlotBreakdown {
           </div>
 
           <!-- ===== Maneja inventario (spec 027) =====
-               Apagado por defecto. Habilita/deshabilita "Insumos fijos" y "Sabores a
-               elegir" de cada tamaño — ambos son las dos fuentes de descuento de
-               inventario que el backend evalúa. Apagarlo NO borra los insumos ya
-               guardados, solo deja de exigirlos y de aplicarlos al vender. -->
+               Apagado por defecto. Habilita/deshabilita "Insumos fijos" (siempre) y la
+               parte de inventario de "Sabores a elegir" (cantidad de consumo, detalle de
+               insumo -- el selector de grupo y min/max siguen editables sin importar este
+               switch, spec 064 FR-006). Apagarlo NO borra los insumos ya guardados, solo
+               deja de exigirlos y de aplicarlos al vender. Deshabilitado (no oculto) sin
+               el módulo Inventario en el plan (spec 064, FR-011) -- un producto existente
+               con el switch ya encendido debe seguir mostrando ese valor. -->
           <div class="flex items-start justify-between gap-4 mt-4 pt-4 border-t border-gray-100">
             <div>
               <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Maneja inventario</h4>
-              <p class="text-xs text-gray-500 mt-1">Actívalo para asociar los insumos que este producto descuenta al venderse.</p>
+              <p class="text-xs text-gray-500 mt-1">
+                @if (inventarioIncluido()) {
+                  Actívalo para asociar los insumos que este producto descuenta al venderse.
+                } @else {
+                  Tu plan actual no incluye el módulo de inventario.
+                }
+              </p>
             </div>
-            <button type="button" (click)="toggleTracksInventory()" role="switch" [attr.aria-checked]="draft().tracks_inventory"
-              class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+            <button type="button" (click)="toggleTracksInventory()" role="switch"
+              [attr.aria-checked]="draft().tracks_inventory" [disabled]="!inventarioIncluido()"
+              class="relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
               [class]="draft().tracks_inventory ? 'bg-indigo-600' : 'bg-gray-300'"
               title="Actívalo si este producto descuenta insumos del inventario al venderse">
               <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" [class]="draft().tracks_inventory ? 'left-[22px]' : 'left-0.5'"></span>
@@ -258,26 +268,6 @@ interface SlotBreakdown {
 
           @if (activeVariant(); as av) {
             <div class="mt-4 space-y-5">
-              <!-- spec 040: presentación de catálogo (opcional). -->
-              <div>
-                <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                  Presentación
-                </label>
-                <select
-                  [ngModel]="av.presentationId ?? ''"
-                  (ngModelChange)="setVariantField(av.localId, 'presentationId', $event || null)"
-                  class="w-56 px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                >
-                  <option value="">Sin presentación</option>
-                  @for (p of presentationService.activePresentations(); track p.id) {
-                    <option [value]="p.id">{{ p.name }}</option>
-                  }
-                </select>
-                <p class="text-xs text-gray-400 mt-1">
-                  Una variante sin presentación no participa de promociones por presentación.
-                </p>
-              </div>
-
               @if (!draft().hasSizes) {
                 <!-- Sin tamaños: una sola presentación; el nombre y el orden no aplican. -->
                 <div class="flex flex-wrap items-end gap-3">
@@ -293,7 +283,7 @@ interface SlotBreakdown {
                 </div>
               }
 
-              @if (draft().tracks_inventory) {
+              @if (sectionsEnabled()) {
               <!-- Insumos fijos -->
               <div>
                 <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insumos fijos</h4>
@@ -319,11 +309,27 @@ interface SlotBreakdown {
                     class="text-sm font-medium text-indigo-600 hover:text-indigo-700">+ Agregar insumo</button>
                 </div>
               </div>
+              } @else {
+              <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                Activa "Maneja inventario" arriba para configurar los insumos fijos que este tamaño descuenta.
+              </div>
+              }
 
-              <!-- Sabores a elegir -->
+              <!-- ===== Sabores a elegir (spec 064) =====
+                   A diferencia de "Insumos fijos" (100% inventario), esta sección SIEMPRE
+                   está disponible: qué grupo ofrece la variante y cuántas opciones elige el
+                   cliente (min/max) son datos de menú/precio, no de inventario. Solo la
+                   cantidad de consumo y el detalle de insumo (sectionsEnabled(), combina el
+                   switch del producto con el acceso por plan) dependen de inventario. -->
               <div>
                 <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Sabores a elegir</h4>
-                <p class="text-xs text-gray-400 mt-0.5 mb-2">El cliente elige, y se descuenta la cantidad indicada del insumo de <strong>cada</strong> opción que elija.</p>
+                <p class="text-xs text-gray-400 mt-0.5 mb-2">
+                  @if (sectionsEnabled()) {
+                    El cliente elige, y se descuenta la cantidad indicada del insumo de <strong>cada</strong> opción que elija.
+                  } @else {
+                    El cliente elige entre las opciones del grupo (sin descuento de inventario).
+                  }
+                </p>
                 <div class="space-y-3">
                   @if (av.optionGroups.length === 0) {
                     <p class="text-sm text-gray-400">Ninguno. Este tamaño no pide elegir nada.</p>
@@ -348,24 +354,28 @@ interface SlotBreakdown {
                         <input type="number" min="1" [value]="g.max_select"
                           (input)="setGroupField(av.localId, $index, 'max_select', +$any($event.target).value)"
                           class="w-16 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                        <span class="text-gray-600 ml-2">descuenta</span>
-                        <input type="number" min="0" step="0.001" [value]="g.quantity_per_option"
-                          (input)="setGroupField(av.localId, $index, 'quantity_per_option', +$any($event.target).value)"
-                          class="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                        <span class="text-gray-500 text-xs">{{ groupUnit(g) }} por cada uno</span>
-                        @if (groupTotalHint(g); as hint) {
-                          <span class="text-xs font-semibold text-gray-700">{{ hint }}</span>
+                        @if (sectionsEnabled()) {
+                          <span class="text-gray-600 ml-2">descuenta</span>
+                          <input type="number" min="0" step="0.001" [value]="g.quantity_per_option"
+                            (input)="setGroupField(av.localId, $index, 'quantity_per_option', +$any($event.target).value)"
+                            class="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                          <span class="text-gray-500 text-xs">{{ groupUnit(g) }} por cada uno</span>
+                          @if (groupTotalHint(g); as hint) {
+                            <span class="text-xs font-semibold text-gray-700">{{ hint }}</span>
+                          }
                         }
                       </div>
 
                       @if (groupError(g); as err) {
                         <p class="text-xs text-red-600 mt-1.5">{{ err }}</p>
                       }
-                      @for (w of groupWarnings(g); track w) {
-                        <p class="text-xs text-amber-700 mt-1.5">⚠ {{ w }}</p>
+                      @if (sectionsEnabled()) {
+                        @for (w of groupWarnings(g); track w) {
+                          <p class="text-xs text-amber-700 mt-1.5">⚠ {{ w }}</p>
+                        }
                       }
 
-                      @if (g.option_group_id) {
+                      @if (sectionsEnabled() && g.option_group_id) {
                         <div class="mt-2 pt-2 border-t border-amber-200/70">
                           <div class="flex items-start justify-between gap-3">
                             <p class="text-xs text-gray-500 min-w-0">
@@ -427,13 +437,8 @@ interface SlotBreakdown {
                     class="text-sm font-medium text-amber-600 hover:text-amber-700">+ Agregar sabores a elegir</button>
                 </div>
               </div>
-              } @else {
-              <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                Activa "Maneja inventario" arriba para configurar los insumos que este tamaño descuenta.
-              </div>
-              }
 
-              @if (draft().hasSizes && draft().variants.length > 1 && draft().tracks_inventory) {
+              @if (draft().hasSizes && draft().variants.length > 1) {
                 <button type="button" (click)="copyConfigToOthers(av.localId)"
                   class="text-xs font-medium text-gray-500 hover:text-indigo-600 border border-dashed border-gray-300 hover:border-indigo-400 rounded-lg px-3 py-2 transition-colors">
                   Copiar insumos y sabores de «{{ av.name }}» a los otros tamaños
@@ -461,13 +466,34 @@ interface SlotBreakdown {
 export class ProductFormComponent implements OnInit, OnDestroy {
   readonly service = inject(ProductService);
   readonly categoryService = inject(CategoryService);
-  readonly presentationService = inject(PresentationService);
   readonly inventoryService = inject(InventoryService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly unitMeasureService = inject(UnitMeasureService);
   private readonly confirm = inject(ConfirmService);
+  private readonly planSummaryService = inject(PlanSummaryService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
+  /**
+   * spec 064: si el plan del tenant incluye el módulo Inventario. Fail-closed mientras
+   * `summary()` no ha cargado (mismo criterio que `inventory-page.component.ts::comprasIncluido`)
+   * -- más seguro que dejar activar el switch y toparse con un 403 del backend después.
+   */
+  readonly inventarioIncluido = computed(() => {
+    const summary = this.planSummaryService.summary();
+    return summary !== null && summary.modules.inventario && !summary.vencido;
+  });
+
+  /**
+   * Gobierna la parte de "Sabores a elegir" que sí es de inventario (cantidad de consumo,
+   * detalle de insumo) -- el selector de grupo y min/max quedan siempre editables (spec
+   * 064, FR-006: restructura el `@if` único que antes ocultaba también eso). Combina el
+   * switch del producto (spec 027) con el acceso por plan (spec 064, US5): sin el módulo,
+   * ni siquiera un producto con el switch encendido puede mostrar estos campos.
+   */
+  readonly sectionsEnabled = computed(
+    () => this.draft().tracks_inventory && this.inventarioIncluido(),
+  );
 
   private lidCounter = 0;
 
@@ -746,9 +772,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
         ? this.unitMeasureService.loadUnitMeasures()
         : null,
       this.optionGroupService.groups().length === 0 ? this.optionGroupService.loadGroups() : null,
-      this.presentationService.presentations().length === 0
-        ? this.presentationService.loadPresentations()
-        : null,
     ]);
 
     const id = this.route.snapshot.paramMap.get('id');
@@ -792,7 +815,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: this.nextLid(),
       name,
       price,
-      presentationId: null,
       recipe: [],
       optionGroups: [],
     };
@@ -967,7 +989,6 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: dv.id,
       name: dv.name,
       price: dv.price,
-      presentationId: null,
       recipe,
       optionGroups,
     };
@@ -1009,7 +1030,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
 
   setVariantField(
     localId: string,
-    field: 'name' | 'price' | 'presentationId',
+    field: 'name' | 'price',
     value: string | number | null,
   ): void {
     this.draft.update((d) => ({

@@ -31,6 +31,7 @@ interface OptionGroupResponse {
   min_select: number;
   max_select: number;
   active: boolean;
+  pricing_type: OptionGroup['pricing_type'];
   options?: OptionResponse[];
 }
 
@@ -64,10 +65,14 @@ export class OptionGroupService {
   }
 
   async createGroup(form: OptionGroupForm): Promise<boolean> {
+    if (form.pricing_type === null) {
+      throw new Error('pricing_type es obligatorio para crear un grupo de opciones (FR-001).');
+    }
     const payload: OptionGroupCreatePayload = {
       name: form.name,
       min_select: form.min_select,
       max_select: form.max_select,
+      pricing_type: form.pricing_type,
     };
     return this.submit(() => this.http.post<OptionGroupResponse>(this.baseUrl, payload));
   }
@@ -77,6 +82,7 @@ export class OptionGroupService {
       name: form.name,
       min_select: form.min_select,
       max_select: form.max_select,
+      pricing_type: form.pricing_type ?? undefined,
     };
     return this.submit(() => this.http.patch<OptionGroupResponse>(`${this.baseUrl}/${id}`, payload));
   }
@@ -157,6 +163,7 @@ export class OptionGroupService {
       min_select: g.min_select,
       max_select: g.max_select,
       active: g.active,
+      pricing_type: g.pricing_type,
       options: (g.options ?? []).map((o) => this.toOption(o)),
     };
   }

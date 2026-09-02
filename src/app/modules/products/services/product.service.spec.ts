@@ -144,7 +144,7 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: 'viva', localId: 'viva', name: 'Mediana', price: 9000, presentationId: null, recipe: [], optionGroups: [] },
+            { id: 'viva', localId: 'viva', name: 'Mediana', price: 9000, recipe: [], optionGroups: [] },
           ],
           deactivated: [{ id: 'muerta', name: 'Pequeña', price: 6000 }],
         }),
@@ -168,7 +168,7 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, presentationId: null, recipe: [], optionGroups: [] },
+            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, recipe: [], optionGroups: [] },
           ],
         }),
       );
@@ -198,9 +198,9 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: 'v2', localId: 'v2', name: 'Grande', price: 8000, presentationId: null, recipe: [], optionGroups: [] },
-            { id: null, localId: 'nueva', name: 'Mediana', price: 6500, presentationId: null, recipe: [], optionGroups: [] },
-            { id: 'v1', localId: 'v1', name: 'Pequeña', price: 5000, presentationId: null, recipe: [], optionGroups: [] },
+            { id: 'v2', localId: 'v2', name: 'Grande', price: 8000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'nueva', name: 'Mediana', price: 6500, recipe: [], optionGroups: [] },
+            { id: 'v1', localId: 'v1', name: 'Pequeña', price: 5000, recipe: [], optionGroups: [] },
           ],
         }),
       );

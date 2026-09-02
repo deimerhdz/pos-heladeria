@@ -13,15 +13,35 @@ import type { VariantDraft } from '../interfaces/product.interface';
 import { environment } from '../../../../environments/environment';
 import { ProductFormComponent } from './product-form.component';
 import { CategoryService } from '../../categories/services/category.service';
-import { PresentationService } from '../../presentations/services/presentation.service';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { OptionGroupService } from '../../option-groups/services/option-group.service';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { PlanSummary } from '../../plan/interfaces/plan-summary.interface';
 
 const API = environment.apiBaseUrl;
 const PRODUCTS = `${API}/products`;
 const VARIANTS = `${API}/variants`;
+
+function makeSummary(partial: Partial<PlanSummary>): PlanSummary {
+  return {
+    plan_name: 'Pro',
+    ciclo_facturacion: 'mensual',
+    plan_vence_en: null,
+    vencido: false,
+    resources: {},
+    modules: { inventario: true, compras: true, promociones: true },
+    ...partial,
+  };
+}
+
+/**
+ * Por defecto, plan CON el módulo Inventario -- así los tests de spec 027 (switch
+ * habilitado, sin gating por plan en juego) siguen pasando sin tocarlos. Los tests de
+ * gating por plan (spec 064, US5) lo redefinen explícitamente a `inventario: false`.
+ */
+const planSummary = signal<PlanSummary | null>(makeSummary({}));
 
 /** Drain pending microtasks so the next request in a chained flow gets dispatched. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -35,11 +55,6 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 class FakeCategoryService {
   allCategories = signal<{ id: string; name: string }[]>([{ id: 'c1', name: 'Helados' }]);
   loadAllCategories(): void {}
-}
-class FakePresentationService {
-  presentations = signal<unknown[]>([]);
-  activePresentations = signal<unknown[]>([]);
-  async loadPresentations(): Promise<void> {}
 }
 class FakeInventoryService {
   allItems = signal<unknown[]>([]);
@@ -73,10 +88,10 @@ describe('ProductFormComponent', () => {
           new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
         ),
         { provide: CategoryService, useClass: FakeCategoryService },
-        { provide: PresentationService, useClass: FakePresentationService },
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        { provide: PlanSummaryService, useValue: { summary: planSummary } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({}) } },
@@ -95,6 +110,7 @@ describe('ProductFormComponent', () => {
   }
 
   afterEach(() => http.verify());
+  beforeEach(() => planSummary.set(makeSummary({})));
 
   const switchButton = (): HTMLButtonElement =>
     fixture.nativeElement.querySelector('button[role="switch"][title*="descuenta insumos"]');
@@ -108,15 +124,18 @@ describe('ProductFormComponent', () => {
     expect(switchButton().getAttribute('aria-checked')).toBe('false');
   });
 
-  it('la sección de insumos aparece deshabilitada mientras el switch está apagado', async () => {
+  it('la sección de insumos fijos aparece deshabilitada mientras el switch está apagado, pero "Sabores a elegir" sigue disponible (spec 064, FR-006)', async () => {
     await createNew();
 
     expect(text()).not.toContain('Insumos fijos');
-    expect(text()).not.toContain('Sabores a elegir');
+    // A diferencia del comportamiento anterior a spec 064: "Sabores a elegir" (selector
+    // de grupo, min/max) ya NO depende del switch de inventario -- un producto sin
+    // inventario puede seguir ofreciendo sabores/toppings con precio.
+    expect(text()).toContain('Sabores a elegir');
     expect(text()).toContain('Activa "Maneja inventario"');
   });
 
-  it('activar el switch habilita la sección de insumos', async () => {
+  it('activar el switch habilita la sección de insumos fijos y la parte de inventario de "Sabores a elegir"', async () => {
     await createNew();
 
     switchButton().click();
@@ -126,6 +145,40 @@ describe('ProductFormComponent', () => {
     expect(text()).toContain('Insumos fijos');
     expect(text()).toContain('Sabores a elegir');
     expect(text()).not.toContain('Activa "Maneja inventario"');
+  });
+
+  it('sin inventario, se puede agregar un grupo de opciones y fijar min/max, pero no aparece el input de cantidad ni el detalle de insumo', async () => {
+    await createNew();
+    const localId = component.activeVariant()!.localId;
+
+    component.addGroup(localId);
+    component.setGroupField(localId, 0, 'option_group_id', 'g1');
+    component.setGroupField(localId, 0, 'min_select', 1);
+    component.setGroupField(localId, 0, 'max_select', 1);
+    fixture.detectChanges();
+
+    expect(component.activeVariant()!.optionGroups.length).toBe(1);
+    expect(component.activeVariant()!.optionGroups[0].option_group_id).toBe('g1');
+    expect(text()).toContain('elige');
+    // "descuenta" (verbo) también aparece en la descripción siempre visible del switch
+    // ("...este producto descuenta al venderse") -- se verifica la frase completa que
+    // solo existe junto al input de cantidad_per_option, para no dar un falso negativo.
+    expect(text()).not.toContain('por cada uno');
+    expect(text()).not.toContain('Descuenta de:');
+  });
+
+  it('activar el switch sobre un grupo ya elegido revela la cantidad de consumo y el detalle de insumo', async () => {
+    await createNew();
+    const localId = component.activeVariant()!.localId;
+    component.addGroup(localId);
+    component.setGroupField(localId, 0, 'option_group_id', 'g1');
+    fixture.detectChanges();
+
+    switchButton().click();
+    fixture.detectChanges();
+
+    expect(text()).toContain('por cada uno');
+    expect(text()).toContain('Descuenta de:');
   });
 
   it('advierte de inmediato si el switch está activado y ninguna presentación tiene insumos (FR-013)', async () => {
@@ -283,10 +336,10 @@ describe('ProductFormComponent', () => {
           new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
         ),
         { provide: CategoryService, useClass: FakeCategoryService },
-        { provide: PresentationService, useClass: FakePresentationService },
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        { provide: PlanSummaryService, useValue: { summary: planSummary } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({ id }) } },
@@ -338,17 +391,24 @@ describe('ProductFormComponent', () => {
       (b) => b.textContent?.includes('Copiar insumos'),
     ) ?? null;
 
-  it('el botón "Copiar insumos..." está oculto con tracks_inventory=false, aunque hasSizes && variants.length > 1', async () => {
+  // Spec 064 cambia deliberadamente el criterio de visibilidad de este botón: antes
+  // (spec 027) exigía `tracks_inventory=true` porque copiaba "insumos y sabores" y
+  // ambos vivían detrás del mismo switch. Ahora "Sabores a elegir" (selector de grupo,
+  // min/max) ya no depende del switch (FR-006) -- el botón sigue teniendo sentido sin
+  // inventario (copiar a qué grupos ofrece cada tamaño), así que su condición pasa a
+  // ser solo `hasSizes && variants.length > 1`, sin importar `tracks_inventory`.
+
+  it('el botón "Copiar insumos..." aparece con hasSizes && variants.length > 1, aunque tracks_inventory esté apagado', async () => {
     await createNew();
     component.toggleHasSizes(); // hasSizes=true, 3 variantes — switch de inventario sigue apagado
     fixture.detectChanges();
 
     expect(component.draft().tracks_inventory).toBe(false);
     expect(component.draft().hasSizes && component.draft().variants.length > 1).toBe(true);
-    expect(copyButton()).toBeNull();
+    expect(copyButton()).not.toBeNull();
   });
 
-  it('el botón "Copiar insumos..." aparece con tracks_inventory=true, en las mismas condiciones', async () => {
+  it('el botón "Copiar insumos..." también aparece con tracks_inventory=true, en las mismas condiciones', async () => {
     await createNew();
     component.toggleHasSizes();
     await component.toggleTracksInventory();
@@ -359,11 +419,11 @@ describe('ProductFormComponent', () => {
     expect(copyButton()!.textContent).toContain('Copiar insumos');
   });
 
-  it('reacciona de inmediato a toggleTracksInventory() en ambos sentidos, sin recargar', async () => {
+  it('el botón no depende de toggleTracksInventory(): permanece visible al encender y apagar', async () => {
     await createNew();
     component.toggleHasSizes();
     fixture.detectChanges();
-    expect(copyButton()).toBeNull();
+    expect(copyButton()).not.toBeNull();
 
     await component.toggleTracksInventory(); // enciende
     fixture.detectChanges();
@@ -371,14 +431,13 @@ describe('ProductFormComponent', () => {
 
     await component.toggleTracksInventory(); // apaga (sin insumos configurados: no pide confirmación)
     fixture.detectChanges();
-    expect(copyButton()).toBeNull();
+    expect(copyButton()).not.toBeNull();
   });
 
-  it('en edición, con tracks_inventory=false el botón está oculto aunque el producto ya tenga insumos guardados', async () => {
+  it('en edición, el botón aparece igual con tracks_inventory=false o =true', async () => {
     await createEdit('p9', false);
-
     expect(component.draft().hasSizes).toBe(true); // 2 variantes ya guardadas
-    expect(copyButton()).toBeNull();
+    expect(copyButton()).not.toBeNull();
   });
 
   it('en edición, con tracks_inventory=true el botón aparece igual que en creación', async () => {
@@ -462,5 +521,47 @@ describe('ProductFormComponent', () => {
 
     expect(component.draft().variants.map((v) => v.name)).toContain('Mediana');
     expect(component.draft().deactivated).toEqual([]);
+  });
+
+  // ── Gating por plan del switch de inventario (spec 064, US5) ─────────────
+
+  it('sin el módulo Inventario en el plan, el switch aparece deshabilitado', async () => {
+    planSummary.set(makeSummary({ modules: { inventario: false, compras: true, promociones: true } }));
+    await createNew();
+
+    expect(switchButton().disabled).toBe(true);
+  });
+
+  it('sin el módulo Inventario, hacer click en el switch deshabilitado no cambia nada', async () => {
+    planSummary.set(makeSummary({ modules: { inventario: false, compras: true, promociones: true } }));
+    await createNew();
+
+    switchButton().click(); // no-op: el navegador nunca dispara (click) sobre [disabled]
+    fixture.detectChanges();
+
+    expect(component.draft().tracks_inventory).toBe(false);
+  });
+
+  it('un producto existente con tracks_inventory=true conserva ese valor visible aunque el switch esté deshabilitado sin el módulo', async () => {
+    planSummary.set(makeSummary({ modules: { inventario: false, compras: true, promociones: true } }));
+    await createEdit('p9', true);
+
+    expect(component.draft().tracks_inventory).toBe(true);
+    expect(switchButton().getAttribute('aria-checked')).toBe('true');
+    expect(switchButton().disabled).toBe(true);
+    // sectionsEnabled() combina el switch con el plan: sin módulo, ni "Insumos fijos" ni
+    // la parte de inventario de "Sabores a elegir" se muestran, aunque el switch siga en
+    // `true` (dato preservado, FR-013) -- research.md Decisión 5.
+    expect(text()).not.toContain('Insumos fijos');
+  });
+
+  it('con el módulo Inventario incluido, el switch funciona con normalidad (sin regresión)', async () => {
+    planSummary.set(makeSummary({ modules: { inventario: true, compras: true, promociones: true } }));
+    await createNew();
+
+    expect(switchButton().disabled).toBe(false);
+    switchButton().click();
+    fixture.detectChanges();
+    expect(component.draft().tracks_inventory).toBe(true);
   });
 });

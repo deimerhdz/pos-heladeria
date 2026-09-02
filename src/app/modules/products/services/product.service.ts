@@ -75,7 +75,6 @@ interface VariantResponse {
   sku: string | null;
   price: string;
   active: boolean;
-  presentation_id?: string | null;
 }
 
 interface RecipeItemResponse {
@@ -305,7 +304,6 @@ export class ProductService {
       name: form.name,
       price: form.price,
       sku: form.sku,
-      presentation_id: form.presentation_id ?? null,
     };
     return this.run(() =>
       this.http.post<VariantResponse>(`${this.productsUrl}/${productId}/variants`, payload),
@@ -397,7 +395,6 @@ export class ProductService {
         localId: v.id,
         name: v.name,
         price: v.price,
-        presentationId: v.presentation_id ?? null,
         recipe: recipe.map((r) => ({ ...r })),
         optionGroups,
       });
@@ -615,7 +612,6 @@ export class ProductService {
       sku: v.sku,
       price: Number(v.price),
       active: v.active,
-      presentation_id: v.presentation_id ?? null,
     };
   }
 

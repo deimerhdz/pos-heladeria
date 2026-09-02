@@ -6,27 +6,26 @@ import { environment } from '../../../../environments/environment';
 import { Page } from '../../../core/interfaces/page.interface';
 import { injectPagedQuery } from '../../../core/query/paged-query';
 import {
-  PresentationConfirmFlags,
-  PresentationOverlapError,
-  PresentationPriceCheckError,
-  PresentationRuleIn,
+  OverlapConflictError,
+  PackageNotDiscountError,
   Promotion,
   PromotionCreatePayload,
   PromotionDuplicatePayload,
   PromotionForm,
+  PromotionRuleInPayload,
   PromotionShapePayload,
   PromotionStatus,
   PromotionStatusPayload,
-  PromotionTarget,
   PromotionUpdatePayload,
-  PromotionWithOverlaps,
+  RuleVariantConflictError,
 } from '../interfaces/promotion.interface';
 
 /**
- * `detail` de FastAPI: string en los `HTTPException` del router (409/422 ya
- * redactados en español) y array de errores en las validaciones de Pydantic.
- * `ApiErrorBody` (compartido) solo declara el caso string, así que este módulo
- * tipa el suyo para no perder el mensaje de `_combo_items_required` y compañía.
+ * spec 063 — modelo por conjunto explícito de variantes, partición
+ * `Promoción`/`Regla` (revisión 2026-09-01). Se van del servicio:
+ * `overlapCandidates` (el solape real lo bloquea el backend con 409, ya no
+ * se calcula en cliente), targets, combos, reglas por presentación y
+ * `priority`.
  */
 interface PromotionErrorBody {
   detail?: string | { msg?: string }[];
@@ -40,25 +39,25 @@ export class PromotionService {
   private readonly baseUrl = `${environment.apiBaseUrl}/promotions`;
 
   readonly isSubmitting = signal(false);
-  /** Errores fuera de las queries: mutaciones, y el formulario del asistente
-   *  (`promotions-page.component.ts` escribe acá directo para su banner). */
   readonly otherError = signal<string | null>(null);
 
-  /** spec 040: detalle del último 409 de solape entre promociones por presentación. */
-  readonly presentationConflicts = signal<PresentationOverlapError | null>(null);
-  /** spec 040: detalle del último 422 de FR-017/FR-022 (precio no uniforme / sin descuento). */
-  readonly presentationPriceCheck = signal<PresentationPriceCheckError | null>(null);
+  /** spec 063 (FR-014): detalle del último 409 de solape real bloqueado
+   *  (entre reglas de promociones distintas). */
+  readonly overlapConflict = signal<OverlapConflictError | null>(null);
+  /** spec 063 (FR-016): detalle del último 409 de "precio de paquete sin descuento". */
+  readonly packageNotDiscount = signal<PackageNotDiscountError | null>(null);
+  /** spec 063 (revisión 2026-09-01, FR-001a): detalle del último 409 de
+   *  variante repetida entre dos reglas de la misma promoción. */
+  readonly ruleVariantConflict = signal<RuleVariantConflictError | null>(null);
 
-  // Entrada de las queries reactivas: las signals arman la query key.
   readonly page = signal(1);
   readonly size = signal(20);
   readonly search = signal('');
   readonly statusFilter = signal<PromotionStatus | ''>('');
   private readonly wantsPage = signal(false);
-  private readonly wantsCandidates = signal(false);
   private readonly wantsActive = signal(false);
+  private readonly wantsClosedByRefactor = signal(false);
 
-  /** Página actual, para la tabla de Promociones. */
   private readonly pageQuery = injectPagedQuery<Promotion>({
     queryKey: () => [
       'promotions',
@@ -79,27 +78,7 @@ export class PromotionService {
     enabled: () => this.wantsPage(),
   });
 
-  /**
-   * Lista completa (tope 100) para el motor de solapamientos de la tabla: cada
-   * fila se compara contra *todas* las promociones, no solo las de la página
-   * actual (`rows()` en promotions-page.component.ts). El backend solo devuelve
-   * `overlaps` en create/update/shape, así que la lista los calcula en cliente
-   * con el mismo algoritmo (`findOverlaps` en promotion-pricing.util).
-   */
-  private readonly candidatesQuery = injectPagedQuery<Promotion>({
-    queryKey: () => ['promotions', 'candidates'],
-    queryFn: () =>
-      firstValueFrom(this.http.get<Page<Promotion>>(this.baseUrl, { params: { size: 100 } })),
-    enabled: () => this.wantsCandidates(),
-  });
-
-  /**
-   * Promociones vigentes para vender, **la que consume el POS**. Antes el
-   * terminal leía `promotions()` —la página 1 de la pantalla de administración,
-   * tamaño 20—, así que un tenant con más de 20 promociones perdía combos e
-   * insignias de descuento en silencio, y cambiar de página en el admin movía
-   * el catálogo del cajero.
-   */
+  /** Promociones vigentes para vender, la que consume el POS (tope 100). */
   private readonly activeQuery = injectPagedQuery<Promotion>({
     queryKey: () => ['promotions', 'active'],
     queryFn: () =>
@@ -109,10 +88,6 @@ export class PromotionService {
           observe: 'response',
         }),
       ).then((res) => {
-        // A-09: esta es la única llamada que el POS de staff hace para
-        // promociones vigentes — se aprovecha para sincronizar la hora del
-        // servidor en vez de sumar una petición dedicada (research.md
-        // Decisión 1).
         const serverTime = res.headers.get('X-Server-Time');
         if (serverTime) this.serverTimeOffsetMs.set(new Date(serverTime).getTime() - Date.now());
         return res.body!;
@@ -120,34 +95,37 @@ export class PromotionService {
     enabled: () => this.wantsActive(),
   });
 
-  /** Desfase (ms) entre `X-Server-Time` del último `GET /promotions?status=active`
-   *  y el reloj local en el instante de recibirlo. `null` hasta el primer sync. */
-  readonly serverTimeOffsetMs = signal<number | null>(null);
+  /**
+   * spec 063 (FR-025): promociones que la migración de la spec 063 pasó a
+   * `Finalizada` — el banner descartable del módulo (`closed_by_refactor=true`).
+   */
+  private readonly closedByRefactorQuery = injectPagedQuery<Promotion>({
+    queryKey: () => ['promotions', 'closed-by-refactor'],
+    queryFn: () =>
+      firstValueFrom(
+        this.http.get<Page<Promotion>>(this.baseUrl, {
+          params: { closed_by_refactor: true, size: 100 },
+        }),
+      ),
+    enabled: () => this.wantsClosedByRefactor(),
+  });
 
-  /** `true` en cuanto hay una hora de servidor con la que evaluar vigencia. */
+  readonly serverTimeOffsetMs = signal<number | null>(null);
   readonly ready = computed(() => this.serverTimeOffsetMs() !== null);
 
-  /**
-   * Hora a usar para evaluar vigencia de promociones en el POS de staff, en
-   * vez de `new Date()` del dispositivo (A-09). Solo debe llamarse cuando
-   * `ready()` es `true` — los consumidores deben degradar explícito (sin
-   * insignias/descuento de previsualización) mientras no haya sync, nunca caer
-   * de vuelta al reloj del dispositivo sin corregir.
-   */
   now(): Date {
     return new Date(Date.now() + (this.serverTimeOffsetMs() ?? 0));
   }
 
   readonly promotions = computed(() => this.pageQuery.data()?.items ?? []);
-  readonly overlapCandidates = computed(() => this.candidatesQuery.data()?.items ?? []);
   readonly activePromotions = computed(() => this.activeQuery.data()?.items ?? []);
+  readonly closedByRefactor = computed(() => this.closedByRefactorQuery.data()?.items ?? []);
   readonly total = computed(() => this.pageQuery.data()?.total ?? 0);
   readonly totalPages = computed(() => this.pageQuery.data()?.pages ?? 0);
   readonly loading = computed(() => this.pageQuery.isFetching());
   readonly error = computed(() => {
     if (this.otherError()) return this.otherError();
     if (this.pageQuery.isError()) return this.extractError(this.pageQuery.error());
-    if (this.candidatesQuery.isError()) return this.extractError(this.candidatesQuery.error());
     return null;
   });
 
@@ -163,7 +141,6 @@ export class PromotionService {
     return params;
   }
 
-  /** Setter síncrono; el fetch es un efecto reactivo de `pageQuery`. */
   load(page: number = this.page(), size: number = this.size()): void {
     this.otherError.set(null);
     this.page.set(page);
@@ -171,24 +148,20 @@ export class PromotionService {
     this.wantsPage.set(true);
   }
 
-  /** Candidatas al aviso de solapamiento de la tabla (tope 100). */
-  loadOverlapCandidates(): void {
-    this.otherError.set(null);
-    this.wantsCandidates.set(true);
-  }
-
-  /** Vigentes para vender; la usa el POS. */
   loadActive(): void {
     this.wantsActive.set(true);
   }
 
-  /** Aplica el término de búsqueda y recarga desde la página 1. */
+  /** Carga la lista del banner de FR-025 (una vez al entrar al módulo). */
+  loadClosedByRefactor(): void {
+    this.wantsClosedByRefactor.set(true);
+  }
+
   setSearch(term: string): void {
     this.search.set(term);
     this.load(1);
   }
 
-  /** Aplica el filtro de estado y recarga desde la página 1. */
   setStatusFilter(status: PromotionStatus | ''): void {
     this.statusFilter.set(status);
     this.load(1);
@@ -196,82 +169,48 @@ export class PromotionService {
 
   // ── Los 7 endpoints ──────────────────────────────────────────────────
 
-  /** `POST /promotions`. `status` decide si nace en borrador o ya activa. */
-  create(
-    form: PromotionForm,
-    status: 'draft' | 'active',
-    flags: PresentationConfirmFlags = {},
-  ): Promise<PromotionWithOverlaps | null> {
+  create(form: PromotionForm, status: 'draft' | 'active'): Promise<Promotion | null> {
     return this.submit(() =>
-      this.http.post<PromotionWithOverlaps>(this.baseUrl, this.toCreate(form, status, flags)),
+      this.http.post<Promotion>(this.baseUrl, this.toCreate(form, status)),
     );
   }
 
-  /** `PATCH /promotions/{id}` — solo campos escalares. */
-  update(id: string, form: PromotionForm): Promise<PromotionWithOverlaps | null> {
+  /** `PATCH /promotions/{id}` — solo campos escalares (FR-018). */
+  update(id: string, form: PromotionForm): Promise<Promotion | null> {
     const payload: PromotionUpdatePayload = this.toScalars(form);
-    return this.submit(() =>
-      this.http.patch<PromotionWithOverlaps>(`${this.baseUrl}/${id}`, payload),
-    );
+    return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}`, payload));
   }
 
-  /**
-   * `PATCH /promotions/{id}/shape` — tipo, alcance y componentes. El backend
-   * responde 409 si la promoción ya salió de `draft`; la UI solo ofrece esta
-   * ruta en borradores.
-   */
-  updateShape(
-    id: string,
-    form: PromotionForm,
-    flags: PresentationConfirmFlags = {},
-  ): Promise<PromotionWithOverlaps | null> {
-    const isPresentation = form.type === 'qty_price_presentation';
-    const payload: PromotionShapePayload = {
-      type: form.type,
-      targets: this.toTargets(form),
-      combo_items: form.type === 'combo' ? form.comboItems : [],
-      ...(isPresentation ? { presentation_rules: this.toPresentationRules(form), ...flags } : {}),
-    };
-    return this.submit(() =>
-      this.http.patch<PromotionWithOverlaps>(`${this.baseUrl}/${id}/shape`, payload),
-    );
+  /** `PATCH /promotions/{id}/shape` — reemplaza la lista **completa** de
+   *  reglas, solo en `draft` (FR-001a/FR-018). */
+  updateShape(id: string, form: PromotionForm): Promise<Promotion | null> {
+    const payload: PromotionShapePayload = { rules: this.toRules(form) };
+    return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}/shape`, payload));
   }
 
-  /** `PATCH /promotions/{id}/status` — activar, pausar, reanudar o finalizar. */
   changeStatus(id: string, status: PromotionStatus): Promise<Promotion | null> {
     const payload: PromotionStatusPayload = { status };
     return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}/status`, payload));
   }
 
-  /** `POST /promotions/{id}/duplicate` — la copia nace en `draft`. */
   duplicate(id: string, name: string): Promise<Promotion | null> {
     const payload: PromotionDuplicatePayload = { name };
-    return this.submit(() =>
-      this.http.post<Promotion>(`${this.baseUrl}/${id}/duplicate`, payload),
-    );
+    return this.submit(() => this.http.post<Promotion>(`${this.baseUrl}/${id}/duplicate`, payload));
   }
 
-  /** `DELETE /promotions/{id}` — 204, sin cuerpo. */
   async remove(id: string): Promise<boolean> {
-    const done = await this.submit(() =>
-      this.http.delete<void>(`${this.baseUrl}/${id}`),
-    );
+    const done = await this.submit(() => this.http.delete<void>(`${this.baseUrl}/${id}`));
     return done !== null;
   }
 
-  /**
-   * Ejecuta la mutación, invalida el caché y devuelve el cuerpo de la
-   * respuesta (o `null` si falló), para que la página pueda leer `overlaps`.
-   * `DELETE` devuelve 204: se normaliza a un objeto vacío truthy.
-   */
   private async submit<T>(request: () => Observable<T>): Promise<T | null> {
     this.isSubmitting.set(true);
     this.otherError.set(null);
-    this.presentationConflicts.set(null);
-    this.presentationPriceCheck.set(null);
+    this.overlapConflict.set(null);
+    this.packageNotDiscount.set(null);
+    this.ruleVariantConflict.set(null);
     try {
       const body = await firstValueFrom(request());
-      // 'promotions' matchea por prefijo las tres queries del servicio.
       await this.queryClient.invalidateQueries({ queryKey: ['promotions'] });
       return body ?? ({} as T);
     } catch (err) {
@@ -286,17 +225,23 @@ export class PromotionService {
         typeof detail === 'object' &&
         'conflicts' in detail
       ) {
-        // FR-006 (spec 040): solape con otra promoción por presentación activa.
-        this.presentationConflicts.set(detail as PresentationOverlapError);
+        this.overlapConflict.set(detail as OverlapConflictError); // FR-014
       } else if (
         err instanceof HttpErrorResponse &&
-        err.status === 422 &&
+        err.status === 409 &&
         detail &&
         typeof detail === 'object' &&
-        ('reference_unit_price' in detail || 'pack_unit_price' in detail)
+        'cheapest_unit_price' in detail
       ) {
-        // FR-017 / FR-022 (spec 040): aviso con confirmación explícita.
-        this.presentationPriceCheck.set(detail as PresentationPriceCheckError);
+        this.packageNotDiscount.set(detail as PackageNotDiscountError); // FR-016
+      } else if (
+        err instanceof HttpErrorResponse &&
+        err.status === 409 &&
+        detail &&
+        typeof detail === 'object' &&
+        'rule_index_a' in detail
+      ) {
+        this.ruleVariantConflict.set(detail as RuleVariantConflictError); // FR-001a
       } else {
         this.otherError.set(this.extractError(err));
       }
@@ -308,76 +253,35 @@ export class PromotionService {
 
   // ── Formulario → payload ─────────────────────────────────────────────
 
-  private toCreate(
-    form: PromotionForm,
-    status: 'draft' | 'active',
-    flags: PresentationConfirmFlags = {},
-  ): PromotionCreatePayload {
-    const isPresentation = form.type === 'qty_price_presentation';
+  private toCreate(form: PromotionForm, status: 'draft' | 'active'): PromotionCreatePayload {
     return {
       ...this.toScalars(form),
-      type: form.type,
       status,
-      // Un combo define su alcance en `combo_items`; mandarle targets es 422.
-      targets: this.toTargets(form),
-      combo_items: form.type === 'combo' ? form.comboItems : [],
-      ...(isPresentation
-        ? { presentation_rules: this.toPresentationRules(form), ...flags }
-        : {}),
+      starts_at: form.starts_at ?? new Date().toISOString(),
+      rules: this.toRules(form),
     };
   }
 
-  /** spec 040: reglas por presentación del formulario -> payload. */
-  private toPresentationRules(form: PromotionForm): PresentationRuleIn[] {
-    return form.presentationRules.map((r) => ({
-      presentation_id: r.presentation_id,
-      min_qty: r.min_qty,
-      pack_price: r.pack_price,
-    }));
-  }
-
-  /**
-   * Los opcionales viajan siempre, incluso en `null`: el backend usa
-   * `model_fields_set`, así que enviar `null` explícito es la única forma de
-   * limpiar una vigencia ya guardada.
-   */
   private toScalars(form: PromotionForm) {
     return {
       name: form.name.trim(),
       description: form.description.trim() || null,
-      value: form.value,
-      priority: form.priority,
-      starts_at: form.starts_at || null,
       ends_at: form.ends_at || null,
       days_of_week: this.daysToStr(form.days_of_week),
       start_time: form.start_time || null,
       end_time: form.end_time || null,
-      min_qty: form.min_qty,
     };
   }
 
-  /**
-   * Los precios por destino solo los entiende el backend en `qty_price`; en el
-   * resto de tipos manda `null` aunque el formulario arrastre algún valor de un
-   * cambio de tipo, que si no responde 422.
-   */
-  private toTargets(form: PromotionForm): PromotionTarget[] {
-    if (form.type === 'combo') return [];
-    const pack = form.type === 'qty_price';
-    return [
-      ...form.categoryTargets.map((t) => ({
-        category_id: t.id,
-        product_id: null,
-        value: pack ? t.value : null,
-        min_qty: pack ? t.min_qty : null,
-      })),
-      ...form.productTargets.map((t) => ({
-        product_id: t.id,
-        category_id: null,
-        value: pack ? t.value : null,
-        min_qty: pack ? t.min_qty : null,
-      })),
-    ];
+  /** spec 063 (revisión 2026-09-01): una fila del formulario por regla — la
+   *  creación/edición por lote de FR-001. */
+  private toRules(form: PromotionForm): PromotionRuleInPayload[] {
+    return form.rules.map((rule) => ({
+      type: rule.type,
+      value: rule.value,
+      min_qty: rule.min_qty,
+      variant_ids: [...new Set(rule.variantIds)],
+    }));
   }
 
   private daysToStr(days: number[]): string | null {
@@ -389,9 +293,6 @@ export class PromotionService {
       const body = err.error as PromotionErrorBody | null;
       const detail = body?.detail;
       if (typeof detail === 'string') return detail;
-      // Validaciones de Pydantic: `[{loc, msg, type}]`. Sin esta rama, mensajes
-      // como "Un combo requiere al menos 2 productos distintos" caían al
-      // genérico y el admin no sabía qué corregir.
       if (Array.isArray(detail)) {
         const msgs = detail.map((d) => d?.msg).filter((m): m is string => !!m);
         if (msgs.length) return msgs.map((m) => m.replace(/^Value error, /, '')).join(' · ');

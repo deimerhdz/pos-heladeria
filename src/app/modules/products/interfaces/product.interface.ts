@@ -9,6 +9,14 @@
 /** How a product is prepared. `prepared` = hecho al momento; `packaged` = empacado. */
 export type PreparationType = 'prepared' | 'packaged';
 
+/**
+ * Tipo de precio de un grupo de opciones (spec 064). `incluido` = ya cubierto por el
+ * precio de la presentación (un sabor de helado); sus opciones no pueden llevar
+ * `extra_price` distinto de $0. `con_recargo` = cada opción cobra su propio precio (un
+ * topping).
+ */
+export type OptionGroupPricingType = 'incluido' | 'con_recargo';
+
 // --- Products ---
 
 /** A product (list/detail). Mirrors backend `ProductResponse`/`ProductListResponse`. */
@@ -98,7 +106,6 @@ export interface Variant {
   price: number;
   active: boolean;
   /** spec 040: presentación de catálogo a la que apunta, o null. */
-  presentation_id: string | null;
 }
 
 /** Editable fields captured by the variant form. */
@@ -106,7 +113,6 @@ export interface VariantForm {
   name: string;
   price: number;
   sku: string | null;
-  presentation_id?: string | null;
 }
 
 /** `POST /products/{id}/variants` (`VariantCreate`). */
@@ -114,7 +120,6 @@ export interface VariantCreatePayload {
   name: string;
   price: number;
   sku?: string | null;
-  presentation_id?: string | null;
 }
 
 /** `PATCH /variants/{id}` (`VariantUpdate`) — all optional. */
@@ -123,7 +128,6 @@ export interface VariantUpdatePayload {
   price?: number;
   sku?: string | null;
   active?: boolean;
-  presentation_id?: string | null;
 }
 
 /**
@@ -164,6 +168,7 @@ export interface OptionGroup {
   min_select: number;
   max_select: number;
   active: boolean;
+  pricing_type: OptionGroupPricingType;
   options: Option[];
 }
 
@@ -172,13 +177,16 @@ export interface OptionGroupForm {
   name: string;
   min_select: number;
   max_select: number;
+  pricing_type: OptionGroupPricingType | null;
 }
 
-/** `POST /option-groups` (`OptionGroupCreate`). */
+/** `POST /option-groups` (`OptionGroupCreate`). `pricing_type` es obligatorio (FR-001):
+ *  sin default de negocio razonable entre "incluido" y "con_recargo". */
 export interface OptionGroupCreatePayload {
   name: string;
   min_select: number;
   max_select: number;
+  pricing_type: OptionGroupPricingType;
 }
 
 /** `PATCH /option-groups/{id}` (`OptionGroupUpdate`). Partial: only sent fields apply. */
@@ -187,6 +195,7 @@ export interface OptionGroupUpdatePayload {
   min_select?: number;
   max_select?: number;
   active?: boolean;
+  pricing_type?: OptionGroupPricingType;
 }
 
 /** Editable fields captured by the option form. */
@@ -291,7 +300,6 @@ export interface VariantDraft {
   price: number;
   /** spec 040: presentación de catálogo asignada, o null (no participa de
    *  promociones por presentación). */
-  presentationId: string | null;
   recipe: RecipeLineDraft[];
   optionGroups: VariantOptionGroupDraft[];
 }
@@ -357,6 +365,29 @@ export interface MenuOptionGroup {
   options: MenuOption[];
 }
 
+/**
+ * spec 066 (FR-007): información de la regla vigente que cubre una presentación.
+ * La calcula y la **renderiza** el backend — textos incluidos — para que el peso
+ * colombiano y el redondeo al peso no se repitan en `number` de JavaScript
+ * (research.md D-4). Aquí solo se pinta: nunca se recalcula un importe.
+ */
+export interface MenuVariantPromotion {
+  /** Condición completa, la misma cadena que el cartel y administración (SC-005). */
+  condition_text: string;
+  /** `2 x $12.000` | `3 x -15%` */
+  short_condition: string;
+  unit_equivalent: number;
+  /** El importe exacto no era entero en pesos: el texto lleva `≈`. */
+  unit_equivalent_approx: boolean;
+  /** `$6.000 c/u` | `≈ $4.333 c/u` */
+  unit_equivalent_text: string;
+  /** `2 x $12.000 · $6.000 c/u` — lo que se pinta bajo el precio. */
+  display_text: string;
+  type: 'percent' | 'package_price';
+  min_qty: number;
+  value: number;
+}
+
 export interface MenuVariant {
   id: string;
   name: string;
@@ -365,6 +396,11 @@ export interface MenuVariant {
   discounted_price?: number | null;
   /** Tipo de promoción que generó `discounted_price` ('percent'/'fixed'), o `null`/ausente si no hay. */
   discount_kind?: string | null;
+  /**
+   * spec 066 (FR-007): la regla vigente que cubre esta presentación, o `null`.
+   * La vigencia ya la resolvió el backend al poblarla — leerla no es evaluarla.
+   */
+  promotion?: MenuVariantPromotion | null;
   /**
    * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
    * grupos cambia con el tamaño.

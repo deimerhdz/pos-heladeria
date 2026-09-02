@@ -2,7 +2,11 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { MenuCategory, MenuOptionGroup } from '../../products/interfaces/product.interface';
+import {
+  MenuCategory,
+  MenuOptionGroup,
+  MenuVariantPromotion,
+} from '../../products/interfaces/product.interface';
 import { DiningOrder } from '../interfaces/dining.interface';
 import {
   CartItemPayload,
@@ -25,13 +29,13 @@ export interface ResolvedBusiness {
 }
 
 /**
- * Anuncio de una promoción de precio por presentación vigente en ese momento
- * (spec 040, FR-021). Solo para mostrar la condición — no cambia precios.
+ * spec 063 (FR-022): anuncio de una promoción por **conjunto de variantes**
+ * vigente en ese momento. Solo para mostrar la condición — no cambia precios.
  */
 export interface MenuPromotionAnnouncement {
   promotion_id: string;
   promotion_name: string;
-  rules: { presentation_name: string; min_qty: number; pack_price: number; text: string }[];
+  rules: { text: string; variant_count: number; min_qty: number; value: number }[];
 }
 
 /** Resultado de resolver el QR firmado: mesa + negocio + menú activo. */
@@ -39,7 +43,8 @@ export interface ResolvedMenu {
   table: DinerTable;
   business: ResolvedBusiness | null;
   categories: MenuCategory[];
-  /** spec 040: anuncios de promociones por presentación vigentes ahora. */
+  /** spec 063 (FR-022): anuncios de promociones vigentes ahora — cada
+   *  elemento de `promotions[].rules[]` es una regla (research.md D-R3). */
   promotions: MenuPromotionAnnouncement[];
 }
 
@@ -330,10 +335,10 @@ export class DinerService {
         promotion_id: p['promotion_id'] as string,
         promotion_name: p['promotion_name'] as string,
         rules: ((p['rules'] as Record<string, unknown>[]) ?? []).map((r) => ({
-          presentation_name: r['presentation_name'] as string,
-          min_qty: (r['min_qty'] as number) ?? 0,
-          pack_price: Number(r['pack_price']),
           text: r['text'] as string,
+          variant_count: (r['variant_count'] as number) ?? 0,
+          min_qty: (r['min_qty'] as number) ?? 0,
+          value: Number(r['value'] ?? 0),
         })),
       })),
     };
@@ -354,6 +359,9 @@ export class DinerService {
           price: Number(v['price']),
           discounted_price: v['discounted_price'] != null ? Number(v['discounted_price']) : null,
           discount_kind: (v['discount_kind'] as string) ?? null,
+          // spec 066 (FR-007): el bloque llega ya calculado y ya renderizado.
+          // `?? null` para no romper contra un backend aún sin desplegar.
+          promotion: (v['promotion'] as MenuVariantPromotion) ?? null,
           // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
           // con el tamaño.
           option_groups: mapGroups(v['option_groups']),

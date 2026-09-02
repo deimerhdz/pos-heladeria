@@ -13,6 +13,7 @@ import { buildUnitLookup } from '../../inventory/services/unit-lookup';
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { OptionGroupService } from '../services/option-group.service';
 import { OptionGroupFormComponent } from '../components/option-group-form.component';
 import { OptionFormComponent } from '../components/option-form.component';
@@ -57,6 +58,10 @@ import { OptionFormComponent } from '../components/option-form.component';
                 <div class="min-w-0">
                   <p class="font-semibold text-gray-900 flex items-center gap-2">
                     <span class="truncate">{{ g.name }}</span>
+                    <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                      [class]="g.pricing_type === 'incluido' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+                      {{ g.pricing_type === 'incluido' ? 'Incluido' : 'Con recargo' }}
+                    </span>
                     @if (!g.active) {
                       <span class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
                         Inactivo
@@ -139,6 +144,7 @@ import { OptionFormComponent } from '../components/option-form.component';
       <app-option-form
         [group]="selectedGroup()"
         [option]="editingOption()"
+        [inventarioIncluido]="inventarioIncluido()"
         (close)="closeOptionForm()"
         (saved)="closeOptionForm()"></app-option-form>
     }
@@ -150,10 +156,22 @@ export class OptionGroupsPageComponent implements OnInit {
   private readonly toast = inject(ToastService);
   private readonly inventoryService = inject(InventoryService);
   private readonly unitMeasureService = inject(UnitMeasureService);
+  private readonly planSummaryService = inject(PlanSummaryService);
 
   private readonly unitLookup = computed(() =>
     buildUnitLookup(this.inventoryService.allItems(), this.unitMeasureService.unitMeasures()),
   );
+
+  /**
+   * spec 064: gating por PLAN (no por producto -- un grupo de opciones es compartido
+   * entre productos, research.md Decisión 5). Fail-closed mientras el plan no ha
+   * cargado: mismo criterio que `inventory-page.component.ts::comprasIncluido`, para no
+   * dejar editar insumo/cantidad y toparse con un 403 del backend un instante después.
+   */
+  readonly inventarioIncluido = computed(() => {
+    const summary = this.planSummaryService.summary();
+    return summary !== null && summary.modules.inventario && !summary.vencido;
+  });
 
   readonly showGroupForm = signal(false);
   readonly showOptionForm = signal(false);

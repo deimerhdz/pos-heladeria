@@ -10,8 +10,6 @@ import { DecimalPipe } from '@angular/common';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
-import { PromotionService } from '../../promotions/services/promotion.service';
-import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-panel.component';
 
 /**
@@ -123,14 +121,6 @@ export class PaymentValidationBlockComponent {
   @Input() cashShiftId: string | null = null;
   @Output() refresh = new EventEmitter<void>();
 
-  private readonly promotionService = inject(PromotionService);
-
-  constructor() {
-    // El total mostrado aplica los descuentos vigentes; sin esto el panel
-    // dependía de que otra pantalla hubiera cargado las promociones primero.
-    this.promotionService.loadActive();
-  }
-
   variantLabel(variantId: string): string {
     return buildMenuLookup(this.categories).variantLabel(variantId);
   }
@@ -144,20 +134,15 @@ export class PaymentValidationBlockComponent {
   }
 
   total(order: DiningOrder): number {
-    const lk = buildMenuLookup(this.categories);
-    const now = new Date();
-    const promos = this.promotionService.activePromotions();
+    // spec 063 (FR-023, research.md D10): el descuento efectivo lo resuelve el
+    // backend (`compute_bill` / preview del cobro), no un cálculo local. Aquí se
+    // usa el `discounted_line_total` que ya vino en la línea, o el bruto.
     return (order.items ?? []).reduce((s, i) => {
-      if (i.combo_id) return s + Number(i.unit_price) * i.quantity;
-      const unitPrice = discountedUnitPrice(
-        promos,
-        now,
-        lk.productId(i.product_variant_id),
-        lk.categoryId(i.product_variant_id),
-        Number(i.unit_price),
-        i.quantity,
-      );
-      return s + unitPrice * i.quantity;
+      const line =
+        i.discounted_line_total != null
+          ? Number(i.discounted_line_total)
+          : Number(i.unit_price) * i.quantity;
+      return s + line;
     }, 0);
   }
 

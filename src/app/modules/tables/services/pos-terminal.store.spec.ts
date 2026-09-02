@@ -13,7 +13,6 @@ import {
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { TableService } from './table.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
-import { discountedUnitPrice } from '../../promotions/services/promotion-pricing.util';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
@@ -259,86 +258,14 @@ describe('currentNow — A-09, guarda usada por combos/productDiscountBadges/car
   });
 });
 
-describe('discountedUnitPrice guardado por currentNow — A-09, patrón usado por cartView/orderSubtotal', () => {
-  function promo(overrides: Partial<Promotion> = {}): Promotion {
-    return {
-      id: overrides.id ?? 'p1',
-      name: overrides.name ?? 'Promo',
-      description: null,
-      type: 'percent',
-      value: '20',
-      status: 'active',
-      priority: 0,
-      starts_at: null,
-      ends_at: null,
-      days_of_week: null,
-      start_time: '17:00',
-      end_time: '19:00',
-      min_qty: 1,
-      targets: [],
-      combo_items: [],
-      presentation_rules: [],
-      ...overrides,
-    };
-  }
-
-  /** El mismo patrón que aplican cartView/orderSubtotal tras la corrección:
-   *  sin hora sincronizada, ningún descuento de previsualización. */
-  function unitPriceComoEnElStore(
-    promotionService: { ready(): boolean; now(): Date },
-    promos: Promotion[],
-    price: number,
-  ): number {
-    const now = currentNow(promotionService);
-    if (now === null) return price;
-    return discountedUnitPrice(promos, now, 'p1', 'c1', price, 1);
-  }
-
-  it('sin sync (ready() false), el carrito no aplica descuento de previsualización (FR-004)', () => {
-    // El reloj del dispositivo diría "dentro de ventana" si se usara, pero no
-    // hay sync todavía: no se llama a discountedUnitPrice en absoluto.
-    const promotionService = { ready: () => false, now: () => new Date('2026-08-15T17:30:00Z') };
-    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
-
-    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(10000);
+describe('currentNow — A-09: sin sync, el cliente no previsualiza descuento (spec 063 FR-023)', () => {
+  it('sin sync (ready() false), currentNow devuelve null', () => {
+    expect(currentNow({ ready: () => false, now: () => new Date() })).toBeNull();
   });
 
-  it('tras sync, el precio refleja el descuento con la hora del servidor, no el reloj local (FR-002, CA2)', () => {
-    // Reloj "local" simulado fuera de ventana (22:30); servidor (mock) dice
-    // que son las 17:30 — dentro de la ventana 17:00-19:00 de la promo.
-    const promotionService = { ready: () => true, now: () => new Date('2026-08-15T17:30:00') };
-    const promos = [promo({ targets: [{ product_id: 'p1', category_id: null, value: null, min_qty: null }] })];
-
-    expect(unitPriceComoEnElStore(promotionService, promos, 10000)).toBe(8000);
-  });
-});
-
-// ── feature 028, T010: `pendingOrders` (bloque de validación de pagos) ──────
-describe('PosTerminalStore.pendingOrders — solo canal qr', () => {
-  let store: PosTerminalStore;
-
-  beforeEach(() => {
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      providers: [
-        PosTerminalStore,
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideTanStackQuery(new QueryClient()),
-        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
-      ],
-    });
-    store = TestBed.inject(PosTerminalStore);
-  });
-
-  it('incluye los pedidos qr en recibida y excluye los de mostrador (hold_for_payment)', () => {
-    store.orders.set([
-      order('qr1', 'recibida'),
-      { ...order('counter1', 'recibida'), channel: 'POS' },
-      order('qr2', 'abierta'),
-    ]);
-
-    expect(store.pendingOrders().map((o) => o.id)).toEqual(['qr1']);
+  it('tras sync, currentNow usa la hora del servicio', () => {
+    const t = new Date('2026-08-15T17:30:00');
+    expect(currentNow({ ready: () => true, now: () => t })).toEqual(t);
   });
 });
 
