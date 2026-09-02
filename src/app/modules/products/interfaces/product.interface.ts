@@ -365,6 +365,29 @@ export interface MenuOptionGroup {
   options: MenuOption[];
 }
 
+/**
+ * spec 066 (FR-007): información de la regla vigente que cubre una presentación.
+ * La calcula y la **renderiza** el backend — textos incluidos — para que el peso
+ * colombiano y el redondeo al peso no se repitan en `number` de JavaScript
+ * (research.md D-4). Aquí solo se pinta: nunca se recalcula un importe.
+ */
+export interface MenuVariantPromotion {
+  /** Condición completa, la misma cadena que el cartel y administración (SC-005). */
+  condition_text: string;
+  /** `2 x $12.000` | `3 x -15%` */
+  short_condition: string;
+  unit_equivalent: number;
+  /** El importe exacto no era entero en pesos: el texto lleva `≈`. */
+  unit_equivalent_approx: boolean;
+  /** `$6.000 c/u` | `≈ $4.333 c/u` */
+  unit_equivalent_text: string;
+  /** `2 x $12.000 · $6.000 c/u` — lo que se pinta bajo el precio. */
+  display_text: string;
+  type: 'percent' | 'package_price';
+  min_qty: number;
+  value: number;
+}
+
 export interface MenuVariant {
   id: string;
   name: string;
@@ -373,6 +396,11 @@ export interface MenuVariant {
   discounted_price?: number | null;
   /** Tipo de promoción que generó `discounted_price` ('percent'/'fixed'), o `null`/ausente si no hay. */
   discount_kind?: string | null;
+  /**
+   * spec 066 (FR-007): la regla vigente que cubre esta presentación, o `null`.
+   * La vigencia ya la resolvió el backend al poblarla — leerla no es evaluarla.
+   */
+  promotion?: MenuVariantPromotion | null;
   /**
    * Fuente autoritativa de qué puede elegir el cliente: cuántas opciones y de qué
    * grupos cambia con el tamaño.
