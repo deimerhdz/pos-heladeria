@@ -84,6 +84,7 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                 <tr class="border-b border-gray-100 bg-gray-50">
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Nombre</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3 hidden md:table-cell">Descripción</th>
+                  <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Orden</th>
                   <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
                   <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Acciones</th>
                 </tr>
@@ -101,6 +102,9 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                     </td>
                     <td class="px-5 py-4 hidden md:table-cell">
                       <span class="text-sm text-gray-500 line-clamp-1">{{ cat.description || '—' }}</span>
+                    </td>
+                    <td class="px-5 py-4">
+                      <span class="text-sm text-gray-500">{{ cat.display_order }}</span>
                     </td>
                     <td class="px-5 py-4">
                       @if (cat.active) {

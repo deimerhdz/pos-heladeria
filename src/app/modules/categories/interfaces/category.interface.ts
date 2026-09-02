@@ -4,6 +4,7 @@ export interface Category {
   name: string;
   description: string | null;
   active: boolean;
+  display_order: number;
   created_at: string;
   updated_at?: string | null;
 }
@@ -12,12 +13,14 @@ export interface Category {
 export interface CategoryForm {
   name: string;
   description: string;
+  display_order: number | null;
 }
 
 /** Request body for `POST /categories` (`CategoryCreate`). */
 export interface CategoryCreatePayload {
   name: string;
   description: string | null;
+  display_order: number | null;
 }
 
 /** Request body for `PATCH /categories/{id}` (`CategoryUpdate`). */
@@ -25,4 +28,5 @@ export interface CategoryUpdatePayload {
   name?: string;
   description?: string | null;
   active?: boolean;
+  display_order: number | null;
 }
