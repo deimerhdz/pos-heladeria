@@ -72,34 +72,60 @@ export interface ProductSelection {
                     type="button"
                     (click)="selectVariant(v)"
                     [disabled]="v.available === false"
-                    class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm transition-colors"
+                    class="w-full flex flex-col gap-0.5 px-4 py-2.5 rounded-xl border text-sm transition-colors"
                     [class]="v.available === false
                       ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
                       : variantId() === v.id
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
                         : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
                   >
-                    <span class="font-medium">{{ v.name }}</span>
-                    @if (v.available === false) {
-                      <span class="text-xs font-semibold text-gray-400">Agotado</span>
-                    } @else if (discountFor(v); as disc) {
-                      <span class="flex items-center gap-1.5">
-                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                          @if (disc.kind === 'fixed') {
-                            -{{ disc.amountOff | money }}
-                          } @else {
-                            -{{ disc.percent }}%
+                    <span class="w-full flex items-center justify-between">
+                      <span class="font-medium">{{ v.name }}</span>
+                      @if (v.available === false) {
+                        <span class="text-xs font-semibold text-gray-400">Agotado</span>
+                      } @else if (discountFor(v); as disc) {
+                        <span class="flex items-center gap-1.5">
+                          <!-- spec 066 (research.md D-13): la insignia de porcentaje se
+                               acota al tipo 'percent'. Con un precio de paquete de
+                               cantidad mínima 1 ($8.000 -> $6.000) el frontend fabricaría
+                               un -25% que la regla nunca enuncia, y FR-007 lo prohíbe.
+                               La guarda mira el campo crudo de la presentación, no
+                               disc.kind: discountInfo colapsa a 'percent' todo lo que no
+                               sea 'fixed', así que ahí el tipo real ya se perdió. -->
+                          @if (disc.kind === 'fixed' || v.discount_kind === 'percent') {
+                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                              @if (disc.kind === 'fixed') {
+                                -{{ disc.amountOff | money }}
+                              } @else {
+                                -{{ disc.percent }}%
+                              }
+                            </span>
                           }
+                          <span class="text-gray-400 text-xs line-through">{{ disc.original | money }}</span>
+                          <span class="font-semibold">{{ disc.discounted | money }}</span>
                         </span>
-                        <span class="text-gray-400 text-xs line-through">{{ disc.original | money }}</span>
-                        <span class="font-semibold">{{ disc.discounted | money }}</span>
+                      } @else {
+                        <span class="font-semibold">{{ variantPrice(v) | money }}</span>
+                      }
+                    </span>
+                    <!-- spec 066 (FR-008): condición corta + equivalente por unidad, en
+                         tono discreto para no competir con el precio. Texto ya compuesto
+                         por el backend. -->
+                    @if (v.promotion) {
+                      <span class="w-full text-left text-[11px] text-gray-500">
+                        {{ v.promotion.display_text }}
                       </span>
-                    } @else {
-                      <span class="font-semibold">{{ variantPrice(v) | money }}</span>
                     }
                   </button>
                 }
               </div>
+              <!-- spec 066 (FR-016): la condición completa de la presentación elegida.
+                   Este componente lo comparten el menú QR y las dos superficies del
+                   cajero, así que el comensal y el cajero leen la misma cadena sin
+                   ninguna rama por superficie (SC-005 por construcción). -->
+              @if (selectedVariant()?.promotion; as promo) {
+                <p class="mt-2 text-xs text-gray-600">{{ promo.condition_text }}</p>
+              }
             </div>
           }
 

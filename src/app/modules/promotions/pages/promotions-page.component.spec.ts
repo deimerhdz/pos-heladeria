@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { PromotionsPageComponent } from './promotions-page.component';
+import { MenuService } from '../../../core/services/menu.service';
 
 /**
  * spec 063 — el formulario pasó a "vigencia + una o varias reglas" (partición
@@ -44,6 +45,32 @@ describe('PromotionsPageComponent', () => {
   });
 
   it('el resumen (FR-005) describe el conjunto de una regla en lenguaje llano', () => {
+    // spec 066 (A-66, FR-018): la vista previa **nombra** las variantes
+    // seleccionadas. La firma pasa a `ruleConditionPreview($index)` porque necesita
+    // el índice para resolver esos nombres con `selectedVariantsForRule`.
+    const menu = TestBed.inject(MenuService);
+    menu.categories.set([
+      {
+        id: 'c1',
+        name: 'Granizados',
+        products: [
+          {
+            id: 'p1',
+            name: 'Granizado de café',
+            description: null,
+            image_url: null,
+            option_groups: [],
+            available: true,
+            variants: [
+              { id: 'a', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true },
+              { id: 'b', name: 'Mediano 12oz', price: 10000, option_groups: [], available: true },
+              { id: 'c', name: 'Grande 16oz', price: 12000, option_groups: [], available: true },
+            ],
+          },
+        ],
+      },
+    ]);
+
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();
     const c = fixture.componentInstance;
@@ -53,12 +80,30 @@ describe('PromotionsPageComponent', () => {
     rule.value = 12000;
     rule.min_qty = 2;
     rule.variantIds = ['a', 'b', 'c'];
-    expect(c.ruleConditionPreview(rule)).toContain('Llevando 2 de estas 3 variantes');
+    // Orden alfabético (FR-002), no el de selección.
+    expect(c.ruleConditionPreview(0)).toBe(
+      'Llevando 2 entre Grande 16oz, Mediano 12oz y Pequeño 8oz pagas $12.000',
+    );
 
     rule.type = 'percent';
     rule.value = 10;
     rule.min_qty = 1;
-    expect(c.ruleConditionPreview(rule)).toBe('10% en estas 3 variantes');
+    expect(c.ruleConditionPreview(0)).toBe('10% en Grande 16oz, Mediano 12oz y Pequeño 8oz');
+  });
+
+  it('spec 066: sin nombres que resolver la vista previa conserva el conteo (FR-006)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    const rule = c.form.rules[0];
+    rule.type = 'package_price';
+    rule.value = 12000;
+    rule.min_qty = 2;
+    // Ids que no están en el catálogo cargado: no hay nombre que resolver.
+    rule.variantIds = ['x', 'y', 'z'];
+
+    expect(c.ruleConditionPreview(0)).toBe('Llevando 2 de estas 3 variantes pagas $12.000');
   });
 
   it('FR-018: en una promoción activa las reglas no son editables', () => {
