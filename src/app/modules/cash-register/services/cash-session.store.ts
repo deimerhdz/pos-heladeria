@@ -248,7 +248,7 @@ export class CashSessionStore {
       if (this.isAdmin()) {
         // Admin: aterriza en la gestión de todas las cajas. Se restaura el turno
         // compartido en segundo plano para no romper el contexto del POS.
-        void this.api.restoreShift();
+        void this.api.discoverOpenShift();
         await this.loadOverview(regs);
         this.screen.set('overview');
         return;

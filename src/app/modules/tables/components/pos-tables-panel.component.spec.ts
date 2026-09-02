@@ -62,7 +62,7 @@ describe('PosTablesPanelComponent', () => {
         },
         {
           provide: CashService,
-          useValue: { shift: () => ({ id: 'shift-1' }), isOpen: () => true, restoreShift: () => Promise.resolve() },
+          useValue: { shift: () => ({ id: 'shift-1' }), isOpen: () => true, discoverOpenShift: () => Promise.resolve() },
         },
       ],
     });
