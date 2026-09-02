@@ -40,18 +40,28 @@ export interface SessionOpenResponse {
 
 // ── Carrito borrador (vive en el backend) ──────────────────────────────────
 
+/**
+ * Una opción elegida junto con cuántas unidades de ella (spec 065,
+ * `OptionSelectionIn`). `quantity` es opcional, default 1 -- el mismo
+ * significado que "incluir este id" tenía antes de esa spec.
+ */
+export interface OptionSelectionPayload {
+  option_id: string;
+  quantity?: number;
+}
+
 /** Body de `POST /cart/items` (`CartItemIn`). */
 export interface CartItemPayload {
   product_variant_id: string;
   quantity?: number;
-  option_ids?: string[];
+  options?: OptionSelectionPayload[];
   notes?: string | null;
 }
 
 /** Body de `PATCH /cart/items/{id}` (`CartItemUpdate`). */
 export interface CartItemUpdatePayload {
   quantity?: number;
-  option_ids?: string[];
+  options?: OptionSelectionPayload[];
   notes?: string | null;
 }
 
@@ -59,6 +69,7 @@ export interface CartItemUpdatePayload {
 export interface CartItemOption {
   id: string;
   option_id: string;
+  quantity: number;
 }
 
 /** Una línea del carrito (`CartItemResponse`). Los importes llegan como string. */

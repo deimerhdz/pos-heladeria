@@ -34,15 +34,24 @@ export type DiningOrderStatus =
 export type KitchenStatus = 'pendiente' | 'en_preparacion' | 'listo' | 'anulado';
 
 /**
+ * Una opción elegida junto con cuántas unidades de ella (spec 065,
+ * `OptionSelectionIn`). `quantity` es opcional, default 1.
+ */
+export interface OrderOptionSelectionPayload {
+  option_id: string;
+  quantity?: number;
+}
+
+/**
  * One line of a `POST /orders` (or `.../tables/{id}/items`) request
  * (`OrderItemIn`). Exactly one of `product_variant_id` / `combo_id` must be
- * set; a combo doesn't accept `option_ids`.
+ * set; a combo doesn't accept `options`.
  */
 export interface OrderItemPayload {
   product_variant_id?: string;
   combo_id?: string;
   quantity?: number;
-  option_ids?: string[];
+  options?: OrderOptionSelectionPayload[];
   notes?: string | null;
 }
 
@@ -72,6 +81,7 @@ export interface OrderCreatePayload {
 export interface DiningOrderItemOption {
   id: string;
   option_id: string;
+  quantity: number;
 }
 
 /** One line of an order response (`OrderItemResponse`). Amounts are strings. */

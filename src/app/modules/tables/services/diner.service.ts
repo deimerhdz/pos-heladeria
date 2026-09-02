@@ -56,6 +56,9 @@ function mapGroups(raw: unknown): MenuOptionGroup[] {
     min_select: (g['min_select'] as number) ?? 0,
     max_select: (g['max_select'] as number) ?? 0,
     consume: (g['consume'] as boolean) ?? false,
+    selection_mode: (g['selection_mode'] as 'conteo' | 'cantidad') ?? 'conteo',
+    max_quantity_per_option: (g['max_quantity_per_option'] as number | null) ?? null,
+    max_total_quantity: (g['max_total_quantity'] as number | null) ?? null,
     options: ((g['options'] as Record<string, unknown>[]) ?? []).map((o) => ({
       id: o['id'] as string,
       name: o['name'] as string,

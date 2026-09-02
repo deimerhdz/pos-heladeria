@@ -8,6 +8,13 @@ import { MenuCategory } from '../../products/interfaces/product.interface';
 export interface MenuLookup {
   variantLabel(variantId: string): string;
   optionLabel(optionId: string): string;
+  /**
+   * spec 065: `"2x Nombre"` si `quantity > 1`, o `optionLabel(optionId)` sin
+   * cambios si `quantity === 1` (research.md Decisión 9) -- un único
+   * formateador compartido por las seis superficies que muestran opciones
+   * elegidas, para que el formato nunca diverja entre ellas.
+   */
+  optionLabelWithQuantity(optionId: string, quantity: number): string;
   variantPrice(variantId: string): number;
   optionPrice(optionId: string): number;
   /** Producto dueño de la variante — para resolver a qué aplica una promoción. */
@@ -64,9 +71,15 @@ export function buildMenuLookup(categories: MenuCategory[]): MenuLookup {
     }
   }
 
+  const optionLabel = (id: string) => maps.optLabels.get(id) ?? '';
+
   return {
     variantLabel: (id) => maps.labels.get(id) ?? 'Producto',
-    optionLabel: (id) => maps.optLabels.get(id) ?? '',
+    optionLabel,
+    optionLabelWithQuantity: (id, quantity) => {
+      const label = optionLabel(id);
+      return quantity > 1 ? `${quantity}x ${label}` : label;
+    },
     variantPrice: (id) => maps.prices.get(id) ?? 0,
     optionPrice: (id) => maps.optPrices.get(id) ?? 0,
     productId: (id) => maps.productIds.get(id),

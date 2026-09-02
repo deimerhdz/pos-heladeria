@@ -24,6 +24,9 @@ interface MenuOptionGroupResponse {
   min_select: number;
   max_select: number;
   consume?: boolean;
+  selection_mode?: 'conteo' | 'cantidad';
+  max_quantity_per_option?: number | null;
+  max_total_quantity?: number | null;
   options?: MenuOptionResponse[];
 }
 
@@ -68,6 +71,9 @@ function toGroup(g: MenuOptionGroupResponse): MenuOptionGroup {
     min_select: g.min_select,
     max_select: g.max_select,
     consume: g.consume ?? false,
+    selection_mode: g.selection_mode ?? 'conteo',
+    max_quantity_per_option: g.max_quantity_per_option ?? null,
+    max_total_quantity: g.max_total_quantity ?? null,
     options: (g.options ?? []).map((o) => ({
       id: o.id,
       name: o.name,
