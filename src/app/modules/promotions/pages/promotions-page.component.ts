@@ -24,6 +24,7 @@ import {
 } from '../interfaces/promotion.interface';
 import { PromotionService } from '../services/promotion.service';
 import { PromoDisplay, getPromoDisplay } from '../services/promotion-pricing.util';
+import { conditionText } from '../services/promotion-condition.util';
 
 type Screen = 'list' | 'form' | 'review';
 type StatusTab = PromotionStatus | '';
@@ -551,7 +552,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Regla {{ $index + 1 }} — {{ typeLabel(rule.type) }}
                 </span>
-                <p class="text-sm text-gray-800 mt-1">{{ ruleConditionPreview(rule) }}</p>
+                <p class="text-sm text-gray-800 mt-1">{{ ruleConditionPreview($index) }}</p>
                 <ul class="mt-2 text-sm text-gray-700 space-y-0.5 max-h-40 overflow-y-auto">
                   @for (v of selectedVariantsForRule($index); track v.id) {
                     <li class="flex justify-between">
@@ -1067,17 +1068,28 @@ export class PromotionsPageComponent implements OnInit {
     }
   }
 
-  ruleConditionPreview(rule: PromotionRuleForm): string {
-    const n = rule.variantIds.length;
-    const v = rule.value;
-    if (rule.type === 'package_price') {
-      return rule.min_qty > 1
-        ? `Llevando ${rule.min_qty} de estas ${n} variantes pagas ${this.money(v)}`
-        : `Cada una de estas ${n} variantes a ${this.money(v)}`;
-    }
-    return rule.min_qty === 1
-      ? `${v}% en estas ${n} variantes`
-      : `${v}% llevando ${rule.min_qty} de estas ${n} variantes`;
+  /**
+   * spec 066 (FR-018): la vista previa nombra las variantes **seleccionadas en
+   * este momento**, con el mismo algoritmo que el backend.
+   *
+   * Recibe el índice y no la regla porque necesita `selectedVariantsForRule` para
+   * resolver los nombres. El criterio es el de `variant_display_names`: el nombre
+   * de la variante y, si está vacío, el del producto.
+   *
+   * Es el único punto del frontend que calcula el texto en vez de recibirlo: aquí
+   * las variantes todavía no están guardadas, así que no hay a quién pedírselo.
+   */
+  ruleConditionPreview(ruleIndex: number): string {
+    const rule = this.form.rules[ruleIndex];
+    if (!rule) return '';
+    const names = this.selectedVariantsForRule(ruleIndex)
+      .map((v) => v.variantName?.trim() || v.productName?.trim() || '')
+      .filter((n) => n !== '');
+    return conditionText(
+      { type: rule.type, value: rule.value, min_qty: rule.min_qty },
+      names,
+      rule.variantIds.length,
+    );
   }
 
   displayLabel(d: PromoDisplay): string {
