@@ -1,9 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import {
-  HttpTestingController,
-  provideHttpClientTesting,
-} from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { TenantService } from './tenant.service';
@@ -65,7 +62,7 @@ describe('TenantService', () => {
     expect(result.total).toBe(1);
   });
 
-  it('creates a tenant with the user payload via POST /admin/tenants', async () => {
+  it('creates a tenant with the user payload via POST /super-admin/tenants', async () => {
     const promise = service.createTenant(validPayload);
     const post = http.expectOne(createUrl);
     expect(post.request.method).toBe('POST');
@@ -79,10 +76,12 @@ describe('TenantService', () => {
 
   it('maps a FastAPI 422 (detail as array) to a readable message', async () => {
     const promise = service.createTenant(validPayload);
-    http.expectOne(createUrl).flush(
-      { detail: [{ msg: 'schema ya existe', loc: ['body', 'schema_name'] }] },
-      { status: 422, statusText: 'Unprocessable Entity' },
-    );
+    http
+      .expectOne(createUrl)
+      .flush(
+        { detail: [{ msg: 'schema ya existe', loc: ['body', 'schema_name'] }] },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
     await promise;
 
     expect(service.error()).toBe('schema ya existe');

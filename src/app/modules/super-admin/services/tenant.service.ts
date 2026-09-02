@@ -2,15 +2,17 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { Tenant, TenantCreateWithUser, TenantPlanUpdatePayload } from '../interfaces/tenant.interface';
+import {
+  Tenant,
+  TenantCreateWithUser,
+  TenantPlanUpdatePayload,
+} from '../interfaces/tenant.interface';
 import { Page } from '../interfaces/page.interface';
 
 @Injectable({ providedIn: 'root' })
 export class TenantService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiBaseUrl}/super-admin`;
-  /** Tenant creation lives under a different base (`/admin/tenants`). */
-  private readonly adminTenantsUrl = `${environment.apiBaseUrl}/admin/tenants`;
 
   readonly tenants = signal<Tenant[]>([]);
   readonly loading = signal(false);
@@ -30,7 +32,7 @@ export class TenantService {
     this.error.set(null);
 
     try {
-      await firstValueFrom(this.http.post<void>(this.adminTenantsUrl, payload));
+      await firstValueFrom(this.http.post<void>(`${this.baseUrl}/tenants`, payload));
     } catch (err) {
       this.error.set(this.extractError(err));
     } finally {
