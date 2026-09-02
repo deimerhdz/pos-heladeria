@@ -82,6 +82,11 @@ export interface PromotionRuleForm {
   /** Conjunto explícito de variantes elegibles de esta regla (FR-001a): ≥1,
    *  sin repetidos dentro de la regla. */
   variantIds: string[];
+  /** spec 071 (FR-015): `true` si esta fila ya existía cuando se abrió el
+   *  formulario (`openEdit`); `false` si se agregó con "+ Agregar regla" en
+   *  esta misma sesión. Gobierna `canEditRuleTypeValue()` — cliente-only,
+   *  nunca viaja al backend (`toRules()` arma el payload campo por campo). */
+  isExisting: boolean;
 }
 
 /** Modelo del formulario (UI): vigencia de la promoción + su lista repetible
