@@ -966,7 +966,7 @@ export class PosTerminalStore {
       this.paymentMethodService.checkoutOptions().length === 0
         ? this.paymentMethodService.loadAvailableForCheckout()
         : null,
-      this.cash.shift() ? null : this.cash.restoreShift(),
+      this.cash.shift() ? null : this.cash.discoverOpenShift(),
     ]);
   }
 
@@ -1078,6 +1078,13 @@ export class PosTerminalStore {
     const orders = await this.api.listOrders(undefined, true);
     this.orders.set(orders);
     this.announcePending(orders);
+    // spec 072 (FR-005 a FR-007): el pedido puede llegar por esta misma
+    // recarga (sondeo o tiempo real) a una mesa que el cajero ya tenía
+    // seleccionada vacía — sin esto, el chequeo de turno de caja solo se
+    // disparaba al volver a seleccionar activamente la mesa.
+    if (this.hasChargeableOrderNow()) {
+      void this.ensureCheckoutDataLoaded();
+    }
   }
 
   /**
@@ -1135,6 +1142,21 @@ export class PosTerminalStore {
     this.orderTypeTab.set(tab);
   }
 
+  /**
+   * spec 072 (contracts/disparador-reactivo-cobro.md §1): mismo umbral que ya
+   * usaba `selectTable()` (spec 059, Historia 1) para decidir si hay algo
+   * real que cobrar — extraído para reutilizarlo también desde
+   * `reloadOrders()`, cuando el pedido llega de forma reactiva (sondeo o
+   * tiempo real) a una mesa que el cajero ya tenía seleccionada, en vez de
+   * por una nueva selección activa.
+   */
+  private hasChargeableOrderNow(): boolean {
+    if (this.pendingOrders().length > 0) return true;
+    const tableId = this.selectedTableId();
+    if (tableId && this.ordersOfTable(tableId).length > 0) return true;
+    return !!this.selectedOrderId();
+  }
+
   // ─── Selección de mesa / pedido ───────────────────────────────────────────────
   selectTable(tableId: string): void {
     const list = this.ordersOfTable(tableId);
@@ -1148,15 +1170,17 @@ export class PosTerminalStore {
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
-      // Spec 059, Historia 1: solo con un pedido real seleccionado — nunca
-      // por una mesa libre (rama `else`, sin pedido).
-      void this.ensureCheckoutDataLoaded();
     } else {
       this.selectedOrderId.set(null);
       // Vacío a propósito: lo que haya aquí se graba como nombre en la factura,
       // así que un relleno tipo "Cliente Mesa 3" quedaría en el documento fiscal
       // en vez de los comensales reales. La pista va en el `placeholder`.
       this.customerName.set('');
+    }
+    // Spec 059, Historia 1: solo con algo real seleccionado — nunca por una
+    // mesa libre sin pedido.
+    if (this.hasChargeableOrderNow()) {
+      void this.ensureCheckoutDataLoaded();
     }
   }
 

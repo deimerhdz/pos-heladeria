@@ -7,6 +7,11 @@ import { CashShift } from '../interfaces/cash.interface';
 
 const base = `${environment.apiBaseUrl}/cash`;
 
+/** Deja correr un turno de microtareas — necesario entre dos peticiones HTTP
+ *  encadenadas por un `await` dentro del servicio (p. ej. listar cajas y
+ *  luego, con esa respuesta ya resuelta, pedir el turno de cada una). */
+const tick = () => Promise.resolve().then(() => Promise.resolve());
+
 function shift(partial: Partial<CashShift> = {}): CashShift {
   return {
     id: 's1',
@@ -113,5 +118,100 @@ describe('CashService', () => {
     expect(req.request.method).toBe('GET');
     req.flush({ shift: shift({ status: 'closed' }), reconciliation: {}, movements: [], denominations: [] });
     expect((await p).shift.id).toBe('s1');
+  });
+
+  /**
+   * spec 072 (FR-001 a FR-004, contracts/descubrimiento-turno-abierto.md): reemplaza
+   * `restoreShift()`. `restoreShift()` no tenía ningún test propio — este describe
+   * lo cubre desde cero.
+   */
+  describe('discoverOpenShift', () => {
+    const REGISTER_STORAGE_KEY = 'cash.register';
+
+    afterEach(() => localStorage.removeItem(REGISTER_STORAGE_KEY));
+
+    it('camino rápido: localStorage ya apunta a una caja con turno abierto — no lista las cajas', async () => {
+      localStorage.setItem(REGISTER_STORAGE_KEY, 'reg-1');
+      const p = service.discoverOpenShift();
+      http
+        .expectOne((r) => r.url === `${base}/shifts/current` && r.params.get('cash_register_id') === 'reg-1')
+        .flush(shift({ cash_register_id: 'reg-1' }));
+      await p;
+      expect(service.shift()?.cash_register_id).toBe('reg-1');
+      http.expectNone(`${base}/registers`);
+    });
+
+    it('sin localStorage, exactamente un turno abierto entre varias cajas — lo adopta y lo persiste', async () => {
+      const p = service.discoverOpenShift();
+      http.expectOne(`${base}/registers`).flush([
+        { id: 'reg-1', name: 'Principal', active: true },
+        { id: 'reg-2', name: 'Caja 2', active: true },
+      ]);
+      await tick();
+      const reqs = http.match((r) => r.url === `${base}/shifts/current`);
+      expect(reqs.length).toBe(2);
+      for (const r of reqs) {
+        if (r.request.params.get('cash_register_id') === 'reg-1') {
+          r.flush(shift({ cash_register_id: 'reg-1' }));
+        } else {
+          r.flush(null, { status: 404, statusText: 'Not Found' });
+        }
+      }
+      await p;
+      expect(service.shift()?.cash_register_id).toBe('reg-1');
+      expect(localStorage.getItem(REGISTER_STORAGE_KEY)).toBe('reg-1');
+    });
+
+    it('sin localStorage y ningún turno abierto en ninguna caja — shift queda en null (FR-003)', async () => {
+      const p = service.discoverOpenShift();
+      http.expectOne(`${base}/registers`).flush([{ id: 'reg-1', name: 'Principal', active: true }]);
+      await tick();
+      http
+        .expectOne((r) => r.url === `${base}/shifts/current`)
+        .flush(null, { status: 404, statusText: 'Not Found' });
+      await p;
+      expect(service.shift()).toBeNull();
+    });
+
+    it('sin localStorage y dos turnos abiertos a la vez — shift queda en null, no elige ninguno (FR-004)', async () => {
+      const p = service.discoverOpenShift();
+      http.expectOne(`${base}/registers`).flush([
+        { id: 'reg-1', name: 'Principal', active: true },
+        { id: 'reg-2', name: 'Caja 2', active: true },
+      ]);
+      await tick();
+      const reqs = http.match((r) => r.url === `${base}/shifts/current`);
+      expect(reqs.length).toBe(2);
+      reqs[0].flush(shift({ cash_register_id: reqs[0].request.params.get('cash_register_id')! }));
+      reqs[1].flush(shift({ cash_register_id: reqs[1].request.params.get('cash_register_id')! }));
+      await p;
+      expect(service.shift()).toBeNull();
+      expect(localStorage.getItem(REGISTER_STORAGE_KEY)).toBeNull();
+    });
+
+    it('localStorage apunta a una caja sin turno (404) — cae al descubrimiento completo', async () => {
+      localStorage.setItem(REGISTER_STORAGE_KEY, 'reg-1');
+      const p = service.discoverOpenShift();
+      http
+        .expectOne((r) => r.url === `${base}/shifts/current` && r.params.get('cash_register_id') === 'reg-1')
+        .flush(null, { status: 404, statusText: 'Not Found' });
+      await tick();
+      http.expectOne(`${base}/registers`).flush([
+        { id: 'reg-1', name: 'Principal', active: true },
+        { id: 'reg-2', name: 'Caja 2', active: true },
+      ]);
+      await tick();
+      const reqs = http.match((r) => r.url === `${base}/shifts/current`);
+      expect(reqs.length).toBe(2);
+      for (const r of reqs) {
+        if (r.request.params.get('cash_register_id') === 'reg-2') {
+          r.flush(shift({ cash_register_id: 'reg-2' }));
+        } else {
+          r.flush(null, { status: 404, statusText: 'Not Found' });
+        }
+      }
+      await p;
+      expect(service.shift()?.cash_register_id).toBe('reg-2');
+    });
   });
 });
