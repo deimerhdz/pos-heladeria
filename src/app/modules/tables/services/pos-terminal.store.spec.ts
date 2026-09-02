@@ -49,7 +49,7 @@ function checkoutDataAlreadyLoadedProviders() {
       useValue: {
         shift: () => ({ id: 'shift-1' }),
         isOpen: () => true,
-        restoreShift: () => Promise.resolve(),
+        discoverOpenShift: () => Promise.resolve(),
       },
     },
   ];
@@ -1535,6 +1535,103 @@ describe('PosTerminalStore — carga diferida de datos de cobro (spec 059, Histo
     http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
 
     expectNoCheckoutDataRequests();
+  });
+
+  it('spec 072 (FR-005 a FR-007): un pedido que llega por una recarga real a una mesa ya seleccionada también dispara el chequeo, sin volver a seleccionarla', async () => {
+    localStorage.setItem(REGISTER_STORAGE_KEY, 'reg-1');
+    store.orders.set([]);
+
+    // El cajero deja la mesa vacía seleccionada, esperando el pedido.
+    store.selectTable('t1');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+    await Promise.resolve();
+    expectNoCheckoutDataRequests();
+
+    // El pedido llega por una recarga real (simula sondeo/tiempo real) — nunca
+    // se vuelve a llamar `selectTable('t1')`.
+    const reloadPromise = store.reload();
+    http.expectOne((r) => r.url === `${API}/orders`).flush([
+      { ...order('o1', 'recibida', ['pendiente']), dining_table_id: 't1' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && !r.params.has('available'))
+      .flush([{ id: 'pm-cash', name: 'Efectivo' }]);
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && r.params.get('available') === 'true')
+      .flush([{ id: 'pm-cash', name: 'Efectivo', is_cash: true }]);
+    http
+      .expectOne((r) => r.url === `${API}/cash/shifts/current` && r.params.get('cash_register_id') === 'reg-1')
+      .flush({ id: 'shift-1' });
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]); // loadSessionBill
+    await reloadPromise;
+
+    expect(store.cashShiftId()).toBe('shift-1');
+  });
+
+  it('spec 072 (US2, FR-003): sin ningún turno de caja abierto, el disparador reactivo no habilita el cobro', async () => {
+    // Sin `localStorage`: fuerza el descubrimiento completo (contracts/descubrimiento-turno-abierto.md).
+    store.orders.set([]);
+    store.selectTable('t1');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+    await Promise.resolve();
+    expectNoCheckoutDataRequests();
+
+    const reloadPromise = store.reload();
+    http.expectOne((r) => r.url === `${API}/orders`).flush([
+      { ...order('o1', 'recibida', ['pendiente']), dining_table_id: 't1' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && !r.params.has('available'))
+      .flush([{ id: 'pm-cash', name: 'Efectivo' }]);
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && r.params.get('available') === 'true')
+      .flush([{ id: 'pm-cash', name: 'Efectivo', is_cash: true }]);
+    // Descubrimiento: lista las cajas y ninguna tiene turno abierto (404 en cada una).
+    http.expectOne(`${API}/cash/registers`).flush([{ id: 'reg-1', name: 'Principal', active: true }]);
+    await new Promise((r) => setTimeout(r, 0));
+    http
+      .expectOne((r) => r.url === `${API}/cash/shifts/current`)
+      .flush(null, { status: 404, statusText: 'Not Found' });
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]); // loadSessionBill
+    await reloadPromise;
+
+    expect(store.cashShiftId()).toBeNull();
+  });
+
+  it('spec 072 (US3, FR-004): con dos turnos de caja abiertos a la vez, el disparador reactivo sigue exigiendo elegir explícitamente', async () => {
+    store.orders.set([]);
+    store.selectTable('t1');
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]);
+    await Promise.resolve();
+    expectNoCheckoutDataRequests();
+
+    const reloadPromise = store.reload();
+    http.expectOne((r) => r.url === `${API}/orders`).flush([
+      { ...order('o1', 'recibida', ['pendiente']), dining_table_id: 't1' },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && !r.params.has('available'))
+      .flush([{ id: 'pm-cash', name: 'Efectivo' }]);
+    http
+      .expectOne((r) => r.url === `${API}/sales/payment-methods` && r.params.get('available') === 'true')
+      .flush([{ id: 'pm-cash', name: 'Efectivo', is_cash: true }]);
+    http.expectOne(`${API}/cash/registers`).flush([
+      { id: 'reg-1', name: 'Principal', active: true },
+      { id: 'reg-2', name: 'Caja 2', active: true },
+    ]);
+    await new Promise((r) => setTimeout(r, 0));
+    const shiftReqs = http.match((r) => r.url === `${API}/cash/shifts/current`);
+    expect(shiftReqs.length).toBe(2);
+    for (const r of shiftReqs) {
+      r.flush({ id: `shift-${r.request.params.get('cash_register_id')}`, cash_register_id: r.request.params.get('cash_register_id') });
+    }
+    http.expectOne((r) => r.url === `${API}/table-sessions`).flush([]); // loadSessionBill
+    await reloadPromise;
+
+    expect(store.cashShiftId()).toBeNull();
   });
 });
 
