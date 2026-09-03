@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ProductSelectComponent } from '../components/product-select.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import {
@@ -84,8 +85,9 @@ import {
                 class="text-left bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-indigo-300 transition-colors"
               >
                 <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center overflow-hidden">
-                  @if (store.productDiscountBadges().get(p.id); as badge) {
-                    <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ badge }}</span>
+                  @if (store.cardPromotionText(p.variants); as promo) {
+                    <!-- spec 073, FR-016: condición legible del backend (spec 066), no la insignia local. -->
+                    <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ promo }}</span>
                   }
                   @if (p.image_url) {
                     <img [src]="p.image_url" [alt]="p.name" class="w-full h-full object-cover" />
@@ -271,19 +273,38 @@ import {
 
           <div class="border-t border-gray-100 p-4 space-y-2 bg-gray-50 shrink-0">
             @let tot = store.totals();
-            <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(tot.subtotal) }}</span></div>
-            <div class="flex justify-between text-sm">
-              <!-- FR-011 (spec 036, decisión A-41): impuesto siempre $0,
-                   sin campo editable, sin excepción. -->
-              <span>Impuesto</span><span>{{ store.fmt(0) }}</span>
-            </div>
-            @if (store.orderTypeTab() === 'domicilios') {
-              <!-- spec 056, FR-009: el valor del domicilio se refleja de
-                   inmediato en el total mostrado en pantalla. -->
-              <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(tot.deliveryFee) }}</span></div>
+            @if (store.draftPreview(); as p) {
+              <!-- spec 073, FR-013/FR-014: el desglose (con descuento por
+                   promoción) lo calcula el backend sobre el borrador. -->
+              <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(+p.subtotal) }}</span></div>
+              @if (+p.discount > 0) {
+                <div class="flex justify-between text-sm text-emerald-700"><span>Descuento</span><span>− {{ store.fmt(+p.discount) }}</span></div>
+              }
+              <div class="flex justify-between text-sm"><span>Impuesto</span><span>{{ store.fmt(0) }}</span></div>
+              @if (+p.delivery_fee > 0) {
+                <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(+p.delivery_fee) }}</span></div>
+              }
+              <div class="border-t border-gray-200 my-1"></div>
+              <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(+p.total) }}</span></div>
+            } @else {
+              <!-- FR-015: sin descuento verificado (cargando o sin conexión) —
+                   subtotal sin descuento + aviso; NO bloquea confirmar. -->
+              <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(tot.subtotal) }}</span></div>
+              <div class="flex justify-between text-sm">
+                <!-- FR-011 (spec 036, decisión A-41): impuesto siempre $0. -->
+                <span>Impuesto</span><span>{{ store.fmt(0) }}</span>
+              </div>
+              @if (store.orderTypeTab() === 'domicilios') {
+                <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(tot.deliveryFee) }}</span></div>
+              }
+              <div class="border-t border-gray-200 my-1"></div>
+              <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
+              @if (store.draftPreviewError()) {
+                <p class="text-xs text-amber-700">El descuento se confirma al cobrar.</p>
+              } @else if (store.draftPreviewLoading()) {
+                <p class="text-xs text-gray-400">Calculando el descuento…</p>
+              }
             }
-            <div class="border-t border-gray-200 my-1"></div>
-            <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
 
             <button
               (click)="confirm()"
@@ -317,6 +338,18 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly confirmSvc = inject(ConfirmService);
+
+  /**
+   * spec 073, FR-013: recalcula el desglose del borrador (con descuento por
+   * promoción) en cada cambio de línea, tipo de orden o valor del domicilio.
+   */
+  private readonly _draftPreview = effect(() => {
+    this.store.draftLines();
+    this.store.orderTypeTab();
+    this.store.deliveryFee();
+    void this.store.loadDraftPreview();
+  });
 
   /** Opciones del select buscable de mesas (spec 053, corrección posterior:
    *  el número de mesa es siempre parte de la etiqueta, no se reemplaza por
@@ -402,6 +435,29 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   async confirm(): Promise<void> {
     this.applyDefaultCustomerName();
+
+    // spec 073, FR-015a / research.md D11: doble chequeo del total antes de
+    // crear el pedido — pero solo si la pantalla venía mostrando un total con
+    // descuento del backend. Si el preview había fallado (FR-015), la pantalla
+    // ya avisó "el descuento se confirma al cobrar": no hay ningún total previo
+    // que pueda "cambiar", así que se crea el pedido sin más.
+    const shown = this.store.draftPreview();
+    if (shown) {
+      const before = Number(shown.total);
+      await this.store.loadDraftPreview();
+      const fresh = this.store.draftPreview();
+      if (fresh && Number(fresh.total) !== before) {
+        const ok = await this.confirmSvc.ask({
+          title: 'El total cambió',
+          message:
+            `El total del pedido pasó a ${this.store.fmt(Number(fresh.total))} ` +
+            `(antes ${this.store.fmt(before)}). ¿Crear el pedido por ese importe?`,
+          confirmText: 'Sí, crear',
+        });
+        if (!ok) return;
+      }
+    }
+
     const ok = await this.store.createManualOrderFromDraft();
     if (ok) {
       await this.router.navigate(['/dashboard/mesas-sesiones']);

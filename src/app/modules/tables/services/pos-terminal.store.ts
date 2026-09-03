@@ -8,7 +8,6 @@ import { PaymentMethod, Sale } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
-import { isPromoActiveNow } from '../../promotions/services/promotion-pricing.util';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -19,9 +18,11 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
 import { RealtimeService } from '../../../core/realtime/realtime.service';
 import { Table, TableStatus } from '../interfaces/table.interface';
 import {
+  CheckoutPreview,
   CloseSessionResponse,
   DiningOrder,
   DiningOrderItem,
+  DraftPreviewPayload,
   KitchenStatus,
   PaymentLine,
   SessionBill,
@@ -401,44 +402,20 @@ export class PosTerminalStore {
       : Number(i.unit_price);
   }
 
-  /** Insignia de descuento para un producto, si alguna **regla** de una
-   *  promoción vigente cubre el conjunto de sus variantes (spec 063,
-   *  revisión 2026-09-01: cruza `rule.variants`, no `promo.variants`
-   *  directo — una promoción ya no tiene conjunto propio). Solo decide si
-   *  se muestra la insignia. */
-  private productDiscountBadge(variantIds: string[]): string | null {
-    const now = currentNow(this.promotionService);
-    if (now === null || variantIds.length === 0) return null;
-    const set = new Set(variantIds);
-    for (const p of this.promotionService.activePromotions()) {
-      if (!isPromoActiveNow(p, now)) continue;
-      for (const rule of p.rules) {
-        if (!rule.variants.some((v) => set.has(v.product_variant_id))) continue;
-        return rule.type === 'percent'
-          ? `-${Number(rule.value)}%`
-          : `Paquete ${this.fmt(Number(rule.value))}`;
-      }
-    }
-    return null;
-  }
-
   /**
-   * Insignia de descuento (ej. "-50%") por producto, para las promociones
-   * `percent`/`fixed` vigentes en este instante — el catálogo no mostraba
-   * ninguna señal de que un producto tenía descuento activo, a diferencia de
-   * los combos que sí tienen su propia sección. Solo decide si se muestra la
-   * insignia; el monto real que se cobra lo sigue calculando el backend.
+   * spec 073, FR-016/FR-017 (US6): la condición legible de la promoción para la
+   * tarjeta del catálogo — la **misma** que ya publica el backend para el menú
+   * QR (`MenuVariantPromotion`, spec 066), en lugar de la insignia local
+   * "-50%" que se recalculaba aquí. Ya no hay ninguna evaluación de vigencia
+   * en el frontend: el backend ya resolvió qué promoción cubre cada variante
+   * (`variant.promotion`) y cómo se lee (`short_condition`/`display_text`,
+   * con el equivalente por unidad y la marca de "≈" cuando `min_qty > 1` —
+   * FR-017 sin rama especial aquí). `null` si ninguna variante del producto
+   * tiene promoción vigente.
    */
-  readonly productDiscountBadges = computed<Map<string, string>>(() => {
-    const result = new Map<string, string>();
-    for (const c of this.categories()) {
-      for (const prod of c.products) {
-        const label = this.productDiscountBadge(prod.variants.map((v) => v.id));
-        if (label) result.set(prod.id, label);
-      }
-    }
-    return result;
-  });
+  cardPromotionText(variants: MenuVariant[]): string | null {
+    return variants.find((v) => v.promotion != null)?.promotion?.short_condition ?? null;
+  }
 
   private readonly lookup = computed<MenuLookup>(() =>
     buildMenuLookup(this.menuService.categories()),
@@ -880,11 +857,21 @@ export class PosTerminalStore {
 
   readonly subtotal = computed(() => this.cartView().reduce((s, i) => s + i.subtotal, 0));
 
+  /**
+   * Total LOCAL, **sin descuento por promoción** (`discount` siempre 0).
+   *
+   * spec 073: el panel de cobro (US1) y el resumen del borrador (US5) ya NO lo
+   * consumen — leen `checkoutPreview()`/`draftPreview()` del backend. Se
+   * conserva porque `manual-order-page.component.ts` lo usa como **respaldo de
+   * FR-015**: si el `draft-preview` no se puede consultar (sin conexión), la
+   * pantalla muestra este subtotal sin descuento + el aviso "el descuento se
+   * confirma al cobrar", sin bloquear la creación del pedido.
+   */
   readonly totals = computed(() => {
     const subtotal = this.subtotal();
-    // Spec 029, Historia 2: sin descuento manual — el único descuento
-    // posible es el de promociones/combos, ya reflejado línea por línea en
-    // `cartView()` (`discountedUnitPrice`), no como un monto aparte aquí.
+    // Spec 029, Historia 2: sin descuento manual. spec 073: el descuento por
+    // promoción lo calcula el backend (checkoutPreview/draftPreview), no este
+    // total local — que es solo el respaldo de FR-015.
     const discount = 0;
     const tax = 0; // Impuestos deprecado: se guarda/calcula siempre en 0.
     // Spec 056, FR-009/FR-012: el valor del domicilio se suma al total en
@@ -1040,6 +1027,14 @@ export class PosTerminalStore {
       this.realtime.on('session.bill_changed', (ev) => {
         if (ev.table_session_id === this.sessionBill()?.table_session_id) {
           this.billStale.set(true);
+        }
+        // spec 073, FR-007a: el preview del cobro de mostrador se marca
+        // obsoleto igual que la cuenta de sesión — misma regla (se marca, no
+        // se recarga sola). El pedido de mostrador puede no tener
+        // `table_session_id`, así que si hay un preview cargado y un pedido
+        // seleccionado, se marca sin más.
+        if (this.checkoutPreview() && this.selectedOrderId()) {
+          this.checkoutPreviewStale.set(true);
         }
       }),
     );
@@ -1675,6 +1670,104 @@ export class PosTerminalStore {
       this.error.set(this.tableSessions.extractError(err, 'No se pudo cargar la cuenta.'));
     } finally {
       this.billLoading.set(false);
+    }
+  }
+
+  // ─── Preview autoritativo del cobro (spec 073) ────────────────────────────────
+
+  /**
+   * Desglose autoritativo del cobro del pedido seleccionado — `{subtotal,
+   * discount, delivery_fee, total}` calculado por el backend
+   * (`GET /orders/{id}/checkout-preview`), **nunca** por el navegador (spec 063,
+   * FR-023). Es lo que `PosCheckoutPanelComponent` muestra y valida en la rama
+   * de cobro de mostrador (mesa individual, para llevar, domicilio), en lugar
+   * de `totals()`.
+   *
+   * Mismo molde exacto que `sessionBill`/`billLoading`/`billStale`: señal
+   * resultado + señal loading + señal stale que **solo se marca, nunca se
+   * recarga sola** (misma razón que `billStale`: `PaymentInputComponent`
+   * resetea el efectivo tecleado al cambiar el total, y recargar al recibir el
+   * evento le borraría al cajero lo que está escribiendo). La recarga la
+   * decide el flujo del panel, no un evento.
+   */
+  readonly checkoutPreview = signal<CheckoutPreview | null>(null);
+  readonly checkoutPreviewLoading = signal(false);
+  readonly checkoutPreviewStale = signal(false);
+
+  /**
+   * Carga (o recarga) el preview del cobro de un pedido ya creado. `null`
+   * limpia el preview (sin pedido seleccionado). Un fallo deja
+   * `checkoutPreview()` en `null` y expone el error — el panel de cobro no
+   * permite cobrar contra un total no verificado (FR-007a, Edge Case "Sin
+   * conexión al consultar el total del cobro").
+   */
+  async loadCheckoutPreview(orderId: string | null): Promise<void> {
+    this.checkoutPreviewStale.set(false);
+    if (!orderId) {
+      this.checkoutPreview.set(null);
+      return;
+    }
+    this.checkoutPreviewLoading.set(true);
+    try {
+      this.checkoutPreview.set(await this.api.checkoutPreview(orderId));
+    } catch (err) {
+      this.checkoutPreview.set(null);
+      this.error.set(this.api.extractError(err, 'No se pudo calcular el total del cobro.'));
+    } finally {
+      this.checkoutPreviewLoading.set(false);
+    }
+  }
+
+  // ─── Preview del borrador de orden manual (spec 073, US5) ─────────────────────
+
+  /**
+   * Desglose del **borrador** de orden manual — `{subtotal, discount,
+   * delivery_fee, total}` que aplicaría al conjunto de productos que el cajero
+   * viene armando (`POST /orders/draft-preview`), sin crear ningún pedido.
+   * Se recalcula en cada cambio del borrador (FR-013).
+   *
+   * A diferencia del panel de cobro (FR-007a), si esto falla la pantalla NO se
+   * bloquea: muestra el subtotal local con un aviso (`draftPreviewError`) y deja
+   * confirmar el pedido igual (FR-015) — aquí no hay dinero comprometiéndose.
+   */
+  readonly draftPreview = signal<CheckoutPreview | null>(null);
+  readonly draftPreviewLoading = signal(false);
+  readonly draftPreviewError = signal(false);
+
+  /** Cuerpo de `POST /orders/draft-preview` armado desde el borrador actual —
+   *  las mismas líneas que `createManualOrderFromDraft()` mandaría al crear. */
+  private draftPreviewPayload(): DraftPreviewPayload {
+    const items = this.draftLines()
+      .filter((l) => l.kind === 'product')
+      .map((l) => ({
+        product_variant_id: l.variant.id,
+        quantity: l.quantity,
+        options: l.options.map((c) => ({ option_id: c.option.id, quantity: c.quantity })),
+      }));
+    return {
+      items,
+      delivery_fee:
+        this.orderTypeTab() === 'domicilios' ? (this.deliveryFee() ?? null) : null,
+    };
+  }
+
+  async loadDraftPreview(): Promise<void> {
+    const payload = this.draftPreviewPayload();
+    if (payload.items.length === 0) {
+      this.draftPreview.set(null);
+      this.draftPreviewError.set(false);
+      return;
+    }
+    this.draftPreviewLoading.set(true);
+    this.draftPreviewError.set(false);
+    try {
+      this.draftPreview.set(await this.api.draftPreview(payload));
+    } catch {
+      // FR-015: sin descuento verificado, pero NO se bloquea la pantalla.
+      this.draftPreview.set(null);
+      this.draftPreviewError.set(true);
+    } finally {
+      this.draftPreviewLoading.set(false);
     }
   }
 

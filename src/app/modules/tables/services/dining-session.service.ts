@@ -4,9 +4,11 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   CheckoutAndSendPayload,
+  CheckoutPreview,
   DiningOrder,
   DiningOrderItem,
   DiningOrderStatus,
+  DraftPreviewPayload,
   KitchenStatus,
   OrderCreatePayload,
   OrderItemPayload,
@@ -70,6 +72,31 @@ export class DiningSessionService {
   async checkoutAndSend(orderId: string, payload: CheckoutAndSendPayload): Promise<Sale> {
     return firstValueFrom(
       this.http.post<Sale>(`${this.api}/orders/${orderId}/checkout-and-send`, payload),
+    );
+  }
+
+  /**
+   * spec 073 (FR-001): desglose autoritativo del cobro de un pedido **ya
+   * creado** (mesa, para llevar, domicilio) — `{subtotal, discount,
+   * delivery_fee, total, promotion_evaluated_at}` calculado por el backend con
+   * el mismo motor que emite la venta. Solo lectura: no bloquea el pedido ni
+   * exige turno de caja. `409` si el pedido ya está pagado o cancelado.
+   */
+  async checkoutPreview(orderId: string): Promise<CheckoutPreview> {
+    return firstValueFrom(
+      this.http.get<CheckoutPreview>(`${this.api}/orders/${orderId}/checkout-preview`),
+    );
+  }
+
+  /**
+   * spec 073 (FR-013): mismo desglose para un **borrador** de orden manual que
+   * todavía no existe como pedido — el frontend manda las mismas líneas que
+   * usará para el `POST /orders` real. `promotion_evaluated_at` es la hora de
+   * la llamada (sin congelar): el pedido congela su instante recién al crearse.
+   */
+  async draftPreview(payload: DraftPreviewPayload): Promise<CheckoutPreview> {
+    return firstValueFrom(
+      this.http.post<CheckoutPreview>(`${this.api}/orders/draft-preview`, payload),
     );
   }
 
