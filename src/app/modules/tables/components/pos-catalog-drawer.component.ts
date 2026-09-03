@@ -66,8 +66,9 @@ import { ProductSelectComponent } from './product-select.component';
                 (click)="store.openConfig(p)"
                 class="relative text-left bg-white rounded-xl border border-gray-200 p-4 hover:border-indigo-300 transition-colors"
               >
-                @if (store.productDiscountBadges().get(p.id); as badge) {
-                  <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ badge }}</span>
+                @if (store.cardPromotionText(p.variants); as promo) {
+                  <!-- spec 073, FR-016: condición legible del backend (spec 066), no la insignia local. -->
+                  <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ promo }}</span>
                 }
                 <div class="font-semibold text-gray-900 text-sm">{{ p.name }}</div>
                 <div class="text-sm font-bold text-gray-900 mt-1">

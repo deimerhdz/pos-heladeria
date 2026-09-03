@@ -138,6 +138,66 @@ describe('PosCatalogDrawerComponent', () => {
     expect(store.configuringProduct()?.id).toBe('p1');
   });
 
+  // ─── spec 073, US6 (FR-016/FR-017): condición legible del backend ────────────
+
+  function productWithPromo(id: string, name: string, promo: unknown): MenuProduct {
+    return {
+      id,
+      name,
+      description: null,
+      image_url: null,
+      variants: [{ id: `${id}-v1`, name: 'Única', price: 8000, option_groups: [], promotion: promo }],
+      option_groups: [],
+      available: true,
+    } as unknown as MenuProduct;
+  }
+
+  it('Scenario 1: pinta la condición legible del backend (short_condition), no la insignia local "-50%"', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [
+        productWithPromo('p1', 'Cono', { short_condition: '2 x -50%', display_text: '2 x -50% · ≈ $4.000 c/u', min_qty: 2, type: 'percent', value: 50 }),
+      ] },
+    ]);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('2 x -50%');
+  });
+
+  it('Scenario 2: regla de paquete → muestra esa condición ("3 x $20.000"), no un precio unitario suelto', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [
+        productWithPromo('p1', 'Paquete', { short_condition: '3 x $20.000', display_text: '3 x $20.000 · ≈ $6.667 c/u', min_qty: 3, type: 'package_price', value: 20000 }),
+      ] },
+    ]);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('3 x $20.000');
+  });
+
+  it('Scenario 3: producto sin promoción → cardPromotionText devuelve null y no pinta ninguna insignia', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [product('p1', 'Sin promo')] },
+    ]);
+    fixture.detectChanges();
+
+    expect(store.cardPromotionText(store.categories()[0].products[0].variants)).toBeNull();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('🏷️');
+  });
+
+  it('Scenario 4: min_qty = 1 → se pinta el texto del backend tal cual, sin rama especial', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [
+        productWithPromo('p1', 'Cono', { short_condition: '-15%', display_text: '$6.800 c/u', min_qty: 1, type: 'percent', value: 15 }),
+      ] },
+    ]);
+    fixture.detectChanges();
+
+    expect(store.cardPromotionText(store.categories()[0].products[0].variants)).toBe('-15%');
+  });
+
   it('"← Volver a la lista" cierra el catálogo sin perder ningún ítem ya agregado', () => {
     store.draftLines.set([
       {
