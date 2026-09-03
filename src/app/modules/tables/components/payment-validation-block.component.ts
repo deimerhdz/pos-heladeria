@@ -4,9 +4,7 @@ import {
   EventEmitter,
   Input,
   Output,
-  inject,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { buildMenuLookup } from '../services/menu-lookup';
 import { MenuCategory } from '../../products/interfaces/product.interface';
@@ -35,7 +33,7 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
 @Component({
   selector: 'app-payment-validation-block',
   standalone: true,
-  imports: [DecimalPipe, PaymentAttemptReviewPanelComponent],
+  imports: [PaymentAttemptReviewPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div>
@@ -90,19 +88,20 @@ import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-pan
                 cajero que produce ese "confirmado" (aprobar comprobante o
                 confirmar efectivo). Cada tarjeta es independiente: solo lee
                 el pedido que le toca, no el estado de las demás.
+
+                spec 073, US7 (FR-022, research.md D14): el total autoritativo y
+                su desglose (Subtotal / Descuento / Domicilio / Total) los
+                muestra ahora el panel de revisión embebido, calculado por el
+                backend. Se retiró la fila de pie con el total local, que sumaba
+                el total de línea congelado del carrito — el que "disimulaba el
+                fallo".
               -->
-              <div class="mb-2">
+              <div class="mb-1">
                 <app-payment-attempt-review-panel
                   [order]="order"
                   [cashShiftId]="cashShiftId"
                   (resolved)="refresh.emit()"
                 />
-              </div>
-
-              <div class="flex items-center justify-end gap-2">
-                <span class="text-lg font-bold text-gray-900">
-                  $ {{ total(order) | number: '1.2-2' }}
-                </span>
               </div>
             </div>
           }
@@ -131,19 +130,6 @@ export class PaymentValidationBlockComponent {
       .map((o) => lookup.optionLabelWithQuantity(o.option_id, o.quantity ?? 1))
       .filter(Boolean);
     return names.length ? names.join(', ') : null;
-  }
-
-  total(order: DiningOrder): number {
-    // spec 063 (FR-023, research.md D10): el descuento efectivo lo resuelve el
-    // backend (`compute_bill` / preview del cobro), no un cálculo local. Aquí se
-    // usa el `discounted_line_total` que ya vino en la línea, o el bruto.
-    return (order.items ?? []).reduce((s, i) => {
-      const line =
-        i.discounted_line_total != null
-          ? Number(i.discounted_line_total)
-          : Number(i.unit_price) * i.quantity;
-      return s + line;
-    }, 0);
   }
 
   time(order: DiningOrder): string {
