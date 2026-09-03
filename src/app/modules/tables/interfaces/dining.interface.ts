@@ -272,6 +272,33 @@ export interface CheckoutAndSendPayload {
   billing_customer_name?: string;
 }
 
+/**
+ * `CheckoutPreviewResponse` (spec 073, FR-001/FR-004) — desglose autoritativo
+ * del cobro de un pedido, calculado por el backend con el mismo motor que emite
+ * la venta. **Nunca se recalcula en el navegador** (spec 063, FR-023). Lo
+ * devuelven `GET /orders/{id}/checkout-preview` (pedido ya creado) y
+ * `POST /orders/draft-preview` (borrador sin guardar). Los decimales llegan como
+ * string, igual que en `SessionBill`/`Sale`.
+ */
+export interface CheckoutPreview {
+  subtotal: string;
+  /** Descuento automático por promoción, siempre ≥ 0. */
+  discount: string;
+  /** Valor del domicilio (0 si no es domicilio). El frontend pinta la fila solo si > 0. */
+  delivery_fee: string;
+  /** `max(0, subtotal − descuento + domicilio)`. */
+  total: string;
+  /** Instante contra el que se evaluó la vigencia temporal de las promociones. */
+  promotion_evaluated_at: string;
+}
+
+/** Body de `POST /orders/draft-preview` (spec 073, FR-013). */
+export interface DraftPreviewPayload {
+  items: OrderItemPayload[];
+  /** Solo en borradores de tipo domicilio (FR-003). */
+  delivery_fee?: number | null;
+}
+
 // ── Sesión de mesa (`/table-sessions`) ─────────────────────────────────────
 
 export type BillingMode = 'unified' | 'split';

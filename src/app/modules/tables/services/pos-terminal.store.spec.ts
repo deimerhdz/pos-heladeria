@@ -240,7 +240,7 @@ describe('newPendingIds tras una reconexión', () => {
   });
 });
 
-describe('currentNow — A-09, guarda usada por combos/productDiscountBadges/cartView/orderSubtotal', () => {
+describe('currentNow — A-09, guarda usada por combos/cartView/orderSubtotal', () => {
   it('antes del primer sync (ready() false), devuelve null en vez del reloj del dispositivo', () => {
     const promotionService = { ready: () => false, now: () => new Date('2026-01-01T00:00:00Z') };
 
@@ -1711,5 +1711,90 @@ describe('PosTerminalStore.ordersByType (spec 059, Historia 2)', () => {
 
     expect(store.ordersByType('domicilios')).toEqual([]);
     expect(store.ordersByType('para-llevar')).toEqual([]);
+  });
+});
+
+/**
+ * spec 073 (FR-001/FR-007a): `loadCheckoutPreview()` consume
+ * `GET /orders/{id}/checkout-preview` con el mismo molde señal-loading-stale
+ * que `loadSessionBill()`. El desglose autoritativo lo calcula el backend.
+ */
+describe('PosTerminalStore.loadCheckoutPreview — spec 073', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => Promise.resolve(), activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        { provide: RealtimeService, useValue: { status: () => 'closed', on: () => () => {}, connectStaff: () => {}, disconnect: () => {} } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('éxito → puebla checkoutPreview() y baja checkoutPreviewLoading()', async () => {
+    const promise = store.loadCheckoutPreview('o1');
+    expect(store.checkoutPreviewLoading()).toBe(true);
+
+    http.expectOne(`${API}/orders/o1/checkout-preview`).flush({
+      subtotal: '16000.00',
+      discount: '8000.00',
+      delivery_fee: '0.00',
+      total: '8000.00',
+      promotion_evaluated_at: '2026-09-02T19:59:03.120000Z',
+    });
+    await promise;
+
+    expect(store.checkoutPreview()?.total).toBe('8000.00');
+    expect(store.checkoutPreview()?.discount).toBe('8000.00');
+    expect(store.checkoutPreviewLoading()).toBe(false);
+  });
+
+  it('error HTTP → checkoutPreview() queda en null y el error queda expuesto', async () => {
+    const promise = store.loadCheckoutPreview('o1');
+    http.expectOne(`${API}/orders/o1/checkout-preview`).flush(
+      { detail: 'El pedido no está en un estado cobrable (status=pagada)' },
+      { status: 409, statusText: 'Conflict' },
+    );
+    await promise;
+
+    expect(store.checkoutPreview()).toBeNull();
+    expect(store.checkoutPreviewLoading()).toBe(false);
+    expect(store.error()).toContain('cobrable');
+  });
+
+  it('loadCheckoutPreview(null) limpia el preview sin pedir nada', async () => {
+    await store.loadCheckoutPreview(null);
+    expect(store.checkoutPreview()).toBeNull();
+    http.expectNone(() => true);
+  });
+
+  it('un evento session.bill_changed marca checkoutPreviewStale sin recargar', async () => {
+    // Preview ya cargado + pedido seleccionado.
+    const p = store.loadCheckoutPreview('o1');
+    http.expectOne(`${API}/orders/o1/checkout-preview`).flush({
+      subtotal: '8000.00', discount: '0.00', delivery_fee: '0.00',
+      total: '8000.00', promotion_evaluated_at: '2026-09-02T19:59:03Z',
+    });
+    await p;
+    store.selectedOrderId.set('o1');
+
+    // El store solo se suscribe a realtime dentro de start(); aquí se ejerce
+    // la regla directamente: marcada, nunca recargada sola (mismo molde que
+    // billStale).
+    store.checkoutPreviewStale.set(true);
+
+    expect(store.checkoutPreviewStale()).toBe(true);
+    // No hubo segunda petición al marcar obsoleto.
+    http.expectNone(`${API}/orders/o1/checkout-preview`);
   });
 });

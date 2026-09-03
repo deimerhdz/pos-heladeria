@@ -5,9 +5,11 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
@@ -170,11 +172,56 @@ import {
                 </div>
               </div>
 
-              <app-payment-input
-                [total]="store.totals().total"
-                [methods]="store.paymentMethodsAvailable()"
-                (changed)="paymentDraft.set($event)"
-              />
+              <!--
+                spec 073, FR-002/FR-004: el importe lo calcula el backend
+                (checkoutPreview()), nunca el navegador. Desglose agregado
+                Subtotal / Descuento / Domicilio / Total, con el mismo formato
+                que la cuenta de mesa; Descuento y Domicilio solo si son > 0.
+              -->
+              @if (preview(); as p) {
+                <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 my-3 space-y-1 text-sm">
+                  <div class="flex justify-between text-gray-600">
+                    <span>Subtotal</span><span>{{ store.fmt(+p.subtotal) }}</span>
+                  </div>
+                  @if (+p.discount > 0) {
+                    <div class="flex justify-between text-emerald-700">
+                      <span>Descuento</span><span>− {{ store.fmt(+p.discount) }}</span>
+                    </div>
+                  }
+                  @if (+p.delivery_fee > 0) {
+                    <div class="flex justify-between text-gray-600">
+                      <span>Domicilio</span><span>{{ store.fmt(+p.delivery_fee) }}</span>
+                    </div>
+                  }
+                  <div class="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
+                    <span>Total</span><span>{{ store.fmt(+p.total) }}</span>
+                  </div>
+                </div>
+              } @else {
+                <!-- FR-007a: nunca un total provisional — estado "calculando"
+                     visible y "Cobrar" deshabilitado hasta recibir el total. -->
+                <p class="text-sm text-gray-400 py-3 text-center">Calculando el total…</p>
+              }
+
+              @if (store.checkoutPreviewStale() && !store.checkoutPreviewLoading()) {
+                <div class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <span class="text-sm text-amber-800 flex-1">El total cambió</span>
+                  <button
+                    (click)="store.loadCheckoutPreview(store.selectedOrderId())"
+                    class="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors"
+                  >
+                    Actualizar
+                  </button>
+                </div>
+              }
+
+              @if (preview()) {
+                <app-payment-input
+                  [total]="previewTotal()"
+                  [methods]="store.paymentMethodsAvailable()"
+                  (changed)="paymentDraft.set($event)"
+                />
+              }
 
               @if (store.error()) {
                 <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 my-3">
@@ -184,7 +231,7 @@ import {
 
               <button
                 (click)="checkout()"
-                [disabled]="store.checkoutSubmitting() || issue() !== null"
+                [disabled]="store.checkoutSubmitting() || !preview() || store.checkoutPreviewLoading() || issue() !== null"
                 class="w-full min-h-11 py-2.5 mt-3 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {{ store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar' }}
@@ -255,6 +302,7 @@ import {
 export class PosCheckoutPanelComponent {
   readonly store = inject(PosTerminalStore);
   private readonly router = inject(Router);
+  private readonly confirm = inject(ConfirmService);
 
   /**
    * Spec 045: mesa destino del botón fijo "+ Crear pedido nuevo" -- la mesa
@@ -317,22 +365,87 @@ export class PosCheckoutPanelComponent {
     this.editandoFacturacion.set(false);
   }
 
+  /**
+   * spec 073, FR-001/FR-002: el desglose autoritativo del cobro del pedido
+   * seleccionado (backend). Mientras `checkoutPreviewLoading()` es verdadero o
+   * no llegó ningún preview, es `null` y "Cobrar" queda deshabilitado (FR-007a)
+   * — nunca se pinta un total provisional.
+   */
+  readonly preview = this.store.checkoutPreview;
+
+  /** El total real a cobrar (número), del preview del backend — reemplaza
+   *  `store.totals().total` para el pedido de mostrador/mesa individual. */
+  readonly previewTotal = computed(() => Number(this.store.checkoutPreview()?.total ?? 0));
+
   readonly issue = computed(() =>
-    paymentIssue(this.paymentDraft(), this.store.totals().total, this.store.paymentMethodsAvailable()),
+    paymentIssue(this.paymentDraft(), this.previewTotal(), this.store.paymentMethodsAvailable()),
   );
+
+  /** El total que se le mostró al cajero la última vez que abrió/refrescó el
+   *  panel — base de la comparación de FR-007 antes de someter el cobro. */
+  private lastShownTotal: number | null = null;
 
   constructor() {
     // El pago anterior no vale para otro pedido: se reinicia al cambiar de
     // selección, igual que hace `SessionBillPanelComponent` con `bill`.
     effect(() => {
-      this.store.selectedOrderId();
+      const orderId = this.store.selectedOrderId();
       this.paymentDraft.set(emptyPaymentDraft());
       this.editandoFacturacion.set(false);
+      this.lastShownTotal = null;
+      // spec 073, FR-001: en el mismo punto donde se resetea `paymentDraft`,
+      // se pide al backend el desglose autoritativo del pedido de
+      // mostrador/mesa individual que se está cobrando. `untracked` evita que
+      // los reads de `pendingCheckout()` amplíen las dependencias de este
+      // effect (que solo debe re-correr al cambiar la selección, no en cada
+      // sondeo de pedidos — si no, borraría lo que el cajero está tecleando).
+      untracked(() => {
+        void this.store.loadCheckoutPreview(
+          orderId && this.pendingCheckout() ? orderId : null,
+        );
+      });
+    });
+
+    // Recuerda el último total que se le mostró al cajero — base de la
+    // comparación de FR-007 justo antes de someter el cobro.
+    effect(() => {
+      const total = this.store.checkoutPreview()?.total;
+      if (total != null && !this.store.checkoutPreviewLoading()) {
+        this.lastShownTotal = Number(total);
+      }
     });
   }
 
   async checkout(): Promise<void> {
-    if (this.issue()) return;
+    if (this.issue() || !this.preview()) return;
+    const orderId = this.store.selectedOrderId();
+    const beforeTotal = this.lastShownTotal ?? this.previewTotal();
+
+    // spec 073, FR-007 / research.md D11: doble chequeo determinista antes de
+    // someter — se vuelve a pedir el preview; si el total cambió respecto al
+    // último mostrado, se detiene, se presenta el total nuevo y se exige una
+    // segunda confirmación explícita (nunca se deja fallar la request real con
+    // el mensaje técnico del servidor).
+    if (orderId) {
+      await this.store.loadCheckoutPreview(orderId);
+    }
+    const fresh = this.store.checkoutPreview();
+    if (!fresh) return; // el preview falló: no se cobra contra un total no verificado
+    const freshTotal = Number(fresh.total);
+    if (freshTotal !== beforeTotal) {
+      const ok = await this.confirm.ask({
+        title: 'El total cambió',
+        message:
+          `El total a cobrar pasó a ${this.store.fmt(freshTotal)} ` +
+          `(antes ${this.store.fmt(beforeTotal)}). ¿Continuar con el cobro por ese importe?`,
+        confirmText: 'Sí, cobrar',
+      });
+      this.lastShownTotal = freshTotal;
+      if (!ok) return;
+      // El importe tecleado pudo quedar corto (o el campo se reinició al
+      // cambiar el total): re-validar antes de someter.
+      if (this.issue()) return;
+    }
     await this.store.checkoutAndSend(paymentLines(this.paymentDraft()));
   }
 }

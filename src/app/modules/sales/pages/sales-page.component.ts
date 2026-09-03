@@ -165,6 +165,14 @@ const STATUS_CHIP_CLASSES: Record<SaleStatus, string> = {
             <div class="border-t border-gray-100 pt-2 space-y-1">
               <div class="flex justify-between text-gray-500"><span>Subtotal</span><span>$ {{ +r.subtotal | number: '1.2-2' }}</span></div>
               @if (+r.discount > 0) { <div class="flex justify-between text-gray-500"><span>Descuento</span><span>− $ {{ +r.discount | number: '1.2-2' }}</span></div> }
+              @if (+r.discount > 0 && r.promotion_evaluated_at) {
+                <!-- spec 073, FR-011a/SC-009: distingue un descuento de una promoción
+                     hoy vencida de una falla del sistema — sin abrir el pedido. -->
+                <p class="text-[11px] text-gray-400 leading-snug">
+                  Promociones evaluadas con la vigencia del
+                  {{ r.promotion_evaluated_at | tenantDate: 'dd/MM/yyyy HH:mm' }}
+                </p>
+              }
               @if (+r.tax > 0) { <div class="flex justify-between text-gray-500"><span>Impuesto</span><span>$ {{ +r.tax | number: '1.2-2' }}</span></div> }
               @if (+r.tip > 0) { <div class="flex justify-between text-gray-500"><span>Propina</span><span>$ {{ +r.tip | number: '1.2-2' }}</span></div> }
               <div class="flex justify-between font-bold text-base"><span>Total</span><span>$ {{ +r.total | number: '1.2-2' }}</span></div>

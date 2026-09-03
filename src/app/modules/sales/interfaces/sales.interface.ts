@@ -168,6 +168,11 @@ export interface Sale {
   change_given?: string | null;
   status: SaleStatus;
   sold_at: string;
+  /**
+   * spec 073 (FR-011a): instante contra el que se evaluó la vigencia temporal
+   * de las promociones de esta venta. `null` en ventas anteriores a esa spec.
+   */
+  promotion_evaluated_at?: string | null;
   items?: SaleItem[];
   payments?: SalePayment[];
   /** Consecutivo fiscal; `null` en ventas anteriores a la facturación. */

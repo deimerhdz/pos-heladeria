@@ -54,7 +54,32 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
   let http: HttpTestingController;
   let toast: ToastService;
 
-  beforeEach(() => {
+  /**
+   * spec 073, FR-001: el panel pide `GET /orders/{id}/checkout-preview` al
+   * seleccionar el pedido de mostrador. Responde a cualquier petición de
+   * preview pendiente con el desglose indicado (por defecto sin descuento,
+   * total $10.000 — el subtotal de `manualOrder()`).
+   */
+  async function flushPreview(over: Partial<Record<string, string>> = {}): Promise<void> {
+    for (const req of http.match((r) => r.url.endsWith('/checkout-preview'))) {
+      req.flush({
+        subtotal: '10000.00',
+        discount: '0.00',
+        delivery_fee: '0.00',
+        total: '10000.00',
+        promotion_evaluated_at: '2026-08-20T10:00:00Z',
+        ...over,
+      });
+    }
+    // El effect dispara `loadCheckoutPreview()` en fire-and-forget: `whenStable()`
+    // no basta para su continuación async, hace falta un tick de macrotarea.
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [PosCheckoutPanelComponent],
@@ -87,6 +112,8 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     store.selectedTableId.set('t1');
     store.selectedOrderId.set('o1');
     fixture.detectChanges();
+    await fixture.whenStable(); // deja correr el effect que pide el preview
+    await flushPreview();
   });
 
   afterEach(() => http.verify());
@@ -139,7 +166,7 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(billingInput().value).toBe('María Pérez');
   });
 
-  it('spec 058, research.md Decisión 2: el modo edición del nombre de facturación se reinicia al cambiar de pedido seleccionado', () => {
+  it('spec 058, research.md Decisión 2: el modo edición del nombre de facturación se reinicia al cambiar de pedido seleccionado', async () => {
     const editButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       (b as HTMLButtonElement).title === 'Editar nombre de facturación',
     ) as HTMLButtonElement;
@@ -150,6 +177,8 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2' }]);
     store.selectedOrderId.set('o2');
     fixture.detectChanges();
+    await fixture.whenStable();
+    await flushPreview(); // spec 073: la nueva selección repide el preview
 
     expect(textInputs().find((i) => i.placeholder === 'Consumidor Final')!.readOnly).toBe(true);
   });
@@ -195,6 +224,11 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(button.disabled).toBe(false);
 
     button.click();
+    // spec 073, FR-007: `checkout()` repide el preview justo antes de someter.
+    await new Promise((r) => setTimeout(r));
+    await flushPreview(); // mismo total → sin reconfirmación
+    await fixture.whenStable();
+
     const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
     expect(req.request.body.version).toBe(1);
     expect(req.request.body.cash_shift_id).toBe('shift-1');
@@ -335,6 +369,159 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(req.request.body).toEqual({ motivo: 'Rechazado desde terminal' });
     req.flush({ detail: 'boom' }, { status: 409, statusText: 'Conflict' });
     await fixture.whenStable();
+  });
+
+  // ─── spec 073 (US1): el importe lo manda el backend (checkoutPreview) ─────────
+
+  /** Fija el preview directamente en la señal (sin pasar por HTTP) — para
+   *  aserciones de render puro. */
+  function setPreview(subtotal: string, discount: string, total: string, deliveryFee = '0.00'): void {
+    store.checkoutPreview.set({
+      subtotal,
+      discount,
+      delivery_fee: deliveryFee,
+      total,
+      promotion_evaluated_at: '2026-09-02T19:59:00Z',
+    });
+    fixture.detectChanges();
+  }
+
+  const cobrarButton = (): HTMLButtonElement =>
+    Array.from(fixture.nativeElement.querySelectorAll('button')).find(
+      (b) => (b as HTMLButtonElement).textContent?.trim() === 'Cobrar',
+    ) as HTMLButtonElement;
+
+  it('FR-004: muestra el desglose Subtotal $16.000 / Descuento −$8.000 / Total $8.000 (Scenario 1)', () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Subtotal');
+    expect(text).toContain('16.000');
+    expect(text).toContain('Descuento');
+    expect(text).toContain('8.000');
+    expect(text).toContain('Total');
+  });
+
+  it('FR-005: $8.000 en efectivo → sin faltante, vuelto $0, "Cobrar" habilitado (Scenario 2)', async () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+    await fill(selects()[0], 'pm-cash');
+    await fill(numberInputs()[0], '8000');
+
+    expect(fixture.nativeElement.textContent).not.toContain('Faltan');
+    expect(cobrarButton().disabled).toBe(false);
+  });
+
+  it('FR-005: $10.000 en efectivo sobre un total de $8.000 → vuelto $2.000 (Scenario 3)', async () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+    await fill(selects()[0], 'pm-cash');
+    await fill(numberInputs()[0], '10000');
+
+    expect(fixture.nativeElement.textContent).toContain('Vuelto');
+    expect(fixture.nativeElement.textContent).toContain('2.000');
+  });
+
+  it('FR-005: $5.000 sobre un total de $8.000 → "Faltan $3.000", "Cobrar" deshabilitado (Scenario 4)', async () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+    await fill(selects()[0], 'pm-cash');
+    await fill(numberInputs()[0], '5000');
+
+    expect(fixture.nativeElement.textContent).toContain('Faltan');
+    expect(fixture.nativeElement.textContent).toContain('3.000');
+    expect(cobrarButton().disabled).toBe(true);
+  });
+
+  it('FR-007a: mientras se calcula el total, muestra "Calculando" y "Cobrar" deshabilitado', async () => {
+    store.checkoutPreview.set(null);
+    store.checkoutPreviewLoading.set(true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Calculando el total');
+    expect(cobrarButton().disabled).toBe(true);
+    // No hay campo de pago mientras no llegó el total (nunca un total provisional).
+    expect(fixture.nativeElement.querySelector('app-payment-input')).toBeNull();
+
+    store.checkoutPreviewLoading.set(false);
+  });
+
+  it('FR-007: si el total cambió justo antes de cobrar, pide una segunda confirmación y no somete el pago', async () => {
+    const confirm = TestBed.inject(ConfirmService);
+    setPreview('16000.00', '8000.00', '8000.00');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    await fill(selects()[0], 'pm-cash');
+    await fill(numberInputs()[0], '8000');
+
+    cobrarButton().click();
+    await new Promise((r) => setTimeout(r));
+    // El re-chequeo del preview devuelve otro total.
+    await flushPreview({ subtotal: '16000.00', discount: '0.00', total: '16000.00' });
+
+    expect(confirm.state()).not.toBeNull();
+    expect(confirm.state()!.title).toContain('El total cambió');
+    confirm.respond(false);
+    await fixture.whenStable();
+
+    http.expectNone(`${API}/orders/o1/checkout-and-send`);
+  });
+
+  // ─── spec 073 (US2): método no efectivo precargado al total real ─────────────
+
+  it('FR-006 (US2 Scenario 1): con un método no efectivo, el importe se precarga al total con descuento ($8.000), no al pleno', async () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+
+    await fill(selects()[0], 'pm-transfer');
+
+    // `payment-input` precarga `this.total` = previewTotal() = 8000, y el campo
+    // queda deshabilitado (no efectivo). Formateado como "8.000".
+    expect(numberInputs()[0].disabled).toBe(true);
+    expect(numberInputs()[0].value).toBe('8.000');
+  });
+
+  it('FR-001 (US2 Scenario 2): "Cobrar" con transferencia llama a checkout-and-send por $8.000', async () => {
+    setPreview('16000.00', '8000.00', '8000.00');
+    await fill(selects()[0], 'pm-transfer');
+
+    cobrarButton().click();
+    await new Promise((r) => setTimeout(r));
+    await flushPreview({ subtotal: '16000.00', discount: '8000.00', total: '8000.00' });
+
+    // (el resto del flujo de checkoutAndSend — recibo/reload — no se ejercita
+    // aquí: TenantInfoService no está mockeado en este describe, igual que el
+    // test "checkout-and-send (T025)" existente.)
+    const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
+    expect(req.request.body.payments[0].amount).toBe(8000);
+    req.flush({ id: 's1', total: '8000', customer_name: 'Consumidor Final', status: 'paid', sold_at: '2026-08-20T10:05:00', items: [], payments: [] } as unknown as Sale);
+    await new Promise((r) => setTimeout(r));
+    await fixture.whenStable();
+  });
+
+  // ─── spec 073 (US3): para llevar / domicilio, con la fila Domicilio ──────────
+
+  it('US3 Scenario 1: orden para llevar con promoción → total con descuento, sin fila Domicilio', () => {
+    setPreview('16000.00', '8000.00', '8000.00'); // delivery_fee 0
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('8.000');
+    expect(text).not.toContain('Domicilio');
+  });
+
+  it('US3 Scenario 2: domicilio con envío $5.000 sin promoción → fila "Domicilio" visible, total la incluye', () => {
+    setPreview('10000.00', '0.00', '15000.00', '5000.00');
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Domicilio');
+    expect(text).toContain('5.000');
+    expect(text).toContain('15.000'); // total incluye el domicilio
+    expect(text).not.toContain('Descuento'); // sin promoción, sin fila
+  });
+
+  it('US3 Scenario 3: domicilio + promoción → Subtotal 16.000 / Descuento −8.000 / Domicilio 5.000 / Total 13.000', () => {
+    setPreview('16000.00', '8000.00', '13000.00', '5000.00');
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Descuento');
+    expect(text).toContain('Domicilio');
+    expect(text).toContain('16.000');
+    expect(text).toContain('8.000');
+    expect(text).toContain('5.000');
+    expect(text).toContain('13.000');
   });
 });
 
@@ -563,7 +750,7 @@ describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)',
     } as DiningOrder;
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [PosCheckoutPanelComponent],
@@ -604,7 +791,27 @@ describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)',
     store.selectedTableId.set(null);
     store.selectedOrderId.set('o1');
     fixture.detectChanges();
+    await fixture.whenStable();
+    await flushPreviewH3();
   });
+
+  /** spec 073: responde el `checkout-preview` del pedido sin mesa. */
+  async function flushPreviewH3(over: Partial<Record<string, string>> = {}): Promise<void> {
+    for (const req of http.match((r) => r.url.endsWith('/checkout-preview'))) {
+      req.flush({
+        subtotal: '10000.00',
+        discount: '0.00',
+        delivery_fee: '0.00',
+        total: '10000.00',
+        promotion_evaluated_at: '2026-08-20T10:00:00Z',
+        ...over,
+      });
+    }
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
 
   afterEach(() => http.verify());
 
@@ -635,6 +842,10 @@ describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)',
     expect(button.disabled).toBe(false);
 
     button.click();
+    // spec 073, FR-007: re-chequeo del preview antes de someter (mismo total).
+    await new Promise((r) => setTimeout(r));
+    await flushPreviewH3();
+
     const req = http.expectOne(`${API}/orders/o1/checkout-and-send`);
     expect(req.request.body.cash_shift_id).toBe('shift-1');
     req.flush({
@@ -646,12 +857,14 @@ describe('PosCheckoutPanelComponent — pedido sin mesa (spec 059, Historia 3)',
       items: [],
       payments: [],
     } as unknown as Sale);
+    await new Promise((r) => setTimeout(r));
     await fixture.whenStable();
 
     // checkoutAndSend() termina en reload() (loadTables()+reloadOrders()) —
     // mismos dos GET ya existentes que cualquier cobro dispara hoy.
     http.expectOne(`${API}/orders/tables`).flush([]);
     http.expectOne((r) => r.url === `${API}/orders`).flush([]);
+    await new Promise((r) => setTimeout(r));
     await fixture.whenStable();
 
     expect(store.error()).toBeNull();
