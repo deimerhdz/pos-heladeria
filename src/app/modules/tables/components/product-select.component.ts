@@ -41,46 +41,85 @@ export interface ProductSelection {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 sm:p-4">
-      <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[90vh] flex flex-col">
+      <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md max-h-[94vh] flex flex-col overflow-hidden">
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-          <h2 class="text-lg font-semibold text-gray-900 truncate">{{ product.name }}</h2>
-          <button type="button" (click)="cancelled.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            ✕
-          </button>
-        </div>
-
-        <div class="overflow-y-auto">
+        <header class="relative shrink-0 bg-white">
           <!-- Sin foto no se reserva alto: un emoji gigante solo restaría sitio a los sabores. -->
           @if (product.image_url) {
-            <img [src]="product.image_url" [alt]="product.name"
-              class="w-full aspect-[16/9] object-cover bg-indigo-50" />
+            <div class="relative h-52 w-full overflow-hidden bg-indigo-50">
+              <img [src]="product.image_url" [alt]="product.name" class="w-full h-full object-cover object-center" />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+              <button type="button" (click)="cancelled.emit()" aria-label="Cerrar ventana"
+                class="absolute top-4 right-4 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 transition-colors">
+                ✕
+              </button>
+            </div>
+          } @else {
+            <div class="flex items-center justify-end px-4 pt-4">
+              <button type="button" (click)="cancelled.emit()" aria-label="Cerrar ventana"
+                class="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                ✕
+              </button>
+            </div>
           }
 
-          <div class="px-6 py-4 space-y-5">
-          @if (product.description) {
-            <p class="text-sm text-gray-500">{{ product.description }}</p>
-          }
+          <div class="px-5 pt-3 pb-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight truncate">{{ product.name }}</h1>
+                @if (product.description) {
+                  <p class="text-sm text-gray-500 mt-0.5">{{ product.description }}</p>
+                }
+              </div>
+              <div class="text-right shrink-0">
+                @if (product.variants.length > 1) {
+                  <span class="block text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Desde</span>
+                }
+                <p class="text-lg font-extrabold text-indigo-600 mt-0.5">{{ startingPrice() | money }}</p>
+              </div>
+            </div>
+          </div>
+        </header>
 
-          <!-- Variant -->
+        <main class="flex-1 overflow-y-auto px-5 py-2 space-y-6">
+          <!-- Presentación -->
           @if (product.variants.length > 0) {
-            <div>
-              <p class="text-sm font-semibold text-gray-700 mb-2">Presentación</p>
-              <div class="space-y-2">
+            <section class="pt-2">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold">1</span>
+                  <h2 class="text-base font-bold text-gray-900">Elige tu presentación</h2>
+                </div>
+                <span class="text-[11px] font-bold tracking-wide uppercase px-2 py-0.5 rounded bg-gray-200 text-gray-700">Obligatorio</span>
+              </div>
+
+              <div class="space-y-2.5" role="radiogroup" aria-label="Presentación">
                 @for (v of product.variants; track v.id) {
-                  <button
-                    type="button"
-                    (click)="selectVariant(v)"
-                    [disabled]="v.available === false"
-                    class="w-full flex flex-col gap-0.5 px-4 py-2.5 rounded-xl border text-sm transition-colors"
+                  <label
+                    class="relative flex items-center justify-between gap-3 p-3.5 rounded-2xl border-2 transition-colors"
                     [class]="v.available === false
-                      ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
+                      ? 'border-gray-100 bg-gray-50 cursor-not-allowed'
                       : variantId() === v.id
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
-                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'"
+                        ? 'border-indigo-600 bg-indigo-50/50 cursor-pointer'
+                        : 'border-gray-200 bg-white hover:border-gray-300 cursor-pointer'"
                   >
-                    <span class="w-full flex items-center justify-between">
-                      <span class="font-medium">{{ v.name }}</span>
+                    <span class="flex items-center gap-3 min-w-0">
+                      <input type="radio" name="variant" class="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500 shrink-0"
+                        [checked]="variantId() === v.id" [disabled]="v.available === false"
+                        (change)="selectVariant(v)" />
+                      <span class="min-w-0">
+                        <span class="block text-sm font-semibold text-gray-900 truncate">{{ v.name }}</span>
+                        <!-- spec 066 (FR-008): condición corta + equivalente por unidad, en
+                             tono discreto para no competir con el precio. Texto ya compuesto
+                             por el backend. -->
+                        @if (v.promotion) {
+                          <span class="inline-flex items-center text-[11px] font-medium text-indigo-700 bg-indigo-100/70 px-1.5 py-0.5 rounded mt-0.5">
+                            {{ v.promotion.display_text }}
+                          </span>
+                        }
+                      </span>
+                    </span>
+                    <span class="shrink-0">
                       @if (v.available === false) {
                         <span class="text-xs font-semibold text-gray-400">Agotado</span>
                       } @else if (discountFor(v); as disc) {
@@ -102,21 +141,13 @@ export interface ProductSelection {
                             </span>
                           }
                           <span class="text-gray-400 text-xs line-through">{{ disc.original | money }}</span>
-                          <span class="font-semibold">{{ disc.discounted | money }}</span>
+                          <span class="text-sm font-bold text-indigo-600">{{ disc.discounted | money }}</span>
                         </span>
                       } @else {
-                        <span class="font-semibold">{{ variantPrice(v) | money }}</span>
+                        <span class="text-sm font-bold text-gray-700">{{ variantPrice(v) | money }}</span>
                       }
                     </span>
-                    <!-- spec 066 (FR-008): condición corta + equivalente por unidad, en
-                         tono discreto para no competir con el precio. Texto ya compuesto
-                         por el backend. -->
-                    @if (v.promotion) {
-                      <span class="w-full text-left text-[11px] text-gray-500">
-                        {{ v.promotion.display_text }}
-                      </span>
-                    }
-                  </button>
+                  </label>
                 }
               </div>
               <!-- spec 066 (FR-016): la condición completa de la presentación elegida.
@@ -124,160 +155,171 @@ export interface ProductSelection {
                    cajero, así que el comensal y el cajero leen la misma cadena sin
                    ninguna rama por superficie (SC-005 por construcción). -->
               @if (selectedVariant()?.promotion; as promo) {
-                <p class="mt-2 text-xs text-gray-600">{{ promo.condition_text }}</p>
+                <p class="mt-2 text-xs text-gray-500">{{ promo.condition_text }}</p>
               }
-            </div>
+            </section>
           }
 
-          <!-- Option groups: los de la PRESENTACIÓN elegida, no los del producto.
-               Cuántos sabores se eligen cambia con el tamaño. -->
-          @for (group of activeGroups(); track group.id) {
-            <div class="border border-gray-100 rounded-xl overflow-hidden">
-              <!-- Cabecera plegable: nombre, progreso y lo ya elegido -->
-              <button type="button" (click)="toggleGroup(group.id)"
-                class="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
-                <span class="min-w-0">
-                  <span class="block text-sm font-semibold text-gray-700">{{ group.name }}</span>
-                  @if (!isExpanded(group.id) && chosenCount(group) > 0) {
-                    <span class="block text-xs text-indigo-600 truncate">{{ chosenNames(group) }}</span>
-                  }
-                </span>
-                <span class="flex items-center gap-2 shrink-0">
-                  <span class="text-xs font-medium"
-                    [class]="isComplete(group) ? 'text-emerald-600' : 'text-gray-400'">
-                    {{ groupHint(group) }}
+          <!-- Grupos de opciones: los de la PRESENTACIÓN elegida, no los del producto.
+               Cuántos sabores se eligen cambia con el tamaño. Rediseñados con una
+               franja degradada para diferenciarlos a simple vista de las presentaciones. -->
+          @for (group of activeGroups(); track group.id; let i = $index) {
+            <section class="pt-2">
+              <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                <button type="button" (click)="toggleGroup(group.id)"
+                  class="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold shrink-0">{{ i + 2 }}</span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-bold text-gray-900 truncate">{{ group.name }}</span>
+                      @if (!isExpanded(group.id) && chosenCount(group) > 0) {
+                        <span class="block text-xs text-indigo-600 truncate">{{ chosenNames(group) }}</span>
+                      }
+                    </span>
                   </span>
-                  <span class="text-gray-400 text-xs">{{ isExpanded(group.id) ? '▲' : '▼' }}</span>
-                </span>
-              </button>
+                  <span class="flex items-center gap-2 shrink-0">
+                    <span class="text-[11px] font-bold tracking-wide uppercase px-2 py-0.5 rounded"
+                      [class]="requiredCount(group) > 0 ? 'bg-gray-200 text-gray-700' : 'bg-indigo-100 text-indigo-700'">
+                      {{ requiredCount(group) > 0 ? 'Obligatorio' : 'Opcional' }}
+                    </span>
+                    <span class="text-xs font-medium"
+                      [class]="isComplete(group) ? 'text-emerald-600' : 'text-gray-400'">
+                      {{ groupHint(group) }}
+                    </span>
+                    <span class="text-gray-400 text-xs">{{ isExpanded(group.id) ? '▲' : '▼' }}</span>
+                  </span>
+                </button>
 
-              @if (isExpanded(group.id)) {
-                <div class="px-4 pb-4 space-y-3">
-                  @if (showSearch(group)) {
-                    <input type="search" [value]="filterValue(group.id)"
-                      (input)="setFilter(group.id, $any($event.target).value)"
-                      [placeholder]="'Buscar en ' + group.name + '…'"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                  }
+                @if (isExpanded(group.id)) {
+                  <div class="px-4 pb-4 space-y-3 bg-gradient-to-br from-indigo-50/40 via-white to-white">
+                    @if (showSearch(group)) {
+                      <input type="search" [value]="filterValue(group.id)"
+                        (input)="setFilter(group.id, $any($event.target).value)"
+                        [placeholder]="'Buscar en ' + group.name + '…'"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                    }
 
-                  @if (group.selection_mode === 'cantidad') {
-                    <!-- Modo "cantidad": stepper +/- por opción, nunca obligatorio. -->
-                    <div class="space-y-2">
-                      @for (opt of visibleOptions(group); track opt.id) {
-                        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-gray-200">
-                          <span class="min-w-0">
-                            <span class="block text-sm font-medium text-gray-700 truncate">{{ opt.name }}</span>
-                            @if (opt.extra_price > 0) {
-                              <span class="block text-xs text-gray-500">+ {{ opt.extra_price | money }}</span>
-                            }
-                          </span>
-                          <div class="flex items-center gap-2 shrink-0">
-                            <button type="button" (click)="decrementOption(group, opt)"
-                              [disabled]="optionQuantity(group.id, opt.id) === 0"
-                              aria-label="Quitar una unidad"
-                              class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-base font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
-                            >−</button>
-                            <span class="w-5 text-center text-sm font-semibold">{{ optionQuantity(group.id, opt.id) }}</span>
-                            <button type="button" (click)="incrementOption(group, opt)"
-                              [disabled]="!canIncrement(group, opt)"
-                              aria-label="Añadir una unidad"
-                              class="w-8 h-8 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-base font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
-                            >+</button>
-                          </div>
-                        </div>
-                      }
-                    </div>
-                  } @else {
-                    <!-- Rejilla de 2 columnas: 24 sabores caben en 12 filas. -->
-                    <div class="grid grid-cols-2 gap-2">
-                      @for (opt of visibleOptions(group); track opt.id) {
-                        <button
-                          type="button"
-                          (click)="toggleOption(group, opt)"
-                          class="min-h-[3rem] px-3 py-2 rounded-xl border text-sm text-left leading-tight transition-colors"
-                          [class]="isSelected(opt.id)
-                            ? 'border-indigo-600 bg-indigo-600 text-white'
-                            : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'"
-                        >
-                          <span class="flex items-start justify-between gap-1">
-                            <span class="font-medium">{{ opt.name }}</span>
-                            @if (isSelected(opt.id) && group.max_select > 1) {
-                              <span class="shrink-0 w-4 h-4 rounded-full bg-white/25 text-[10px] font-bold flex items-center justify-center">
-                                {{ selectionOrder(group, opt.id) }}
-                              </span>
-                            }
-                          </span>
-                          @if (opt.extra_price > 0) {
-                            <span class="block text-xs mt-0.5"
-                              [class]="isSelected(opt.id) ? 'text-indigo-100' : 'text-gray-500'">
-                              + {{ opt.extra_price | money }}
+                    @if (group.selection_mode === 'cantidad') {
+                      <!-- Modo "cantidad": stepper +/- por opción, nunca obligatorio. -->
+                      <div class="space-y-2">
+                        @for (opt of visibleOptions(group); track opt.id) {
+                          <div data-testid="cantidad-row" class="flex items-center justify-between gap-2 px-3 py-2.5 bg-white rounded-xl border border-gray-200">
+                            <span class="min-w-0">
+                              <span class="block text-sm font-medium text-gray-800 truncate">{{ opt.name }}</span>
+                              @if (opt.extra_price > 0) {
+                                <span class="block text-xs text-gray-500">+ {{ opt.extra_price | money }}</span>
+                              }
                             </span>
-                          }
-                        </button>
-                      }
-                    </div>
-                  }
-
-                  @if (visibleOptions(group).length === 0) {
-                    <p class="text-sm text-gray-400 text-center py-2">Ningún sabor coincide.</p>
-                  }
-
-                  <!-- Agotados aparte y al final: que existan se informa, pero no estorban. -->
-                  @if (soldOutOptions(group).length > 0) {
-                    <div>
-                      <p class="text-xs font-medium text-gray-400 mb-1.5">Agotados</p>
-                      <div class="grid grid-cols-2 gap-2">
-                        @for (opt of soldOutOptions(group); track opt.id) {
-                          <span class="min-h-[3rem] px-3 py-2 rounded-xl bg-gray-50 text-sm text-gray-400 line-through leading-tight">
-                            {{ opt.name }}
-                          </span>
+                            <div class="flex items-center gap-2 shrink-0 bg-gray-100 rounded-full p-1 border border-gray-200">
+                              <button type="button" data-testid="qty-minus" (click)="decrementOption(group, opt)"
+                                [disabled]="optionQuantity(group.id, opt.id) === 0"
+                                aria-label="Quitar una unidad"
+                                class="w-7 h-7 rounded-full bg-white text-gray-700 shadow-sm hover:bg-gray-50 active:scale-95 text-base font-bold leading-none flex items-center justify-center transition disabled:opacity-40"
+                              >−</button>
+                              <span data-testid="qty-value" class="w-5 text-center text-sm font-semibold text-gray-800">{{ optionQuantity(group.id, opt.id) }}</span>
+                              <button type="button" data-testid="qty-plus" (click)="incrementOption(group, opt)"
+                                [disabled]="!canIncrement(group, opt)"
+                                aria-label="Añadir una unidad"
+                                class="w-7 h-7 rounded-full bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:scale-95 text-base font-bold leading-none flex items-center justify-center transition disabled:opacity-40"
+                              >+</button>
+                            </div>
+                          </div>
                         }
                       </div>
-                    </div>
-                  }
+                    } @else {
+                      <!-- Cuadrícula tipo checklist: distingue a simple vista un topping
+                           de una presentación (que usa radio-cards, arriba). -->
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        @for (opt of visibleOptions(group); track opt.id) {
+                          <label data-testid="conteo-option"
+                            class="flex items-center justify-between gap-2 p-3 bg-white rounded-xl border-2 shadow-sm cursor-pointer transition-colors"
+                            [class]="isSelected(opt.id) ? 'border-indigo-500' : 'border-gray-100 hover:border-gray-300'"
+                          >
+                            <span class="flex items-center gap-2.5 min-w-0">
+                              <input type="checkbox" class="w-4 h-4 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500 shrink-0"
+                                [checked]="isSelected(opt.id)"
+                                [disabled]="!isSelected(opt.id) && group.max_select > 0 && chosenCount(group) >= group.max_select"
+                                (change)="toggleOption(group, opt)" />
+                              <span class="text-xs font-semibold text-gray-800 truncate">{{ opt.name }}</span>
+                              @if (isSelected(opt.id) && group.max_select > 1) {
+                                <span class="shrink-0 w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center">
+                                  {{ selectionOrder(group, opt.id) }}
+                                </span>
+                              }
+                            </span>
+                            @if (opt.extra_price > 0) {
+                              <span class="text-xs font-semibold text-gray-500 shrink-0">+ {{ opt.extra_price | money }}</span>
+                            }
+                          </label>
+                        }
+                      </div>
+                    }
 
-                  @if (groupError(group)) {
-                    <p class="text-red-500 text-xs">{{ groupError(group) }}</p>
-                  }
-                </div>
-              }
-            </div>
+                    @if (visibleOptions(group).length === 0) {
+                      <p class="text-sm text-gray-400 text-center py-2">Ningún sabor coincide.</p>
+                    }
+
+                    <!-- Agotados aparte y al final: que existan se informa, pero no estorban. -->
+                    @if (soldOutOptions(group).length > 0) {
+                      <div>
+                        <p class="text-xs font-medium text-gray-400 mb-1.5">Agotados</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          @for (opt of soldOutOptions(group); track opt.id) {
+                            <span class="px-3 py-2 rounded-xl bg-gray-50 text-sm text-gray-400 line-through">
+                              {{ opt.name }}
+                            </span>
+                          }
+                        </div>
+                      </div>
+                    }
+
+                    @if (groupError(group)) {
+                      <p class="text-red-500 text-xs">{{ groupError(group) }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            </section>
           }
 
-          <!-- Notes -->
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-1">Notas</label>
-            <input
-              type="text"
-              [value]="notes()"
-              (input)="notes.set($any($event.target).value)"
-              placeholder="Ej: sin azúcar…"
-              maxlength="500"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            />
-          </div>
-          </div>
-        </div>
+          <!-- Notas -->
+          <section class="pt-2 pb-2">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold">{{ activeGroups().length + 2 }}</span>
+              <h2 class="text-base font-bold text-gray-900">Instrucciones especiales</h2>
+            </div>
+            <div class="ml-8">
+              <textarea
+                [value]="notes()"
+                (input)="notes.set($any($event.target).value)"
+                placeholder="Ej: sin azúcar, poco hielo…"
+                maxlength="500"
+                rows="2"
+                class="w-full text-sm rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 placeholder:text-gray-400 p-3 transition"
+              ></textarea>
+            </div>
+          </section>
+        </main>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-100 shrink-0 space-y-3">
+        <footer class="p-4 bg-white border-t border-gray-100 shrink-0 space-y-3">
           <div class="flex items-center justify-between">
-            <span class="text-sm font-medium text-gray-600">Cantidad</span>
+            <span class="text-sm font-bold text-gray-900">Cantidad</span>
             <!-- 44 px: el objetivo táctil mínimo cómodo con el pulgar. -->
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-3 bg-gray-100 p-1 rounded-full border border-gray-200">
               <button
                 type="button"
                 (click)="dec()"
                 [disabled]="quantity() === 1"
                 aria-label="Quitar uno"
-                class="w-11 h-11 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
+                class="w-11 h-11 rounded-full bg-white text-gray-700 shadow-sm hover:bg-gray-50 active:scale-95 text-xl font-bold leading-none flex items-center justify-center transition disabled:opacity-40"
               >−</button>
-              <span class="w-8 text-center text-lg font-semibold">{{ quantity() }}</span>
+              <span class="w-8 text-center text-lg font-semibold text-gray-800">{{ quantity() }}</span>
               <button
                 type="button"
                 (click)="inc()"
                 aria-label="Añadir uno"
-                class="w-11 h-11 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xl font-bold leading-none flex items-center justify-center transition-colors"
+                class="w-11 h-11 rounded-full bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:scale-95 text-xl font-bold leading-none flex items-center justify-center transition"
               >+</button>
             </div>
           </div>
@@ -286,15 +328,17 @@ export interface ProductSelection {
             type="button"
             (click)="confirm()"
             [disabled]="!canConfirm()"
-            class="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            class="w-full h-12 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm sm:text-base"
           >
             @if (blockingLabel(); as falta) {
               {{ falta }}
             } @else {
-              Agregar · {{ lineTotal() | money }}
+              <span>Agregar</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-white/40"></span>
+              <span>{{ lineTotal() | money }}</span>
             }
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   `,
@@ -386,13 +430,42 @@ export class ProductSelectComponent implements OnInit {
     return chosen;
   });
 
+  /**
+   * Precio de línea a cobrar por la cantidad realmente configurada.
+   *
+   * `variant.discounted_price` es "el precio si completas la promo" (para
+   * mostrarlo en la lista de presentaciones, `variantPrice`/`discountFor`,
+   * independientemente de cuánto vaya a llevar el comensal). Aplicarlo aquí sin
+   * más era el bug: con "2 x $12.000" (min_qty: 2) y Cantidad en 1, el botón
+   * prometía $6.000 (el precio por unidad del paquete) por una sola unidad que
+   * no califica para el paquete -- el backend nunca cobraría eso. Por eso el
+   * total real solo usa el descuento cuando la cantidad elegida alcanza el
+   * `min_qty` de la promoción.
+   */
   readonly lineTotal = computed(() => {
     const variant = this.selectedVariant();
-    const base = variant ? effectivePrice(variant.price, variant.discounted_price) : 0;
+    if (!variant) return 0;
+    const promo = variant.promotion;
+    const qualifiesForDiscount = !promo || this.quantity() >= promo.min_qty;
+    const base = qualifiesForDiscount
+      ? effectivePrice(variant.price, variant.discounted_price)
+      : variant.price;
     const extra = this.selectedOptions().reduce(
       (s, c) => s + c.option.extra_price * c.quantity, 0,
     );
     return (base + extra) * this.quantity();
+  });
+
+  /**
+   * Precio "desde" del encabezado: el más bajo entre las presentaciones
+   * pedibles (o entre todas si ninguna tiene stock), con su descuento vigente.
+   */
+  readonly startingPrice = computed<number>(() => {
+    const variants = this.product.variants;
+    const disponibles = variants.filter((v) => v.available !== false);
+    const pool = disponibles.length > 0 ? disponibles : variants;
+    const prices = pool.map((v) => effectivePrice(v.price, v.discounted_price));
+    return prices.length > 0 ? Math.min(...prices) : 0;
   });
 
   /** Precio efectivo de una presentación (con descuento si el backend lo trajo). */
