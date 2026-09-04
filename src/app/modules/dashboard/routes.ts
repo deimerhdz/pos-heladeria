@@ -155,7 +155,7 @@ export const dashboardRoutes: Routes = [
         path: 'mesas-sesiones',
         loadComponent: () =>
           import('../tables/pages/table-sessions.component').then((m) => m.TableSessionsComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
       },
       {
         // Vista dedicada para armar un pedido de mostrador nuevo (spec 036,
@@ -164,19 +164,19 @@ export const dashboardRoutes: Routes = [
         path: 'mesas-sesiones/:tableId/orden-manual',
         loadComponent: () =>
           import('../tables/pages/manual-order-page.component').then((m) => m.ManualOrderPageComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
       },
       {
         path: 'orders',
         loadComponent: () =>
           import('../orders/pages/orders-page.component').then((m) => m.OrdersPageComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
       },
       {
         path: 'orders/:id',
         loadComponent: () =>
           import('../orders/pages/order-detail.component').then((m) => m.OrderDetailComponent),
-        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER])],
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
       },
       {
         path: 'inventario',

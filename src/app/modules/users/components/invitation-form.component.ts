@@ -49,6 +49,7 @@ import { InvitationsService } from '../services/invitations.service';
             <option value="" disabled>Selecciona un rol</option>
             <option value="ADMIN">Admin</option>
             <option value="CASHIER">Cajero</option>
+            <option value="MESERO">Mesero</option>
           </select>
           @if (roleInvalid) {
             <p class="text-red-500 text-xs mt-1">Selecciona un rol</p>

@@ -31,7 +31,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'orders',
     route: '/dashboard/orders',
     group: 'OPERACIONES',
-    roles: [UserRole.ADMIN, UserRole.CASHIER],
+    roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO],
   },
   {
     label: 'Mesas',
@@ -45,7 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'sessions',
     route: '/dashboard/mesas-sesiones',
     group: 'OPERACIONES',
-    roles: [UserRole.ADMIN, UserRole.CASHIER],
+    roles: [UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO],
   },
 
   // ── CATÁLOGO ───────────────────────────────────────────────────────────
