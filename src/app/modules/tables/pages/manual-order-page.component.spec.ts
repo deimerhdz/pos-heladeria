@@ -12,7 +12,8 @@ import { Table } from '../interfaces/table.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { MenuCategory, MenuProduct } from '../../products/interfaces/product.interface';
 import { DiningSessionService } from '../services/dining-session.service';
-import { DiningOrder } from '../interfaces/dining.interface';
+import { CheckoutPreview, DiningOrder } from '../interfaces/dining.interface';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 
 const API = environment.apiBaseUrl;
 
@@ -74,6 +75,14 @@ describe('ManualOrderPageComponent', () => {
     router = TestBed.inject(Router);
     http = TestBed.inject(HttpTestingController);
     vi.spyOn(store, 'init').mockResolvedValue(undefined);
+    // spec 073: el effect del componente pide `POST /orders/draft-preview` en
+    // cada cambio del borrador. Por defecto se simula un fallo — la pantalla
+    // cae a `store.totals()` (subtotal local, sin descuento — FR-015), que es
+    // exactamente lo que estos tests preexistentes esperan ver. Los tests
+    // propios de US5 (más abajo) usan el endpoint real.
+    vi.spyOn(TestBed.inject(DiningSessionService), 'draftPreview').mockRejectedValue(
+      new Error('draft-preview no mockeado en este test'),
+    );
   }
 
   afterEach(() => http.verify());
@@ -883,5 +892,138 @@ describe('ManualOrderPageComponent', () => {
     await Promise.resolve();
 
     expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Consumidor final' }));
+  });
+});
+
+/**
+ * spec 073, US5 (FR-013 a FR-015a): la pantalla de armado muestra el total con
+ * descuento del borrador (backend), recalculado en cada cambio; si al confirmar
+ * el total cambió, pide una segunda confirmación.
+ */
+describe('ManualOrderPageComponent — desglose del borrador (spec 073, US5)', () => {
+  let fixture: ComponentFixture<ManualOrderPageComponent>;
+  let store: PosTerminalStore;
+  let api: DiningSessionService;
+  let router: Router;
+
+  function preview(subtotal: string, discount: string, total: string, deliveryFee = '0'): CheckoutPreview {
+    return { subtotal, discount, delivery_fee: deliveryFee, total, promotion_evaluated_at: '2026-09-02T19:59:00Z' };
+  }
+
+  function setup(): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ManualOrderPageComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({}) } } },
+      ],
+    });
+    fixture = TestBed.createComponent(ManualOrderPageComponent);
+    store = fixture.componentInstance.store;
+    api = TestBed.inject(DiningSessionService);
+    router = TestBed.inject(Router);
+    TestBed.inject(HttpTestingController); // se drena implícitamente (mock de draftPreview)
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  }
+
+  function addCono(qty: number): void {
+    for (let i = 0; i < qty; i++) {
+      store.addDraftFromSelection({
+        product: { id: 'p1', name: 'Cono' } as never,
+        variant: { id: 'v1', price: 8000 } as never,
+        options: [],
+        quantity: 1,
+        notes: null,
+      });
+    }
+    fixture.detectChanges();
+  }
+
+  const summaryText = (): string => fixture.nativeElement.textContent as string;
+
+  it('Scenario 1: 1 cono → Total $8.000 sin fila de descuento', async () => {
+    setup();
+    vi.spyOn(api, 'draftPreview').mockResolvedValue(preview('8000', '0', '8000'));
+    fixture.detectChanges();
+
+    addCono(1);
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+
+    expect(summaryText()).toContain('8.000');
+    expect(summaryText()).not.toContain('Descuento');
+  });
+
+  it('Scenario 2: 2 conos → Subtotal 16.000 / Descuento −8.000 / Total 8.000', async () => {
+    setup();
+    vi.spyOn(api, 'draftPreview').mockResolvedValue(preview('16000', '8000', '8000'));
+    fixture.detectChanges();
+
+    addCono(2);
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+
+    const t = summaryText();
+    expect(t).toContain('Descuento');
+    expect(t).toContain('16.000');
+    expect(t).toContain('8.000');
+  });
+
+  it('Scenario 4 (FR-015): si el draft-preview falla, muestra el subtotal sin descuento + aviso y NO deshabilita "Confirmar y Enviar"', async () => {
+    setup();
+    vi.spyOn(api, 'draftPreview').mockRejectedValue(new Error('sin conexión'));
+    vi.spyOn(store, 'setOrderTypeTab').mockImplementation((t) => store.orderTypeTab.set(t));
+    store.setOrderTypeTab('para-llevar'); // no exige mesa
+    fixture.detectChanges();
+
+    addCono(2);
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+
+    expect(summaryText()).toContain('El descuento se confirma al cobrar');
+    // subtotal local (2 x 8000), sin descuento aplicado
+    expect(summaryText()).toContain('16.000');
+
+    const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+    ) as HTMLButtonElement;
+    expect(confirmButton.disabled).toBe(false);
+  });
+
+  it('Scenario 5 (FR-015a): si el total cambió al confirmar, pide una segunda confirmación antes de crear el pedido', async () => {
+    setup();
+    const draftSpy = vi.spyOn(api, 'draftPreview')
+      .mockResolvedValueOnce(preview('16000', '8000', '8000'))  // al armar el borrador
+      .mockResolvedValue(preview('16000', '0', '16000'));       // al confirmar: venció la franja
+    const createSpy = vi.spyOn(store, 'createManualOrderFromDraft').mockResolvedValue(true);
+    vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    vi.spyOn(store, 'setOrderTypeTab').mockImplementation((t) => store.orderTypeTab.set(t));
+    store.setOrderTypeTab('para-llevar');
+    fixture.detectChanges();
+
+    addCono(2);
+    await new Promise((r) => setTimeout(r));
+    fixture.detectChanges();
+    expect(store.draftPreview()?.total).toBe('8000');
+
+    const confirmSvc = TestBed.inject(ConfirmService);
+    const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+    ) as HTMLButtonElement;
+    confirmButton.click();
+    await new Promise((r) => setTimeout(r));
+
+    expect(confirmSvc.state()).not.toBeNull();
+    expect(confirmSvc.state()!.title).toContain('El total cambió');
+    confirmSvc.respond(false);
+    await new Promise((r) => setTimeout(r));
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(draftSpy).toHaveBeenCalled();
   });
 });

@@ -5,13 +5,15 @@ import {
   Input,
   OnChanges,
   Output,
+  computed,
   inject,
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DiningOrder, PaymentAttempt } from '../interfaces/dining.interface';
+import { CheckoutPreview, DiningOrder, PaymentAttempt } from '../interfaces/dining.interface';
 import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 
 /**
@@ -48,6 +50,68 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           </span>
         </div>
 
+        <!--
+          spec 073, US7 (FR-021/FR-022): "Pagos por confirmar" es una superficie
+          de cobro más. El desglose Subtotal / Descuento / Domicilio / Total lo
+          calcula el backend (checkoutPreview()), nunca el navegador; el vuelto
+          y el chequeo del "monto recibido" salen de este mismo Total.
+        -->
+        @if (checkoutPreview(); as p) {
+          <div class="rounded-lg border border-amber-100 bg-white/70 px-3 py-2 space-y-1 text-sm">
+            <div class="flex justify-between text-gray-600">
+              <span>Subtotal</span><span>$ {{ money(p.subtotal) }}</span>
+            </div>
+            @if (+p.discount > 0) {
+              <div class="flex justify-between text-emerald-700">
+                <span>Descuento</span><span>− $ {{ money(p.discount) }}</span>
+              </div>
+            }
+            @if (+p.delivery_fee > 0) {
+              <div class="flex justify-between text-gray-600">
+                <span>Domicilio</span><span>$ {{ money(p.delivery_fee) }}</span>
+              </div>
+            }
+            <div class="flex justify-between font-bold text-gray-900 pt-1 border-t border-amber-100">
+              <span>Total</span><span>$ {{ money(p.total) }}</span>
+            </div>
+          </div>
+        } @else if (checkoutPreviewError()) {
+          <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center justify-between gap-2">
+            <span>No se pudo calcular el total.</span>
+            <button
+              (click)="loadCheckoutPreview()"
+              class="px-2.5 py-1 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors"
+            >
+              Reintentar
+            </button>
+          </div>
+        } @else {
+          <!-- FR-024 → regla de FR-007a: nunca un total provisional mientras
+               se consulta el total autoritativo. -->
+          <p class="text-sm text-gray-400">Calculando el total…</p>
+        }
+
+        @if (totalChanged()) {
+          <!-- FR-024: el total autoritativo difiere del que declaró el comensal
+               (promoción pausada — FR-009a — o cambio de ítems — FR-010). El
+               cajero debe reconocerlo antes de emitir. -->
+          <div class="rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2 text-sm text-amber-900 space-y-1.5">
+            <p>
+              El total cambió respecto al declarado por el comensal:
+              antes $ {{ money(cardDeclaredTotal().toString()) }},
+              ahora $ {{ money(checkoutPreview()!.total) }}.
+            </p>
+            @if (!totalChangeAck()) {
+              <button
+                (click)="totalChangeAck.set(true)"
+                class="px-2.5 py-1 rounded-md bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors"
+              >
+                Entendido, continuar
+              </button>
+            }
+          </div>
+        }
+
         @if (attempt.is_cash) {
           <!-- Efectivo: el cajero registra el monto, el backend calcula el cambio. -->
           <div class="flex items-center gap-2 flex-wrap">
@@ -58,7 +122,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
             />
             <button
               (click)="confirmCash(attempt)"
-              [disabled]="busy() || !amountReceived || amountReceived <= 0 || !cashShiftId"
+              [disabled]="busy() || !amountReceived || amountReceived <= 0 || !cashShiftId || actionsBlocked()"
               class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
@@ -100,7 +164,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
             </button>
             <button
               (click)="approve(attempt)"
-              [disabled]="busy() || !cashShiftId"
+              [disabled]="busy() || !cashShiftId || actionsBlocked()"
               class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
             >
               Aprobar
@@ -223,6 +287,7 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
 
   private readonly api = inject(DiningSessionService);
   private readonly toast = inject(ToastService);
+  private readonly confirm = inject(ConfirmService);
 
   readonly attempts = signal<PaymentAttempt[]>([]);
   readonly loading = signal(false);
@@ -237,9 +302,80 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   readonly showRejectOrder = signal(false);
   rejectOrderReason = '';
 
+  /**
+   * spec 073, US7 (FR-021/FR-022): desglose autoritativo del cobro del pedido
+   * QR — calculado por el backend, nunca por el navegador. Trío señal-loading-
+   * error **local al componente** (este flujo no pasa por `PosTerminalStore`,
+   * y cada tarjeta del panel resuelve su propio pedido).
+   */
+  readonly checkoutPreview = signal<CheckoutPreview | null>(null);
+  readonly checkoutPreviewLoading = signal(false);
+  readonly checkoutPreviewError = signal<string | null>(null);
+  /** FR-024: el cajero reconoció que el total autoritativo cambió respecto al
+   *  que declaró el comensal. Se reinicia en cada `ngOnChanges`. */
+  readonly totalChangeAck = signal(false);
+
+  /** FR-024: el `Total` autoritativo difiere del que la tarjeta venía
+   *  mostrando (`Σ discounted_line_total ?? unit_price × quantity`). */
+  readonly totalChanged = computed(() => {
+    const p = this.checkoutPreview();
+    return p != null && Number(p.total) !== this.cardDeclaredTotal();
+  });
+
+  /** FR-024 → regla de FR-007a: acciones de confirmación bloqueadas mientras
+   *  no haya un total autoritativo, o mientras el cajero no reconozca un
+   *  cambio de total. */
+  readonly actionsBlocked = computed(
+    () =>
+      this.checkoutPreviewLoading() ||
+      this.checkoutPreview() == null ||
+      (this.totalChanged() && !this.totalChangeAck()),
+  );
+
   ngOnChanges(): void {
     this.receiptPreviewOpen.set(false);
-    if (this.order) this.load();
+    this.checkoutPreview.set(null);
+    this.checkoutPreviewError.set(null);
+    this.totalChangeAck.set(false);
+    if (this.order) {
+      this.load();
+      void this.loadCheckoutPreview();
+    }
+  }
+
+  /** El total que la tarjeta del pedido venía mostrando: el que declaró el
+   *  comensal al armar su carrito (`discounted_line_total` congelado), o el
+   *  bruto si la línea no lo trae. Base de la comparación de FR-024. */
+  cardDeclaredTotal(): number {
+    return (this.order?.items ?? []).reduce((sum, it) => {
+      const line =
+        it.discounted_line_total != null
+          ? Number(it.discounted_line_total)
+          : Number(it.unit_price) * it.quantity;
+      return sum + line;
+    }, 0);
+  }
+
+  /**
+   * spec 073, US7 (FR-021): pide al backend el desglose autoritativo del cobro
+   * de este pedido QR — `GET /orders/{id}/checkout-preview`, la misma función
+   * de solo lectura que usa el panel de cobro de la Terminal. Nunca recalcula
+   * el total en el navegador (spec 063, FR-023).
+   */
+  async loadCheckoutPreview(): Promise<void> {
+    if (!this.order) return;
+    this.checkoutPreviewLoading.set(true);
+    this.checkoutPreviewError.set(null);
+    try {
+      this.checkoutPreview.set(await this.api.checkoutPreview(this.order.id));
+    } catch (err) {
+      this.checkoutPreview.set(null);
+      this.checkoutPreviewError.set(
+        this.api.extractError(err, 'No se pudo calcular el total del cobro.'),
+      );
+    } finally {
+      this.checkoutPreviewLoading.set(false);
+    }
   }
 
   /** El intento vigente si sigue `pendiente` — es el único sobre el que el
@@ -262,23 +398,25 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
     return Number(value ?? 0).toFixed(2);
   }
 
-  /** Total cobrable de la orden — mismo criterio que el backend
-   *  (`_order_total`): suma `unit_price * quantity` sobre ítems no
-   *  anulados. Ya viene en `order.items`, sin IO adicional. */
-  private orderTotal(): number {
-    return (this.order.items ?? [])
-      .filter((it) => it.estado_cocina !== 'anulado')
-      .reduce((sum, it) => sum + Number(it.unit_price) * it.quantity, 0);
+  /** spec 073, US7 (FR-022, research.md D14): el `Total` real a cobrar sale del
+   *  desglose autoritativo del backend (`checkoutPreview()`), no de una suma
+   *  local. `null` mientras no haya preview — no se calcula vuelto contra un
+   *  total no verificado. */
+  private orderTotal(): number | null {
+    const p = this.checkoutPreview();
+    return p ? Number(p.total) : null;
   }
 
   /** Vista previa del cambio mientras el cajero escribe el monto recibido,
    *  antes de confirmar (feature 028; spec 026 FR-004 reutilizado). `null`
-   *  si todavía no hay un monto válido que alcance el total — nada que
-   *  mostrar aún. */
+   *  si todavía no hay un total autoritativo o un monto válido que lo alcance
+   *  — nada que mostrar aún. El vuelto se calcula sobre el `Total` real con
+   *  descuento y domicilio (FR-022), nunca sobre el subtotal bruto. */
   cashChangePreview(): number | null {
     const amount = this.amountReceived;
-    if (!amount || amount < this.orderTotal()) return null;
-    return amount - this.orderTotal();
+    const total = this.orderTotal();
+    if (total == null || !amount || amount < total) return null;
+    return amount - total;
   }
 
   async load(): Promise<void> {
@@ -292,11 +430,44 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
     }
   }
 
+  /**
+   * spec 073, US7 (FR-024, research.md D11/D15): doble chequeo determinista
+   * justo antes de resolver el pago — se vuelve a pedir el preview; si el
+   * `total` cambió respecto al último mostrado, se detiene, se presenta el
+   * total nuevo y se exige una segunda confirmación explícita. Nunca se deja
+   * que el 422 del backend sea lo que le avise al cajero.
+   *
+   * Devuelve `true` si se puede continuar, `false` si se aborta.
+   */
+  private async reconfirmIfTotalChanged(): Promise<boolean> {
+    const before = Number(this.checkoutPreview()?.total ?? Number.NaN);
+    await this.loadCheckoutPreview();
+    const fresh = this.checkoutPreview();
+    if (!fresh) {
+      this.toast.error('No se pudo verificar el total del cobro. Intenta de nuevo.');
+      return false;
+    }
+    const freshTotal = Number(fresh.total);
+    if (freshTotal !== before) {
+      const ok = await this.confirm.ask({
+        title: 'El total cambió',
+        message:
+          `El total a cobrar pasó a $${freshTotal.toFixed(2)} (antes $${before.toFixed(2)}). ` +
+          '¿Continuar con el cobro por ese importe?',
+        confirmText: 'Sí, continuar',
+      });
+      if (!ok) return false;
+      this.totalChangeAck.set(true);
+    }
+    return true;
+  }
+
   async approve(attempt: PaymentAttempt): Promise<void> {
     if (!this.cashShiftId) {
       this.toast.error('No hay un turno de caja abierto.');
       return;
     }
+    if (this.actionsBlocked() || !(await this.reconfirmIfTotalChanged())) return;
     this.busy.set(true);
     try {
       await this.api.approvePaymentAttempt(attempt.id, this.cashShiftId);
@@ -331,6 +502,15 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
     if (!this.amountReceived || this.amountReceived <= 0) return;
     if (!this.cashShiftId) {
       this.toast.error('No hay un turno de caja abierto.');
+      return;
+    }
+    if (this.actionsBlocked() || !(await this.reconfirmIfTotalChanged())) return;
+    // FR-024: tras un cambio de total, el efectivo tecleado pudo quedar corto.
+    const total = Number(this.checkoutPreview()!.total);
+    if (this.amountReceived < total) {
+      this.toast.error(
+        `El efectivo recibido no cubre el total nuevo ($${total.toFixed(2)}).`,
+      );
       return;
     }
     this.busy.set(true);

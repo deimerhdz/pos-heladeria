@@ -6,7 +6,7 @@ import {
 } from '@angular/common/http/testing';
 import { environment } from '../../../../environments/environment';
 import { PaymentValidationBlockComponent } from './payment-validation-block.component';
-import { DiningOrder, PaymentAttempt } from '../interfaces/dining.interface';
+import { CheckoutPreview, DiningOrder, PaymentAttempt } from '../interfaces/dining.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
 
 const API = environment.apiBaseUrl;
@@ -40,9 +40,24 @@ function attempt(orderId: string): PaymentAttempt {
   };
 }
 
+function preview(total = '4000'): CheckoutPreview {
+  return {
+    subtotal: total,
+    discount: '0',
+    delivery_fee: '0',
+    total,
+    promotion_evaluated_at: '2026-08-20T10:00:00Z',
+  };
+}
+
 /** Feature 028, T005/T011: reemplaza el contenido combinado de las antiguas
  *  pestañas "Pedido de la mesa" / "Pagos por confirmar" — una tarjeta
- *  independiente por pedido, cada una con su propio panel de revisión. */
+ *  independiente por pedido, cada una con su propio panel de revisión.
+ *
+ *  spec 073, US7 (T063): cada `app-payment-attempt-review-panel` embebido pide
+ *  ahora su propio `GET /orders/{id}/checkout-preview` al montarse, y la fila de
+ *  pie con el total local (`total(order)`) se retiró — el total y su desglose
+ *  los muestra el panel de revisión. */
 describe('PaymentValidationBlockComponent', () => {
   let fixture: ComponentFixture<PaymentValidationBlockComponent>;
   let http: HttpTestingController;
@@ -83,6 +98,7 @@ describe('PaymentValidationBlockComponent', () => {
     fixture.detectChanges();
     for (const o of orders) {
       http.expectOne(`${API}/orders/${o.id}/payment-attempts`).flush([attempt(o.id)]);
+      http.expectOne(`${API}/orders/${o.id}/checkout-preview`).flush(preview());
     }
     await tick();
   }
@@ -108,6 +124,21 @@ describe('PaymentValidationBlockComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Comensal o2');
   });
 
+  it('spec 073, US7: ya no renderiza la fila de pie con el total local; el desglose lo pinta el panel embebido', async () => {
+    await render([order('o1')]);
+
+    // El total autoritativo del preview ($ 4000.00) se ve dentro del panel de
+    // revisión, con su fila "Total" — no como una fila suelta de pie del bloque.
+    const panel = fixture.nativeElement.querySelector('app-payment-attempt-review-panel');
+    expect(panel.textContent).toContain('Total');
+    expect(panel.textContent).toContain('4000.00');
+
+    // No queda ninguna referencia a `total(order)` en la instancia del bloque.
+    expect(
+      (fixture.componentInstance as unknown as { total?: unknown }).total,
+    ).toBeUndefined();
+  });
+
   it('aprobar el comprobante de un pedido no toca el estado del otro (tarjetas independientes)', async () => {
     await render([order('o1'), order('o2')]);
 
@@ -117,10 +148,14 @@ describe('PaymentValidationBlockComponent', () => {
     aprobarO1!.click();
     fixture.detectChanges();
 
+    // spec 073, FR-024: antes de aprobar se vuelve a pedir el preview.
+    http.expectOne(`${API}/orders/o1/checkout-preview`).flush(preview());
+    await tick();
     const req = http.expectOne(`${API}/orders/payment-attempts/att-o1/approve`);
     req.flush({ ...attempt('o1'), status: 'confirmado' });
     await tick();
-    // El load posterior de la tarjeta o1 tras resolver.
+    // El load posterior de la tarjeta o1 tras resolver (solo relista intentos,
+    // no vuelve a pedir el preview).
     http.expectOne(`${API}/orders/o1/payment-attempts`).flush([{ ...attempt('o1'), status: 'confirmado' }]);
     await tick();
 
