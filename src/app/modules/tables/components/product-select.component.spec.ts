@@ -50,14 +50,13 @@ describe('ProductSelectComponent', () => {
   }
 
   function stepperButtons(optionName: string): { minus: HTMLButtonElement; plus: HTMLButtonElement; qty: string } {
-    const rows = Array.from(fixture.nativeElement.querySelectorAll('.px-4.pb-4 > div > div')) as HTMLElement[];
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="cantidad-row"]')) as HTMLElement[];
     const row = rows.find((r) => r.textContent?.includes(optionName));
     if (!row) throw new Error(`No se encontró la fila de "${optionName}"`);
-    const buttons = row.querySelectorAll('button');
     return {
-      minus: buttons[0] as HTMLButtonElement,
-      plus: buttons[1] as HTMLButtonElement,
-      qty: (row.querySelector('span.w-5') as HTMLElement).textContent!.trim(),
+      minus: row.querySelector('[data-testid="qty-minus"]') as HTMLButtonElement,
+      plus: row.querySelector('[data-testid="qty-plus"]') as HTMLButtonElement,
+      qty: (row.querySelector('[data-testid="qty-value"]') as HTMLElement).textContent!.trim(),
     };
   }
 
@@ -68,7 +67,7 @@ describe('ProductSelectComponent', () => {
     const group = makeGroup({ selection_mode: 'conteo', max_select: 2, options: [bobombun] });
     create(makeProduct({ variants: [makeVariant({ option_groups: [group] })] }));
 
-    const toggleButtons = fixture.nativeElement.querySelectorAll('.grid.grid-cols-2 button');
+    const toggleButtons = fixture.nativeElement.querySelectorAll('[data-testid="conteo-option"]');
     expect(toggleButtons.length).toBeGreaterThan(0);
   });
 
@@ -154,6 +153,33 @@ describe('ProductSelectComponent', () => {
     fixture.detectChanges();
 
     expect(component.lineTotal()).toBe(17000); // 15000 + 2*1000
+  });
+
+  // ── Precio de línea con promoción de paquete (bug fix) ──────────────────────
+
+  it('el precio de línea NO aplica el precio de paquete si la cantidad no alcanza min_qty de la promoción', () => {
+    const promo: MenuVariantPromotion = {
+      condition_text: 'Llevando 2 Pequeño 8oz pagas $12.000',
+      short_condition: '2 x $12.000',
+      unit_equivalent: 6000,
+      unit_equivalent_approx: false,
+      unit_equivalent_text: '$6.000 c/u',
+      display_text: '2 x $12.000 · $6.000 c/u',
+      type: 'package_price',
+      min_qty: 2,
+      value: 12000,
+    };
+    create(makeProduct({
+      variants: [makeVariant({
+        price: 8000, discounted_price: 6000, discount_kind: 'package_price', promotion: promo,
+      })],
+    }));
+
+    // Cantidad arranca en 1: no alcanza el min_qty=2 de la promoción -> precio normal.
+    expect(component.lineTotal()).toBe(8000);
+
+    component.inc(); // Cantidad = 2: ahora sí califica para el precio de paquete.
+    expect(component.lineTotal()).toBe(12000); // 6000 * 2
   });
 
   // ── Topes de cantidad (spec 065, US4) ───────────────────────────────────────
