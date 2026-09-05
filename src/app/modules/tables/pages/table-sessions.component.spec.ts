@@ -253,3 +253,140 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
     expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
   });
 });
+
+/**
+ * Rediseño responsive: en escritorio (breakpoint lg y superior) la grilla de
+ * mesas y el panel de detalle conviven siempre lado a lado, igual que antes.
+ * Por debajo de lg, jsdom no evalúa media queries -- se afirma sobre las
+ * clases `hidden`/`flex` que decide `store.hasActiveSelection()`, que es lo
+ * que realmente controla cuál de las dos columnas se ve en cada tamaño.
+ */
+describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el panel de detalle', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  const mesasColumn = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="mesas-column"]');
+  const detailColumn = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="detail-column"]');
+  // La utilidad `hidden` se busca como clase propia, no como subcadena --
+  // ambas tarjetas también llevan `overflow-hidden` (mockup: esquinas
+  // redondeadas recortan el contenido), que contiene la subcadena "hidden"
+  // pero no es la clase de visibilidad que decide store.hasActiveSelection().
+  const hasHiddenClass = (el: HTMLElement): boolean => el.classList.contains('hidden');
+
+  it('sin selección: la columna de mesas queda visible por debajo de lg y la de detalle oculta', () => {
+    fixture.detectChanges();
+
+    expect(hasHiddenClass(mesasColumn())).toBe(false);
+    expect(hasHiddenClass(detailColumn())).toBe(true);
+  });
+
+  it('con una mesa seleccionada: la columna de mesas se oculta por debajo de lg y la de detalle queda visible', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(hasHiddenClass(mesasColumn())).toBe(true);
+    expect(hasHiddenClass(detailColumn())).toBe(false);
+  });
+
+  it('el botón de volver de página llama a store.cancelSelection(), único para los 3 estados del panel central', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+    const cancelSpy = vi.spyOn(store, 'cancelSelection');
+
+    const backButton = fixture.nativeElement.querySelector(
+      '[data-testid="page-back-button"]',
+    ) as HTMLButtonElement;
+    expect(backButton).not.toBeNull();
+    backButton.click();
+
+    expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  it('sin selección, el botón de volver de página no se muestra', () => {
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="page-back-button"]')).toBeNull();
+  });
+});
+
+/**
+ * Bugfix reportado sobre el rediseño: al seleccionar una mesa libre (sin
+ * ningún pedido), el panel central informativo ("Mesa N está libre...") y el
+ * "Pedido de mostrador" + botón del panel de cobro aparecían lado a lado
+ * repitiendo el mismo mensaje ("crea un pedido nuevo") dos veces. Ahora ese
+ * estado se resuelve en un único panel con un solo CTA.
+ */
+describe('TableSessionsComponent — mesa libre seleccionada: un único panel, no dos mensajes repetidos', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  it('no renderiza el panel de cobro (app-pos-checkout-panel) para una mesa libre', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(store.centralState()).toBe('mesa-libre');
+    expect(fixture.nativeElement.querySelector('app-pos-checkout-panel')).toBeNull();
+  });
+
+  it('muestra un solo botón "+ Crear pedido nuevo", no el heading duplicado "Pedido de mostrador"', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Pedido de mostrador');
+    const ctaButtons = Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    );
+    expect(ctaButtons).toHaveLength(1);
+  });
+
+  it('el CTA único navega a la vista de armado de pedido para esa mesa', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const cta = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    ) as HTMLButtonElement;
+    cta.click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
+  });
+});

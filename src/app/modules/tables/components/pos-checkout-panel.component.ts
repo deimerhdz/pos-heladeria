@@ -51,7 +51,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
-      class="w-full sm:w-[320px] shrink-0 flex flex-col border-l border-gray-200 min-h-0 bg-white"
+      class="w-full lg:w-[320px] shrink-0 flex flex-col border-t border-gray-200 lg:border-t-0 lg:border-l min-h-0 bg-white"
     >
       <div class="flex-1 overflow-y-auto p-4">
         <!--
@@ -308,14 +308,11 @@ export class PosCheckoutPanelComponent {
    * Spec 045: mesa destino del botón fijo "+ Crear pedido nuevo" -- la mesa
    * libre ya seleccionada (estado informativo del panel central), o la
    * primera mesa libre disponible si ninguna lo está. `null` (botón
-   * deshabilitado) si no hay ninguna mesa libre en absoluto.
+   * deshabilitado) si no hay ninguna mesa libre en absoluto. Vive en el
+   * store (`newOrderTableId`) porque `table-sessions.component.ts` necesita
+   * el mismo criterio para su propio CTA del estado vacío sin selección.
    */
-  readonly newOrderTableId = computed(
-    () =>
-      this.store.selectedTableId() ??
-      this.store.tablesView().find((t) => t.statusLabel === 'Libre')?.id ??
-      null,
-  );
+  readonly newOrderTableId = this.store.newOrderTableId;
 
   /** Navega a la vista dedicada de armado de pedido nuevo
    *  (manual-order-page.component.ts) -- mismo destino al que antes se

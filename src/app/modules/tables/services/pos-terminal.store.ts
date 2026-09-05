@@ -113,13 +113,30 @@ export interface OrderSummaryCardView {
 }
 
 const STATUS_META: Record<TableDisplayStatus, { label: string; chip: string }> = {
-  libre: { label: 'Libre', chip: 'bg-gray-100 text-gray-600' },
-  por_confirmar: { label: 'Por confirmar', chip: 'bg-violet-600 text-white' },
-  en_preparacion: { label: 'En preparación', chip: 'bg-amber-100 text-amber-700' },
-  listo: { label: 'Listo', chip: 'bg-green-100 text-green-700' },
-  pago_pendiente: { label: 'Pago pendiente', chip: 'bg-indigo-600 text-white' },
-  ocupada: { label: 'Ocupada', chip: 'bg-blue-100 text-blue-700' },
-  reservada: { label: 'Reservada', chip: 'bg-slate-200 text-slate-700' },
+  libre: { label: 'Libre', chip: 'bg-[#f3f4f6] text-[#4b5563]' },
+  por_confirmar: { label: 'Por confirmar', chip: 'bg-[#fbbf24] text-[#111827]' },
+  en_preparacion: { label: 'En preparación', chip: 'bg-[#ccfbf1] text-[#0f766e]' },
+  listo: { label: 'Listo', chip: 'bg-[#dcfce7] text-[#15803d]' },
+  pago_pendiente: { label: 'Pago pendiente', chip: 'bg-[#7c3aed] text-white' },
+  ocupada: { label: 'Ocupada', chip: 'bg-[#e0f2fe] text-[#0369a1]' },
+  reservada: { label: 'Reservada', chip: 'bg-[#e5e7eb] text-[#374151]' },
+};
+
+/**
+ * Etiqueta abreviada de cada estado -- solo para la tarjeta de la grilla de
+ * mesas (mockup de referencia, terminal-de-mesas/code.html), donde el ancho
+ * de la celda no alcanza para el nombre completo. El resto de la app
+ * (cabecera del panel de pedido, etc.) sigue usando `STATUS_META.label`
+ * completo, sin abreviar.
+ */
+const SHORT_STATUS_LABEL: Record<TableDisplayStatus, string> = {
+  libre: 'Libre',
+  por_confirmar: 'Por conf.',
+  en_preparacion: 'En prep.',
+  listo: 'Listo',
+  pago_pendiente: 'Pago',
+  ocupada: 'Ocupada',
+  reservada: 'Reservada',
 };
 
 /** Estados que reclaman que el personal haga algo ya. */
@@ -576,6 +593,22 @@ export class PosTerminalStore {
   );
 
   /**
+   * Mesa destino del CTA fijo "+ Crear pedido nuevo" (mockup de referencia y
+   * `pos-checkout-panel.component.ts`): la mesa ya seleccionada, o la primera
+   * mesa libre disponible si ninguna lo está. `null` (botón deshabilitado) si
+   * no hay ninguna mesa libre en absoluto. Vive en el store (no en un
+   * componente) porque tanto la página (estado vacío unificado, sin
+   * selección) como el panel de cobro (mesa libre ya seleccionada) lo
+   * necesitan con el mismo criterio.
+   */
+  readonly newOrderTableId = computed(
+    () =>
+      this.selectedTableId() ??
+      this.tablesView().find((t) => t.statusLabel === 'Libre')?.id ??
+      null,
+  );
+
+  /**
    * Pestañas de pedido (cuando la mesa tiene >1 orden activa). Rotuladas
    * "Pedido N" por posición (spec 049, FR-009) — el nombre del cliente ya se
    * muestra una sola vez en la cabecera, no repetido por pestaña.
@@ -678,10 +711,15 @@ export class PosTerminalStore {
           number: t.number,
           name: t.name,
           statusLabel: meta.label,
+          statusLabelShort: SHORT_STATUS_LABEL[status],
           chipClass: meta.chip,
           itemsLabel: `${items} ${items === 1 ? 'producto' : 'productos'}`,
-          elapsedLabel: this.elapsedLabel(oldest),
-          totalLabel: this.fmt(subtotal),
+          elapsedLabel: this.sinceLabel(oldest),
+          // Mockup de referencia (terminal-de-mesas/code.html): una mesa sin
+          // ningún pedido muestra "—", no "$0" -- distingue a simple vista
+          // "sin consumo" de "consumo por $0" (que no ocurre en la práctica,
+          // pero "—" es la lectura correcta de "nada que cobrar todavía").
+          totalLabel: list.length === 0 ? '—' : this.fmt(subtotal),
           ordersCount: list.length,
           selected: t.id === this.selectedTableId(),
         };
@@ -689,6 +727,26 @@ export class PosTerminalStore {
   });
 
   readonly noTablesFound = computed(() => this.tablesView().length === 0);
+
+  /**
+   * Conteos por ocupación de TODAS las mesas (sin aplicar `search()`), para
+   * los badges de la franja de filtros. Usa los mismos predicados que
+   * `tablesView()` para que el número de cada badge coincida exactamente con
+   * lo que ese filtro va a mostrar.
+   */
+  readonly tableCounts = computed(() => {
+    const list = this.tables();
+    let libres = 0;
+    let ocupadas = 0;
+    let pendientes = 0;
+    for (const t of list) {
+      const status = deriveTableStatus(this.tableOrders(t.id), t.status);
+      if (status === 'libre') libres++;
+      else ocupadas++;
+      if (NEEDS_STAFF.includes(status)) pendientes++;
+    }
+    return { total: list.length, libres, ocupadas, pendientes };
+  });
 
   /**
    * Spec 059, Historia 2: pedidos `DELIVERY`/`TAKEAWAY` pendientes de cobro
@@ -734,7 +792,7 @@ export class PosTerminalStore {
       statusLabel: meta.label,
       statusClass: meta.chip,
       secondaryLabel: o.customer_name || 'Consumidor final',
-      elapsedLabel: this.elapsedLabel(new Date(o.created_at).getTime()),
+      elapsedLabel: this.sinceLabel(new Date(o.created_at).getTime()),
       totalLabel: this.fmt(this.orderSubtotal(o)),
     };
   }
@@ -1617,6 +1675,15 @@ export class PosTerminalStore {
     this.cash.isOpen() ? (this.cash.shift()?.id ?? null) : null,
   );
 
+  /** Fachada de solo lectura sobre `CashService` para el indicador de turno
+   *  de caja de la barra superior de la terminal. */
+  readonly cashIsOpen = computed(() => this.cash.isOpen());
+  readonly cashShift = computed(() => this.cash.shift());
+
+  /** Estado del stream en tiempo real, para el punto de conexión de la barra
+   *  superior — mismo signal que ya decide el ritmo de sondeo de respaldo. */
+  readonly realtimeStatus = computed(() => this.realtime.status());
+
   /** Cuenta de la sesión de la mesa seleccionada (total + desglose por comensal). */
   readonly sessionBill = signal<SessionBill | null>(null);
   readonly billLoading = signal(false);
@@ -1996,6 +2063,15 @@ export class PosTerminalStore {
     if (m < 1) return 'ahora';
     if (m < 60) return `${m} min`;
     return `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
+
+  /** Mismo dato que `elapsedLabel()`, con el prefijo "Hace" que usa el
+   *  mockup de referencia -- "Sin comanda" cuando la mesa no tiene ningún
+   *  pedido, en vez de un guion suelto. */
+  private sinceLabel(ts: number | null): string {
+    if (!ts) return 'Sin comanda';
+    const e = this.elapsedLabel(ts);
+    return e === 'ahora' ? 'Hace un momento' : `Hace ${e}`;
   }
 
   setTableStatus(id: string, status: TableStatus): Promise<boolean> {

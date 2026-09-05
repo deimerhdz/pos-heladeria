@@ -44,7 +44,12 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
               }
               <span class="text-sm font-semibold text-gray-700">{{ store.customerName() || store.customerPlaceholder() }}</span>
             </div>
-            <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
+            <!-- Oculto por debajo del breakpoint lg: en móvil/tablet ese
+                 mismo cancelSelection() ya lo ofrece el botón de volver a
+                 nivel de página (table-sessions.component.ts), único para
+                 los 3 estados del panel central -- mostrar los dos apilados
+                 sería redundante. -->
+            <button (click)="store.cancelSelection()" class="hidden lg:inline-block px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
           </div>
 
           <!-- Spec 059, Historia 3 (FR-012): datos propios de un pedido de

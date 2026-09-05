@@ -317,6 +317,66 @@ describe('PosTerminalStore — orden "pagada" ya lista sigue visible (gap spec 0
 });
 
 /**
+ * Rediseño responsive de la terminal: `tableCounts` alimenta los badges de
+ * la franja de filtros (Todas/Libres/Ocupadas/Pendientes) -- reutiliza los
+ * mismos predicados que ya aplica `tablesView()` al filtrar, para que el
+ * número de cada badge coincida exactamente con lo que ese filtro muestra.
+ */
+describe('PosTerminalStore.tableCounts', () => {
+  let store: PosTerminalStore;
+  let tableService: TableService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    tableService = TestBed.inject(TableService);
+    tableService.tables.set([
+      { id: 't1', number: 1, name: null, qr_token: 'qr-t1', active: true, status: 'libre' },
+      { id: 't2', number: 2, name: null, qr_token: 'qr-t2', active: true, status: 'ocupada' },
+      { id: 't3', number: 3, name: null, qr_token: 'qr-t3', active: true, status: 'ocupada' },
+      { id: 't4', number: 4, name: null, qr_token: 'qr-t4', active: true, status: 'ocupada' },
+    ]);
+    store.orders.set([
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't2' },
+      { ...order('o3', 'recibida'), channel: 'QR_MENU', dining_table_id: 't3' },
+      { ...order('o4', 'bloqueada'), channel: 'POS', dining_table_id: 't4' },
+    ]);
+  });
+
+  it('cuenta libres/ocupadas/pendientes con el mismo criterio que el filtro de la grilla', () => {
+    const counts = store.tableCounts();
+    expect(counts.total).toBe(4);
+    expect(counts.libres).toBe(1); // t1
+    expect(counts.ocupadas).toBe(3); // t2, t3 (por confirmar), t4 (pago pendiente)
+    expect(counts.pendientes).toBe(2); // t3, t4
+  });
+
+  it('tableCounts().pendientes coincide con el tamaño de tablesView() bajo el filtro "pendientes"', () => {
+    store.filter.set('pendientes');
+    expect(store.tablesView().length).toBe(store.tableCounts().pendientes);
+  });
+
+  it('tableCounts().libres coincide con el tamaño de tablesView() bajo el filtro "libres"', () => {
+    store.filter.set('libres');
+    expect(store.tablesView().length).toBe(store.tableCounts().libres);
+  });
+
+  it('no aplica el término de búsqueda: los conteos son del salón completo', () => {
+    store.search.set('mesa-que-no-existe');
+    expect(store.tableCounts().total).toBe(4);
+  });
+});
+
+/**
  * Spec 048: cuando la mesa tiene a la vez un pago pendiente de confirmar y
  * un pedido pagado/activo, el cajero necesita poder ver ambos -- antes de
  * este fix, `centralState()` le daba prioridad absoluta al pago pendiente y
