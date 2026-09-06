@@ -189,8 +189,8 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('Subtotal');
-    expect(texto).toContain('16000.00');
-    expect(texto).toContain('8000.00');
+    expect(texto).toContain('16.000');
+    expect(texto).toContain('8.000');
     expect(texto).toContain('Descuento');
   });
 
@@ -253,7 +253,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('Cambio');
-    expect(texto).toContain('2000.00');
+    expect(texto).toContain('2.000');
   });
 
   it('Scenario 3: $8.000 exactos → cambio $0, confirma al primer intento', async () => {
@@ -274,7 +274,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('✓ Pago confirmado');
-    expect(texto).toContain('Cambio: $ 0.00');
+    expect(texto).toContain('Cambio: $ 0');
   });
 
   it('Scenario 4: $5.000 → "faltan $3.000" sobre $8.000 y "Confirmar efectivo" deshabilitado', async () => {
@@ -314,7 +314,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('Total');
-    expect(texto).toContain('8000.00');
+    expect(texto).toContain('8.000');
     const aprobar = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       (b as HTMLButtonElement).textContent?.trim() === 'Aprobar',
     ) as HTMLButtonElement;
@@ -334,8 +334,8 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('El total cambió respecto al declarado por el comensal');
-    expect(texto).toContain('antes $ 8000.00');
-    expect(texto).toContain('ahora $ 16000.00');
+    expect(texto).toContain('antes $ 8.000');
+    expect(texto).toContain('ahora $ 16.000');
 
     panel.cashShiftId = 'shift-1';
     panel.amountReceived = 16000;
@@ -374,7 +374,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     // No se emitió el cobro.
     http.expectNone((r) => r.url.endsWith('/confirm-cash'));
     // El total mostrado se actualizó al nuevo.
-    expect(fixture.nativeElement.textContent as string).toContain('16000.00');
+    expect(fixture.nativeElement.textContent as string).toContain('16.000');
   });
 
   // ── No regresión (spec 024/026/046) ─────────────────────────────────────
@@ -392,8 +392,8 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     const texto = fixture.nativeElement.textContent as string;
     expect(texto).toContain('✓ Pago confirmado');
-    expect(texto).toContain('Recibido: $ 22000.00');
-    expect(texto).toContain('Cambio: $ 2000.00');
+    expect(texto).toContain('Recibido: $ 22.000');
+    expect(texto).toContain('Cambio: $ 2.000');
   });
 
   it('sin turno de caja abierto, no confirma ni aprueba', async () => {
@@ -437,7 +437,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     expect(fixture.nativeElement.textContent as string).not.toContain('Cambio');
   });
 
-  it('muestra el cambio como "0.00" explícitamente cuando el monto es exacto, no lo omite', async () => {
+  it('muestra el cambio como "$ 0" explícitamente cuando el monto es exacto, no lo omite', async () => {
     await renderWith(
       [attempt({ status: 'confirmado', amount_received: '18000.00', change_amount: '0.00' })],
       order('o1', [item('18000', 1)]),
@@ -445,7 +445,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     );
 
     const texto = fixture.nativeElement.textContent as string;
-    expect(texto).toContain('Cambio: $ 0.00');
+    expect(texto).toContain('Cambio: $ 0');
   });
 
   // ── Rechazar pedido completo (spec 044) ──────────────────────────────────

@@ -68,6 +68,30 @@ function mapGroups(raw: unknown): MenuOptionGroup[] {
   }));
 }
 
+/**
+ * Mapea el bloque `promotion` de una variante, o `null` si el backend no lo pobló.
+ *
+ * El backend serializa sus `Decimal` como string JSON (`"unit_equivalent": "3500"`,
+ * igual que `price`/`discounted_price`), así que sin este `Number(...)` el `+` de
+ * `lineTotal()` en `product-select.component.ts` concatena en vez de sumar
+ * ("3500" + 0 → "35000") y el total termina multiplicado por 10.
+ */
+function mapPromotion(raw: unknown): MenuVariantPromotion | null {
+  if (raw == null) return null;
+  const p = raw as Record<string, unknown>;
+  return {
+    condition_text: p['condition_text'] as string,
+    short_condition: p['short_condition'] as string,
+    unit_equivalent: Number(p['unit_equivalent']),
+    unit_equivalent_approx: (p['unit_equivalent_approx'] as boolean) ?? false,
+    unit_equivalent_text: p['unit_equivalent_text'] as string,
+    display_text: p['display_text'] as string,
+    type: p['type'] as 'percent' | 'package_price',
+    min_qty: Number(p['min_qty']),
+    value: Number(p['value']),
+  };
+}
+
 /** Error de sesión: hay que volver a pedir el nombre al comensal. */
 export class DinerSessionExpiredError extends Error {
   constructor(message: string) {
@@ -364,7 +388,7 @@ export class DinerService {
           discount_kind: (v['discount_kind'] as string) ?? null,
           // spec 066 (FR-007): el bloque llega ya calculado y ya renderizado.
           // `?? null` para no romper contra un backend aún sin desplegar.
-          promotion: (v['promotion'] as MenuVariantPromotion) ?? null,
+          promotion: mapPromotion(v['promotion']),
           // Los grupos cuelgan de la presentación: cuántos sabores se eligen cambia
           // con el tamaño.
           option_groups: mapGroups(v['option_groups']),

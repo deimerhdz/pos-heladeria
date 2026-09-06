@@ -25,6 +25,7 @@ import {
 } from '../../orders/order-status.util';
 import { CartComponent } from '../components/cart.component';
 import { formatMoney } from '../../../shared/money';
+import { MoneyPipe } from '../../../shared/money.pipe';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { normalizeText } from '../../../shared/normalize-text';
 import {
@@ -54,7 +55,7 @@ const REFRESH_DEBOUNCE_MS = 250;
   // spec 066: `MoneyPipe` sale de aquí porque su único uso en esta plantilla era la
   // insignia por tipo (`🏷️ -{{ disc.amountOff | money }}`) que A-67 reemplaza por la
   // genérica. Los precios de la tarjeta usan `priceWithPrefix`/`priceLabel`.
-  imports: [CartComponent, ProductSelectComponent, IconComponent],
+  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -244,10 +245,22 @@ const REFRESH_DEBOUNCE_MS = 250;
                       </p>
                     }
 
-                    <ul class="space-y-1">
+                    <ul class="space-y-1.5">
                       @for (item of order.items ?? []; track item.id) {
                         <li class="text-sm text-gray-700">
-                          <span class="font-medium">{{ item.quantity }}×</span> {{ variantLabel(item.product_variant_id) }}
+                          <div class="flex items-start justify-between gap-2">
+                            <span>
+                              <span class="font-medium">{{ item.quantity }}×</span> {{ variantLabel(item.product_variant_id) }}
+                            </span>
+                            <span class="text-right shrink-0">
+                              @if (itemHasDiscount(item)) {
+                                <span class="block text-[11px] text-gray-400 line-through">{{ itemOriginalLineTotal(item) | money }}</span>
+                                <span class="block font-semibold text-indigo-600">{{ itemLineTotal(item) | money }}</span>
+                              } @else {
+                                <span class="font-medium">{{ itemLineTotal(item) | money }}</span>
+                              }
+                            </span>
+                          </div>
                           @if (optionLabels(item)) {
                             <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
                           }
@@ -262,6 +275,11 @@ const REFRESH_DEBOUNCE_MS = 250;
                         </li>
                       }
                     </ul>
+
+                    <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-sm">
+                      <span class="font-semibold text-gray-900">Total</span>
+                      <span class="font-bold text-gray-900">{{ orderTotal(order) | money }}</span>
+                    </div>
 
                     <!-- Pago (spec 024/025): solo aplica mientras la orden sigue
                          'recibida'. Todo pedido nace ya con su intento de pago
@@ -1117,6 +1135,34 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   orderTime(order: DiningOrder): string {
     return new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /** ¿Esta línea tiene un descuento vigente distinto de su precio de lista? */
+  itemHasDiscount(item: DiningOrderItem): boolean {
+    return (
+      item.discounted_unit_price != null &&
+      Number(item.discounted_unit_price) !== Number(item.unit_price)
+    );
+  }
+
+  /**
+   * Subtotal de la línea ya con el mejor descuento vigente al confirmar
+   * (`discounted_line_total`), o el bruto si ninguna promoción aplicó.
+   */
+  itemLineTotal(item: DiningOrderItem): number {
+    return item.discounted_line_total != null
+      ? Number(item.discounted_line_total)
+      : Number(item.unit_price) * item.quantity;
+  }
+
+  /** Subtotal de lista de la línea (sin descuento), para el tachado. */
+  itemOriginalLineTotal(item: DiningOrderItem): number {
+    return Number(item.unit_price) * item.quantity;
+  }
+
+  /** Suma de las líneas del pedido, con descuentos ya aplicados. */
+  orderTotal(order: DiningOrder): number {
+    return (order.items ?? []).reduce((sum, item) => sum + this.itemLineTotal(item), 0);
   }
 
   // ── Historial (fuente única: el backend, por polling) ─────────────────────

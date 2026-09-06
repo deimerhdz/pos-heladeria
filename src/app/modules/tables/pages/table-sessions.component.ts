@@ -5,19 +5,15 @@ import {
   OnDestroy,
   OnInit,
   inject,
-  signal,
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
-import { LayoutService } from '../../dashboard/layout/layout.service';
-import { AuthService } from '../../../core/services/auth.service';
-import { ToastService } from '../../../shared/feedback/toast.service';
 import { PosTablesPanelComponent } from '../components/pos-tables-panel.component';
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
 import { PaymentValidationBlockComponent } from '../components/payment-validation-block.component';
-import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
+import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.component';
 
 /**
  * Terminal POS de mesas (staff) -- diseño alineado al mockup de referencia
@@ -44,10 +40,11 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
  * - cualquier otro caso (armando un pedido, o uno ya en cocina) →
  *   `app-pos-order-panel`, sin cambios de contenido.
  *
- * Sin ninguna mesa ni pedido seleccionado, la tarjeta de detalle no renderiza
- * ni el panel central ni el de cobro -- muestra el estado vacío unificado del
- * mockup (ícono + atajos de teclado + CTA único "+ Crear pedido nuevo"), en
- * vez de dos placeholders independientes superpuestos.
+ * A pedido del usuario, sin ninguna mesa ni pedido seleccionado la tarjeta de
+ * detalle ya no se muestra en absoluto (antes tenía su propio estado vacío
+ * con ícono + atajos de teclado) -- la de mesas ocupa todo el ancho, y el CTA
+ * "+ Crear pedido nuevo" vive ahora en la sub-barra, junto al resumen de
+ * mesas.
  */
 @Component({
   selector: 'app-table-sessions',
@@ -59,87 +56,17 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
     PaymentValidationBlockComponent,
+    PosTerminalHeaderComponent,
   ],
   template: `
     <div class="flex flex-col -m-4 md:-m-6 bg-[#f9fafb] h-[calc(100dvh-57px)]">
-      <!-- Encabezado: estado de terminal, turno, reloj y acciones de sesión. -->
-      <header class="h-14 bg-white border-b border-[#e5e7eb] px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0">
-        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div class="flex flex-col min-w-0">
-            <span class="text-[11px] font-bold uppercase tracking-wider text-[#111827] truncate">Terminal de mesas</span>
-            <div class="flex items-center gap-1.5 mt-0.5">
-              <span class="w-2 h-2 rounded-[6px] shrink-0" [class]="connectionDotClass()"></span>
-              <span class="text-[11px] font-semibold text-[#4b5563] whitespace-nowrap">{{ connectionLabel() }}</span>
-            </div>
-          </div>
-          <div class="hidden sm:block h-6 w-px bg-[#e5e7eb] mx-1"></div>
-          <div class="hidden sm:flex items-center gap-2 text-[#4b5563]">
-            <svg class="w-[18px] h-[18px] stroke-[#6b7280] shrink-0" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-            </svg>
-            <span class="text-[12px] font-medium text-[#4b5563] whitespace-nowrap">{{ shiftLabel() }}</span>
-          </div>
-        </div>
-
-        <div class="hidden md:flex items-center gap-2 px-3 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] shrink-0">
-          <span class="text-[12px] font-semibold text-[#111827] tabular-nums tracking-[-0.01em]">{{ clockLabel() }}</span>
-          <span class="text-[#6b7280] text-[11px]">·</span>
-          <span class="text-[11px] text-[#6b7280] tabular-nums">{{ dateLabel() }}</span>
-        </div>
-
-        <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          <span class="hidden sm:flex h-9 px-3 rounded-[6px] bg-[#f3f4f6] text-[#111827] font-semibold text-[12px] items-center">POS</span>
-          <div class="hidden sm:block h-6 w-px bg-[#e5e7eb]"></div>
-          @if (store.cashIsOpen()) {
-            <div
-              class="h-9 px-2.5 sm:px-3 rounded-[6px] bg-[#f3f4f6] flex items-center gap-1.5 text-[12px] font-medium text-[#15803d]"
-              [title]="'Turno abierto' + (store.cashShift()?.user_name ? ' · ' + store.cashShift()?.user_name : '')"
-            >
-              <span class="w-2 h-2 rounded-[6px] bg-[#15803d] shrink-0"></span>
-              <span class="hidden sm:inline whitespace-nowrap">Caja abierta</span>
-            </div>
-          } @else {
-            <button
-              (click)="goToCash()"
-              title="Abrir turno de caja"
-              class="h-9 px-2.5 sm:px-3 rounded-[6px] border border-[#e5e7eb] bg-transparent hover:bg-[#f3f4f6] flex items-center gap-1.5 text-[12px] font-medium text-[#4b5563] transition-colors"
-            >
-              <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-                <rect height="14" rx="2" width="20" x="2" y="5"></rect>
-                <line x1="2" x2="22" y1="10" y2="10"></line>
-              </svg>
-              <span class="hidden sm:inline">Turno caja</span>
-            </button>
-          }
-          <button
-            (click)="onLockTerminal()"
-            title="Bloquear terminal"
-            class="h-9 w-9 rounded-[6px] border border-[#e5e7eb] bg-transparent hover:bg-[#f3f4f6] flex items-center justify-center text-[#4b5563] transition-colors"
-          >
-            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-              <rect height="11" rx="2" ry="2" width="18" x="3" y="11"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </button>
-        </div>
-      </header>
+      <!-- Encabezado: estado de terminal, turno, reloj y acciones de sesión
+           (extraído a un componente compartido con manual-order-page.component.ts). -->
+      <app-pos-terminal-header />
 
       <!-- Sub-barra: pestañas de tipo de orden + resumen de salón. -->
       <div class="bg-white border-b border-[#e5e7eb] px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-3">
-          <button
-            (click)="layoutService.toggle()"
-            [title]="layoutService.sidebarOpen() ? 'Ocultar menú de navegación' : 'Mostrar menú de navegación'"
-            class="hidden sm:flex h-11 w-11 shrink-0 rounded-[6px] border border-[#e5e7eb] bg-white text-[#4b5563] hover:bg-[#f3f4f6] items-center justify-center transition-colors"
-          >
-            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-              <rect height="18" rx="2" width="18" x="3" y="3"></rect>
-              <path d="M9 3v18"></path>
-            </svg>
-          </button>
           <nav class="flex items-center gap-1 bg-[#f3f4f6] p-1 rounded-[6px] overflow-x-auto sm:overflow-visible">
             @for (t of orderTypeTabs; track t.key) {
               <button
@@ -158,14 +85,27 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
         </div>
 
         @if (store.orderTypeTab() === 'mesas') {
-          <div class="flex items-center gap-2 sm:gap-3 bg-white px-3 sm:px-3.5 h-9 sm:h-10 rounded-[6px] border border-[#e5e7eb] text-[12px] sm:text-[13px] overflow-x-auto whitespace-nowrap shrink-0">
-            <span class="font-medium text-[#111827]">{{ store.tableCounts().total }} mesas</span>
-            <span class="text-[#6b7280]">·</span>
-            <span class="text-[#4b5563]">{{ store.tableCounts().ocupadas }} ocupadas</span>
-            <span class="text-[#6b7280]">·</span>
-            <span class="text-[#15803d] font-semibold">{{ store.tableCounts().libres }} libres</span>
-            <span class="text-[#6b7280]">·</span>
-            <span class="text-[#7c3aed] font-semibold">{{ store.tableCounts().pendientes }} pendientes</span>
+          <!-- A pedido del usuario: "+ Crear pedido nuevo" es un CTA fijo de
+               la sub-barra -- debe seguir visible sin importar si hay una
+               mesa/pedido seleccionado (antes se ocultaba con
+               showingDetail(), lo que lo hacía desaparecer justo cuando el
+               cajero quería crear otro pedido desde una mesa ya abierta). -->
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              (click)="goToNewOrder()"
+              [disabled]="!store.newOrderTableId()"
+              [title]="!store.newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
+              class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" x2="12" y1="8" y2="16"></line>
+                <line x1="8" x2="16" y1="12" y2="12"></line>
+              </svg>
+              <span class="hidden sm:inline">Crear pedido nuevo</span>
+              <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
+            </button>
           </div>
         }
       </div>
@@ -183,76 +123,30 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
           <div
             data-testid="mesas-column"
             class="flex-col min-h-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
-            [class]="store.hasActiveSelection() ? 'hidden lg:flex' : 'flex'"
+            [class]="showingDetail() ? 'hidden lg:flex' : 'flex'"
           >
             <app-pos-tables-panel />
           </div>
 
-          <!-- Tarjeta de detalle: mesa/pedido seleccionado + cobro apilados
-               (un único scroll) por debajo de lg; lado a lado desde lg,
-               siempre visible ahí. Sin selección, muestra el estado vacío
-               unificado del mockup en vez del panel central + cobro, con el
-               mismo ancho fijo (~35%) del mockup -- con algo seleccionado,
-               el panel de pedido y el de cobro necesitan bastante más
-               ancho que eso, así que la tarjeta pasa a repartirse el
-               espacio con la de mesas (flex-1) en vez de quedar angosta. -->
+          <!-- Tarjeta de detalle: mesa/pedido seleccionado + cobro siempre
+               apilados en una sola columna (un único scroll), a pedido del
+               usuario -- antes iban lado a lado desde lg. Sin nada real que
+               mostrar -- ni selección, ni una mesa libre sin pedidos -- esta
+               tarjeta no se muestra en absoluto (antes tenía un estado vacío
+               propio en cada uno de esos dos casos) -- la de mesas (ya
+               flex-1) ocupa todo el ancho. -->
           <div
             data-testid="detail-column"
             class="flex-col min-h-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
-            [class]="
-              store.hasActiveSelection()
-                ? 'flex flex-1 lg:flex-1'
-                : 'hidden lg:flex lg:w-[35%] lg:shrink-0'
-            "
+            [class]="showingDetail() ? 'flex flex-1 lg:flex-1' : 'hidden'"
           >
-            @if (store.effectiveCentralView() === 'mesa-libre') {
-              <!-- Mesa libre seleccionada: un único panel (mensaje + CTA),
-                   no el panel central informativo y el "Pedido de mostrador"
-                   del cobro lado a lado repitiendo el mismo mensaje dos
-                   veces -- crear el pedido nuevo es la ÚNICA acción posible
-                   aquí, así que solo hace falta un botón, no dos paneles. -->
-              <div class="h-full flex flex-col">
-                <div class="lg:hidden shrink-0 px-4 pt-3">
-                  <button
-                    data-testid="page-back-button"
-                    (click)="store.cancelSelection()"
-                    class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
-                  >
-                    ← Volver a mesas
-                  </button>
-                </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-center px-4">
-                  <div class="w-14 h-14 rounded-[6px] bg-[#f3f4f6] border border-[#e5e7eb] flex items-center justify-center mb-4 text-2xl">
-                    🍽️
-                  </div>
-                  <h3 class="text-[16px] font-semibold text-[#111827] tracking-[-0.01em] mb-1.5">
-                    Mesa {{ store.selectedTable()?.number }} está libre
-                  </h3>
-                  <p class="text-[13px] text-[#4b5563] max-w-[300px] leading-relaxed">
-                    Crea un pedido nuevo para empezar a tomar la comanda de esta mesa.
-                  </p>
-                </div>
-                <div class="pt-3 border-t border-[#e5e7eb] shrink-0 px-4 pb-4">
-                  <button
-                    type="button"
-                    (click)="goToNewOrder()"
-                    class="w-full h-11 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[15px] font-medium flex items-center justify-between px-4 transition-colors"
-                  >
-                    <div class="flex items-center gap-2">
-                      <svg class="w-5 h-5 stroke-white" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" x2="12" y1="8" y2="16"></line>
-                        <line x1="8" x2="16" y1="12" y2="12"></line>
-                      </svg>
-                      <span>+ Crear pedido nuevo</span>
-                    </div>
-                    <span class="px-2 py-0.5 bg-white/20 rounded-[6px] text-[11px] font-semibold uppercase tracking-wider text-white">[F3]</span>
-                  </button>
-                </div>
-              </div>
-            } @else if (store.hasActiveSelection()) {
-              <div class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-visible">
-                <div class="flex flex-col bg-white lg:flex-1 lg:min-h-0">
+            @if (showingDetail()) {
+              <!-- A pedido del usuario: "Pedido de la mesa" y "Cuenta de la
+                   mesa" siempre se apilan en una sola columna (antes iban
+                   lado a lado desde lg) -- aplica igual a mesas, para llevar
+                   y domicilio, ya que los tres pasan por este mismo bloque. -->
+              <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
+                <div class="flex flex-col bg-white flex-1 min-h-0 lg:flex-1 lg:min-h-0">
                   <!-- Único botón de volver en móvil/tablet para los 3 estados
                        del panel central -- el de app-pos-order-panel queda
                        oculto por debajo de lg para no duplicarlo. -->
@@ -341,78 +235,6 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
                 </div>
                 <app-pos-checkout-panel />
               </div>
-            } @else {
-              <!-- Mockup de referencia: estado vacío unificado (sin mesa ni
-                   pedido seleccionado) -- ícono + atajos de teclado + CTA
-                   único, en vez de dos placeholders independientes. -->
-              <div class="h-full flex flex-col p-4">
-                <div class="flex items-center justify-between border-b border-[#e5e7eb] pb-3 shrink-0">
-                  <div class="flex items-center gap-2">
-                    <svg class="w-[18px] h-[18px] stroke-[#4b5563]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-                      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"></path>
-                      <path d="M16 8h-8"></path>
-                      <path d="M16 12h-8"></path>
-                      <path d="M14 16h-6"></path>
-                    </svg>
-                    <span class="text-[11px] uppercase tracking-wider font-semibold text-[#4b5563]">Detalle de mesa / pedido</span>
-                  </div>
-                  <span class="text-[11px] uppercase tracking-wider font-medium text-[#6b7280]">Sin selección</span>
-                </div>
-
-                <div class="flex-1 flex flex-col items-center justify-center text-center px-4">
-                  <div class="w-14 h-14 rounded-[6px] bg-[#f3f4f6] border border-[#e5e7eb] flex items-center justify-center mb-4">
-                    <svg class="w-7 h-7 stroke-[#6b7280]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-                      <rect height="18" rx="2" width="18" x="3" y="3"></rect>
-                      <path d="M3 9h18"></path>
-                      <path d="M9 21V9"></path>
-                    </svg>
-                  </div>
-                  <h3 class="text-[16px] font-semibold text-[#111827] tracking-[-0.01em] mb-1.5">
-                    Selecciona una mesa o un pedido para ver su detalle
-                  </h3>
-                  <p class="text-[13px] text-[#4b5563] max-w-[300px] leading-relaxed">
-                    Toca cualquier mesa para abrir la comanda, añadir productos o proceder al cobro.
-                  </p>
-
-                  <div class="mt-6 p-3 bg-[#f9fafb] rounded-[6px] border border-[#e5e7eb] w-full max-w-[320px] text-left">
-                    <div class="text-[11px] uppercase tracking-wider font-semibold text-[#4b5563] mb-2">Atajos de teclado</div>
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between text-[13px] text-[#111827] py-1 border-b border-[#e5e7eb]">
-                        <span>Buscar mesa</span>
-                        <span class="px-1.5 py-0.5 bg-white border border-[#e5e7eb] rounded-[6px] text-[11px] font-medium text-[#6b7280] tabular-nums">[F2]</span>
-                      </div>
-                      <div class="flex items-center justify-between text-[13px] text-[#111827] py-1 border-b border-[#e5e7eb]">
-                        <span>Crear pedido nuevo</span>
-                        <span class="px-1.5 py-0.5 bg-white border border-[#e5e7eb] rounded-[6px] text-[11px] font-medium text-[#6b7280] tabular-nums">[F3]</span>
-                      </div>
-                      <div class="flex items-center justify-between text-[13px] text-[#111827] py-1">
-                        <span>Abrir turno de caja</span>
-                        <span class="px-1.5 py-0.5 bg-white border border-[#e5e7eb] rounded-[6px] text-[11px] font-medium text-[#6b7280] tabular-nums">[F1]</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="pt-3 border-t border-[#e5e7eb] shrink-0">
-                  <button
-                    type="button"
-                    (click)="goToNewOrder()"
-                    [disabled]="!store.newOrderTableId()"
-                    [title]="!store.newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
-                    class="w-full h-11 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[15px] font-medium flex items-center justify-between px-4 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <div class="flex items-center gap-2">
-                      <svg class="w-5 h-5 stroke-white" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" x2="12" y1="8" y2="16"></line>
-                        <line x1="8" x2="16" y1="12" y2="12"></line>
-                      </svg>
-                      <span>+ Crear pedido nuevo</span>
-                    </div>
-                    <span class="px-2 py-0.5 bg-white/20 rounded-[6px] text-[11px] font-semibold uppercase tracking-wider text-white">[F3]</span>
-                  </button>
-                </div>
-              </div>
             }
           </div>
         </div>
@@ -484,10 +306,7 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
 })
 export class TableSessionsComponent implements OnInit, OnDestroy {
   readonly store = inject(PosTerminalStore);
-  readonly layoutService = inject(LayoutService);
   private readonly router = inject(Router);
-  private readonly authService = inject(AuthService);
-  private readonly toast = inject(ToastService);
   private readonly tablesPanel = viewChild(PosTablesPanelComponent);
 
   readonly orderTypeTabs = [
@@ -496,67 +315,12 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     { key: 'para-llevar' as const, label: 'Para llevar' },
   ];
 
-  /** Reloj/fecha/turno de la barra superior -- un tick por minuto (no hace
-   *  falta más precisión), pausado en segundo plano (mismo utilitario que ya
-   *  usa el store para su sondeo). */
-  readonly clockLabel = signal(this.formatClock(new Date()));
-  readonly dateLabel = signal(this.formatDate(new Date()));
-  readonly shiftLabel = signal(this.formatShift(new Date()));
-  private clockTimer?: VisibleInterval;
-
   ngOnInit(): void {
     void this.store.init();
-    this.clockTimer = startVisibleInterval(() => {
-      const now = new Date();
-      this.clockLabel.set(this.formatClock(now));
-      this.dateLabel.set(this.formatDate(now));
-      this.shiftLabel.set(this.formatShift(now));
-    }, 30_000);
   }
 
   ngOnDestroy(): void {
     this.store.stop();
-    this.clockTimer?.stop();
-  }
-
-  private formatClock(d: Date): string {
-    return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  private formatDate(d: Date): string {
-    return d.toLocaleDateString('es-CO');
-  }
-
-  /** "Turno {Mañana/Tarde/Noche}: {usuario}" -- mismo dato que ya muestra el
-   *  header global del dashboard (AuthService.currentUser()), sin duplicar
-   *  una identidad ficticia como la del mockup ("Carlos M."). */
-  private formatShift(d: Date): string {
-    const h = d.getHours();
-    const periodo = h < 12 ? 'Mañana' : h < 19 ? 'Tarde' : 'Noche';
-    const nombre = this.authService.currentUser()?.name;
-    return nombre ? `Turno ${periodo}: ${nombre}` : `Turno ${periodo}`;
-  }
-
-  connectionDotClass(): string {
-    return this.store.realtimeStatus() === 'open' ? 'bg-[#10b981]' : 'bg-[#f59e0b]';
-  }
-
-  connectionLabel(): string {
-    return this.store.realtimeStatus() === 'open' ? 'En línea · Sincronizado' : 'Sincronizando…';
-  }
-
-  /** Botón/insignia de turno de caja del header: la apertura en sí vive en la
-   *  página de caja (ese flujo ya existe ahí) -- aquí solo se navega, sin
-   *  duplicar ese estado dentro de la terminal. */
-  goToCash(): void {
-    this.router.navigate(['/dashboard/caja']);
-  }
-
-  /** "Bloquear Terminal" del mockup: no existe ningún mecanismo de bloqueo de
-   *  sesión/PIN en el backend todavía -- se deja el botón (fidelidad visual)
-   *  pero avisa en vez de fingir una función que no está implementada. */
-  onLockTerminal(): void {
-    this.toast.info('El bloqueo de terminal todavía no está disponible.');
   }
 
   /** Mismo CTA que el panel de cobro ofrece con una mesa libre ya
@@ -566,6 +330,17 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     const tableId = this.store.newOrderTableId();
     if (!tableId) return;
     this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+  }
+
+  /** A pedido del usuario: una mesa libre sin ningún pedido no cuenta como
+   *  "hay algo que mostrar" -- ya no tiene su propio panel (antes mostraba
+   *  un mensaje + CTA propios). Sin contenido real que mostrar, se trata
+   *  igual que "sin selección": la grilla de mesas ocupa todo el ancho y el
+   *  CTA "Crear pedido nuevo" vive en la sub-barra (que ya usa
+   *  `store.newOrderTableId()`, y por lo tanto sigue apuntando a esta misma
+   *  mesa si es la seleccionada). */
+  showingDetail(): boolean {
+    return this.store.hasActiveSelection() && this.store.effectiveCentralView() !== 'mesa-libre';
   }
 
   @HostListener('window:keydown', ['$event'])

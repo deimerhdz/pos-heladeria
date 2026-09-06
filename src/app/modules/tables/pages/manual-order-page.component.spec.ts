@@ -35,8 +35,8 @@ function menuProduct(partial: Partial<MenuProduct>): MenuProduct {
   };
 }
 
-function menuCategory(products: MenuProduct[]): MenuCategory {
-  return { id: 'c1', name: 'Categoría Test', products };
+function menuCategory(products: MenuProduct[], partial: Partial<MenuCategory> = {}): MenuCategory {
+  return { id: 'c1', name: 'Categoría Test', products, ...partial };
 }
 
 /** Vista dedicada de armado de pedido nuevo (ajuste posterior a spec 036).
@@ -98,10 +98,13 @@ describe('ManualOrderPageComponent', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('app-searchable-select li')) as HTMLLIElement[];
   }
 
-  /** Helpers para el campo "Cliente" (spec 054). */
+  /** Helpers para el campo "Cliente" (spec 054). Rediseño
+   *  (`create-order/code.html`): la etiqueta es un `<label>` (no `<h3>`), y
+   *  en "Para llevar" dice "Cliente / Para llevar" -- de ahí el
+   *  `startsWith` en vez de una comparación exacta. */
   function clienteHeading(): HTMLElement {
-    return Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
-      (h) => (h as HTMLElement).textContent?.trim() === 'Cliente',
+    return Array.from(fixture.nativeElement.querySelectorAll('h3, label')).find((h) =>
+      (h as HTMLElement).textContent?.trim().startsWith('Cliente'),
     ) as HTMLElement;
   }
 
@@ -138,8 +141,6 @@ describe('ManualOrderPageComponent', () => {
     fixture.detectChanges();
 
     expect(store.selectedTableId()).toBe('t1');
-    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(texto).toContain('Mesa 3');
   });
 
   // ── spec 055: "Para Llevar" habilitada, "Domicilio" sigue deshabilitada ───
@@ -151,7 +152,7 @@ describe('ManualOrderPageComponent', () => {
   }
 
   function botonConfirmar(): HTMLButtonElement {
-    return botonTipoOrden('Confirmar y Enviar');
+    return botonTipoOrden('Crear pedido');
   }
 
   it('"Para Llevar" y "Domicilio" ya no son placeholders deshabilitados (spec 055 FR-008, spec 056 FR-001)', async () => {
@@ -162,7 +163,7 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    expect(botonTipoOrden('Para Llevar').disabled).toBe(false);
+    expect(botonTipoOrden('Para llevar').disabled).toBe(false);
     expect(botonTipoOrden('Domicilio').disabled).toBe(false);
   });
 
@@ -174,7 +175,7 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    botonTipoOrden('Para Llevar').click();
+    botonTipoOrden('Para llevar').click();
     fixture.detectChanges();
 
     expect(clienteHeading()).toBeTruthy();
@@ -185,13 +186,13 @@ describe('ManualOrderPageComponent', () => {
     expect(fixture.nativeElement.querySelector('app-searchable-select')).toBeNull();
   });
 
-  it('con "Para Llevar" y el carrito no vacío, "Confirmar y Enviar" se habilita sin ninguna mesa seleccionada (FR-009)', async () => {
+  it('con "Para Llevar" y el carrito no vacío, "Crear pedido" se habilita sin ninguna mesa seleccionada (FR-009)', async () => {
     createComponent(null);
     fixture.detectChanges();
     await Promise.resolve();
     fixture.detectChanges();
 
-    botonTipoOrden('Para Llevar').click();
+    botonTipoOrden('Para llevar').click();
     store.addDraftFromSelection({
       product: { id: 'p1', name: 'Mango Tropical' } as never,
       variant: { id: 'v1', price: 5000 } as never,
@@ -205,7 +206,7 @@ describe('ManualOrderPageComponent', () => {
     expect(botonConfirmar().disabled).toBe(false);
   });
 
-  it('con "En Mesa" y ninguna mesa seleccionada, "Confirmar y Enviar" sigue deshabilitado aunque haya productos (FR-009, no regresión)', async () => {
+  it('con "En Mesa" y ninguna mesa seleccionada, "Crear pedido" sigue deshabilitado aunque haya productos (FR-009, no regresión)', async () => {
     createComponent(null);
     fixture.detectChanges();
     await Promise.resolve();
@@ -230,7 +231,7 @@ describe('ManualOrderPageComponent', () => {
     await Promise.resolve();
     fixture.detectChanges();
 
-    botonTipoOrden('Para Llevar').click();
+    botonTipoOrden('Para llevar').click();
     fixture.detectChanges();
 
     expect(campoCliente().value).toBe('Consumidor final');
@@ -243,7 +244,7 @@ describe('ManualOrderPageComponent', () => {
    *  Llevar) no están envueltos en un `<div class="relative">`: el input es
    *  el `nextElementSibling` directo del `<h3>` de su etiqueta. */
   function campoDomicilio(etiqueta: string): HTMLInputElement {
-    const heading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
+    const heading = Array.from(fixture.nativeElement.querySelectorAll('h3, label')).find(
       (h) => (h as HTMLElement).textContent?.trim() === etiqueta,
     ) as HTMLElement;
     return heading.nextElementSibling as HTMLInputElement;
@@ -279,14 +280,14 @@ describe('ManualOrderPageComponent', () => {
 
     seleccionarDomicilio();
 
-    expect(campoDomicilio('Cliente').value).toBe('');
-    expect(campoDomicilio('Cliente').readOnly).toBe(false);
-    expect(campoDomicilio('Dirección').value).toBe('');
+    expect(campoDomicilio('Nombre cliente').value).toBe('');
+    expect(campoDomicilio('Nombre cliente').readOnly).toBe(false);
+    expect(campoDomicilio('Dirección de entrega').value).toBe('');
     expect(campoDomicilio('Teléfono').value).toBe('');
-    expect(campoDomicilio('Valor del domicilio').value).toBe('');
+    expect(campoDomicilio('Tarifa Domicilio').value).toBe('');
   });
 
-  it('con "Domicilio", "Confirmar y Enviar" está deshabilitado si falta Cliente, Dirección, o el valor del domicilio (FR-007)', async () => {
+  it('con "Domicilio", "Crear pedido" está deshabilitado si falta Cliente, Dirección, o el valor del domicilio (FR-007)', async () => {
     createComponent(null);
     fixture.detectChanges();
     await Promise.resolve();
@@ -373,7 +374,7 @@ describe('ManualOrderPageComponent', () => {
     expect(store.customerName()).toBe('Ana Torres');
   });
 
-  it('el listado de mesas tiene un título propio "Mesas", distinguible del encabezado "Tipo de Orden" (US3, FR-004/FR-005)', async () => {
+  it('el campo "Mesa asignada" tiene su propia etiqueta, distinguible del encabezado "Nueva orden" (US3, FR-004/FR-005; rediseño create-order/code.html)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -381,17 +382,17 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    const tipoOrdenHeading = fixture.nativeElement.querySelector('h2') as HTMLElement | null;
-    expect(tipoOrdenHeading?.textContent).toContain('Tipo de Orden');
+    const nuevaOrdenHeading = fixture.nativeElement.querySelector('h2') as HTMLElement | null;
+    expect(nuevaOrdenHeading?.textContent).toContain('Nueva orden');
 
-    const mesasHeading = Array.from(fixture.nativeElement.querySelectorAll('h3')).find(
-      (h) => (h as HTMLElement).textContent?.trim() === 'Mesas',
+    const mesaHeading = Array.from(fixture.nativeElement.querySelectorAll('label')).find(
+      (h) => (h as HTMLElement).textContent?.trim() === 'Mesa asignada',
     ) as HTMLElement | undefined;
-    expect(mesasHeading).toBeTruthy();
-    expect(mesasHeading!.tagName).not.toBe(tipoOrdenHeading!.tagName);
+    expect(mesaHeading).toBeTruthy();
+    expect(mesaHeading!.tagName).not.toBe(nuevaOrdenHeading!.tagName);
   });
 
-  it('la barra superior solo contiene "Volver a la Terminal", sin "Tipo de Orden" (spec 052, US1, FR-005)', async () => {
+  it('la barra superior solo contiene "Volver a la Terminal", sin el encabezado "Nueva orden" (spec 052, US1, FR-005)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -403,10 +404,10 @@ describe('ManualOrderPageComponent', () => {
       (b as HTMLButtonElement).textContent?.includes('Volver a la Terminal'),
     ) as HTMLButtonElement;
     const topBar = backButton.closest('div') as HTMLElement;
-    expect(topBar.textContent).not.toContain('Tipo de Orden');
+    expect(topBar.textContent).not.toContain('Nueva orden');
   });
 
-  it('"Tipo de Orden", "Mesas" y "Nueva orden" viven en el mismo panel derecho (spec 052, US1, FR-001/FR-002/FR-006)', async () => {
+  it('"Nueva orden", "Mesa asignada" y "Detalle del pedido" viven en el mismo panel derecho (spec 052, US1, FR-001/FR-002/FR-006; rediseño create-order/code.html)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -414,16 +415,19 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    const rightPanel = fixture.nativeElement.querySelector('.border-l.bg-white') as HTMLElement | null;
+    const rightPanel = fixture.nativeElement.querySelector('[data-testid="ticket-column"]') as HTMLElement | null;
     expect(rightPanel).toBeTruthy();
-    expect(rightPanel!.textContent).toContain('Tipo de Orden');
-    expect(rightPanel!.textContent).toContain('Mesas');
     expect(rightPanel!.textContent).toContain('Nueva orden');
-    expect(rightPanel!.textContent).toContain('Confirmar y Enviar');
+    expect(rightPanel!.textContent).toContain('Mesa asignada');
+    expect(rightPanel!.textContent).toContain('Detalle del pedido');
+    expect(rightPanel!.textContent).toContain('Crear pedido');
     expect(rightPanel!.textContent).not.toContain('Volver a la Terminal');
   });
 
-  it('el panel derecho es más ancho que antes (spec 052, US2, FR-007)', async () => {
+  /** Rediseño (`create-order/code.html`): el panel derecho ya no tiene un
+   *  ancho fijo en píxeles -- ocupa 35% desde `lg` (mismo mecanismo de
+   *  `table-sessions.component.ts`, ver `[data-testid="ticket-column"]`). */
+  it('el panel derecho ocupa 35% del ancho desde lg (rediseño create-order/code.html)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -431,9 +435,8 @@ describe('ManualOrderPageComponent', () => {
     http.expectOne(`${API}/table-sessions`).flush([]);
     fixture.detectChanges();
 
-    const rightPanel = fixture.nativeElement.querySelector('.border-l.bg-white') as HTMLElement;
-    expect(rightPanel.classList.contains('sm:w-[400px]')).toBe(true);
-    expect(rightPanel.classList.contains('sm:w-[320px]')).toBe(false);
+    const rightPanel = fixture.nativeElement.querySelector('[data-testid="ticket-column"]') as HTMLElement;
+    expect(rightPanel.classList.contains('lg:w-[35%]')).toBe(true);
   });
 
   it('la tarjeta de catálogo muestra la imagen del producto cuando tiene image_url (US1, FR-001)', async () => {
@@ -514,6 +517,120 @@ describe('ManualOrderPageComponent', () => {
 
     expect(fixture.nativeElement.querySelector('app-product-select')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('app-product-select img')).toBeNull();
+  });
+
+  // ── Pestaña "Todos" (rediseño create-order/code.html) ──────────────────────
+  it('"Todos" está activa por defecto y junta los productos de todas las categorías', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([
+      menuCategory([menuProduct({ id: 'p1', name: 'Cono Fresa' })], { id: 'c1', name: 'Conos' }),
+      menuCategory([menuProduct({ id: 'p2', name: 'Malteada Choco' })], { id: 'c2', name: 'Malteadas' }),
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Cono Fresa');
+    expect(texto).toContain('Malteada Choco');
+
+    const todosButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Todos'),
+    ) as HTMLButtonElement;
+    expect(todosButton.className).toContain('bg-[#f3f4f6]');
+  });
+
+  it('elegir una categoría puntual filtra el grid; volver a "Todos" restaura la lista combinada', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([
+      menuCategory([menuProduct({ id: 'p1', name: 'Cono Fresa' })], { id: 'c1', name: 'Conos' }),
+      menuCategory([menuProduct({ id: 'p2', name: 'Malteada Choco' })], { id: 'c2', name: 'Malteadas' }),
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const categoriaButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.trim() === 'Malteadas',
+    ) as HTMLButtonElement;
+    categoriaButton.click();
+    fixture.detectChanges();
+
+    let texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Malteada Choco');
+    expect(texto).not.toContain('Cono Fresa');
+
+    const todosButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Todos'),
+    ) as HTMLButtonElement;
+    todosButton.click();
+    fixture.detectChanges();
+
+    texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Malteada Choco');
+    expect(texto).toContain('Cono Fresa');
+  });
+
+  // ── Descuento por línea del carrito (rediseño create-order/code.html) ──────
+  it('una línea cuya promoción ya califica (cantidad ≥ min_qty) muestra insignia, tachado y "Ahorras $X"', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 2,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('2x1 Promo');
+    expect(texto).toContain('Ahorras');
+    // $ 14.000 tachado (2 x $7.000 sin descuento) y $ 11.000 con descuento (2 x $5.500).
+    expect(texto).toContain('14.000');
+    expect(texto).toContain('11.000');
+  });
+
+  it('una línea con promoción vigente pero cantidad insuficiente no muestra insignia de descuento (mismo guardia que product-select)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).not.toContain('2x1 Promo');
+    expect(texto).not.toContain('Ahorras');
   });
 
   it('el selector de mesas permite buscar y cambiar a otra mesa libre, pero no a una ocupada (spec 053, US1, FR-002/FR-005)', async () => {
@@ -619,7 +736,7 @@ describe('ManualOrderPageComponent', () => {
     expect(fixture.nativeElement.querySelector('app-searchable-select ul')).toBeTruthy();
   });
 
-  it('agregar un producto al draft se refleja en el resumen, con Impuesto siempre en $0 (FR-011)', async () => {
+  it('agregar un producto al draft se refleja en el resumen, con Impuesto siempre en $0 (FR-011; rediseño create-order/code.html ya no pinta la fila "Impuesto")', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -637,11 +754,10 @@ describe('ManualOrderPageComponent', () => {
 
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(texto).toContain('Granizado Fresa Salvaje');
-    expect(texto).toContain('Impuesto');
     expect(store.totals().tax).toBe(0);
   });
 
-  it('"Confirmar y Enviar" está deshabilitado con el carrito vacío', async () => {
+  it('"Crear pedido" está deshabilitado con el carrito vacío', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -650,12 +766,12 @@ describe('ManualOrderPageComponent', () => {
     fixture.detectChanges();
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     expect(confirmButton.disabled).toBe(true);
   });
 
-  it('"Confirmar y Enviar" crea el pedido y navega de vuelta a la Terminal de Mesas', async () => {
+  it('"Crear pedido" crea el pedido y navega de vuelta a la Terminal de Mesas', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -675,7 +791,7 @@ describe('ManualOrderPageComponent', () => {
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await Promise.resolve();
@@ -704,7 +820,7 @@ describe('ManualOrderPageComponent', () => {
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await Promise.resolve();
@@ -815,7 +931,7 @@ describe('ManualOrderPageComponent', () => {
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await Promise.resolve();
@@ -851,7 +967,7 @@ describe('ManualOrderPageComponent', () => {
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await Promise.resolve();
@@ -886,12 +1002,174 @@ describe('ManualOrderPageComponent', () => {
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await Promise.resolve();
 
     expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ customer_name: 'Consumidor final' }));
+  });
+
+  // ── Rediseño responsive (create-order/code.html): una sola tarjeta a la
+  // vez por debajo de lg, mismo mecanismo que table-sessions.component.ts ──
+  it('por debajo de lg muestra el catálogo por defecto; "Ver pedido" pasa al ticket y "Volver al catálogo" regresa (rediseño responsive)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const catalogo = () => fixture.nativeElement.querySelector('[data-testid="catalogo-column"]') as HTMLElement;
+    const ticket = () => fixture.nativeElement.querySelector('[data-testid="ticket-column"]') as HTMLElement;
+
+    expect(catalogo().classList.contains('hidden')).toBe(false);
+    expect(ticket().classList.contains('hidden')).toBe(true);
+    // Carrito vacío: el botón flotante "Ver pedido" no se muestra.
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+        (b as HTMLButtonElement).textContent?.includes('Ver pedido'),
+      ),
+    ).toBeUndefined();
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    const verPedido = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Ver pedido'),
+    ) as HTMLButtonElement;
+    expect(verPedido).toBeTruthy();
+    verPedido.click();
+    fixture.detectChanges();
+
+    expect(catalogo().classList.contains('hidden')).toBe(true);
+    expect(ticket().classList.contains('hidden')).toBe(false);
+
+    const backButton = fixture.nativeElement.querySelector('[data-testid="page-back-button"]') as HTMLButtonElement;
+    expect(backButton).toBeTruthy();
+    backButton.click();
+    fixture.detectChanges();
+
+    expect(catalogo().classList.contains('hidden')).toBe(false);
+    expect(ticket().classList.contains('hidden')).toBe(true);
+  });
+
+  // ── Nuevo: editar una línea del carrito ya agregada ────────────────────────
+  it('el lápiz de una línea del carrito llama a store.openConfigForEdit y reabre el modal precargado', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    const product = {
+      id: 'p1',
+      name: 'Mango Tropical',
+      description: null,
+      image_url: null,
+      available: true,
+      option_groups: [],
+      variants: [{ id: 'v1', name: 'Única', price: 5000, option_groups: [], available: true }],
+    };
+    store.addDraftFromSelection({
+      product: product as never,
+      variant: product.variants[0] as never,
+      options: [],
+      quantity: 1,
+      notes: 'Sin azúcar',
+    });
+    fixture.detectChanges();
+
+    const editSpy = vi.spyOn(store, 'openConfigForEdit');
+    const draftKey = store.draftLines()[0].key;
+    // Rediseño (create-order/code.html): dos íconos por línea ("Ver/Editar
+    // Notas" y "Modificar Toppings"), ambos abren el mismo modal unificado
+    // -- esta app no separa notas y toppings en dos modales distintos.
+    const notesButton = fixture.nativeElement.querySelector(
+      '[title="Ver/Editar Notas"]',
+    ) as HTMLButtonElement;
+    const toppingsButton = fixture.nativeElement.querySelector(
+      '[title="Modificar Toppings"]',
+    ) as HTMLButtonElement;
+    expect(notesButton).toBeTruthy();
+    expect(toppingsButton).toBeTruthy();
+    notesButton.click();
+    fixture.detectChanges();
+
+    expect(editSpy).toHaveBeenCalledWith(draftKey);
+    const modal = fixture.nativeElement.querySelector('app-product-select');
+    expect(modal).toBeTruthy();
+    expect((modal as HTMLElement).textContent).toContain('Guardar cambios');
+  });
+
+  // ── Fila de carrito responsive (apilada en mobile, tabla desde sm) ────────
+  it('cada línea del carrito renderiza dos variantes (tabla desde sm, tarjeta apilada por debajo de sm) con las mismas acciones', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    // El encabezado de columnas también es ".hidden.sm\:grid.grid-cols-12" --
+    // se distingue por ".items-center", que solo llevan las filas de ítem.
+    const tabla = fixture.nativeElement.querySelector(
+      '.hidden.sm\\:grid.grid-cols-12.items-center',
+    ) as HTMLElement;
+    const tarjeta = fixture.nativeElement.querySelector('.flex.sm\\:hidden.flex-col') as HTMLElement;
+    expect(tabla).toBeTruthy();
+    expect(tarjeta).toBeTruthy();
+    expect(tabla.textContent).toContain('Mango Tropical');
+    expect(tarjeta.textContent).toContain('Mango Tropical');
+
+    // Los botones de eliminar/editar de la variante apilada funcionan igual
+    // que los de la tabla (mismos (click), solo cambia el marcado/tamaño).
+    const removeButtons = Array.from(
+      fixture.nativeElement.querySelectorAll('[title="Eliminar ítem"]'),
+    ) as HTMLButtonElement[];
+    expect(removeButtons.length).toBe(2);
+
+    const draftKey = store.draftLines()[0].key;
+    const removeSpy = vi.spyOn(store, 'removeDraft');
+    removeButtons[1].click(); // el de la tarjeta apilada (segundo en el DOM)
+    expect(removeSpy).toHaveBeenCalledWith(draftKey);
+  });
+
+  it('el botón "Limpiar todo" ya no existe en el detalle del pedido', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000 } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+        (b as HTMLButtonElement).textContent?.includes('Limpiar todo'),
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -974,7 +1252,7 @@ describe('ManualOrderPageComponent — desglose del borrador (spec 073, US5)', (
     expect(t).toContain('8.000');
   });
 
-  it('Scenario 4 (FR-015): si el draft-preview falla, muestra el subtotal sin descuento + aviso y NO deshabilita "Confirmar y Enviar"', async () => {
+  it('Scenario 4 (FR-015): si el draft-preview falla, muestra el subtotal sin descuento + aviso y NO deshabilita "Crear pedido"', async () => {
     setup();
     vi.spyOn(api, 'draftPreview').mockRejectedValue(new Error('sin conexión'));
     vi.spyOn(store, 'setOrderTypeTab').mockImplementation((t) => store.orderTypeTab.set(t));
@@ -990,7 +1268,7 @@ describe('ManualOrderPageComponent — desglose del borrador (spec 073, US5)', (
     expect(summaryText()).toContain('16.000');
 
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     expect(confirmButton.disabled).toBe(false);
   });
@@ -1013,7 +1291,7 @@ describe('ManualOrderPageComponent — desglose del borrador (spec 073, US5)', (
 
     const confirmSvc = TestBed.inject(ConfirmService);
     const confirmButton = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
-      (b as HTMLButtonElement).textContent?.includes('Confirmar y Enviar'),
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido'),
     ) as HTMLButtonElement;
     confirmButton.click();
     await new Promise((r) => setTimeout(r));

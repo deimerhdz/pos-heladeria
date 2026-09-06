@@ -127,11 +127,11 @@ describe('PaymentValidationBlockComponent', () => {
   it('spec 073, US7: ya no renderiza la fila de pie con el total local; el desglose lo pinta el panel embebido', async () => {
     await render([order('o1')]);
 
-    // El total autoritativo del preview ($ 4000.00) se ve dentro del panel de
+    // El total autoritativo del preview ($ 4.000) se ve dentro del panel de
     // revisión, con su fila "Total" — no como una fila suelta de pie del bloque.
     const panel = fixture.nativeElement.querySelector('app-payment-attempt-review-panel');
     expect(panel.textContent).toContain('Total');
-    expect(panel.textContent).toContain('4000.00');
+    expect(panel.textContent).toContain('4.000');
 
     // No queda ninguna referencia a `total(order)` en la instancia del bloque.
     expect(

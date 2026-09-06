@@ -57,6 +57,46 @@ describe('DinerService', () => {
     expect(res.categories.length).toBe(1);
   });
 
+  it('convierte a número los campos de `promotion` que el backend serializa como string (spec 066)', async () => {
+    // El backend serializa sus `Decimal` como string JSON -- `"unit_equivalent": "3500"`,
+    // igual que `price`/`discounted_price` -- así que sin este `Number(...)` el `+` de
+    // `lineTotal()` en `product-select.component.ts` concatena en vez de sumar
+    // ("3500" + 0 -> "35000") y el total del paquete termina multiplicado por 10.
+    const promise = service.resolveByToken('signed.jwt');
+    const req = http.expectOne(`${API}/menu/qr-token/signed.jwt`);
+    req.flush({
+      table: { id: 't1', number: 5, name: 'Terraza' },
+      business: { name: 'Heladería', logo_url: null },
+      menu: [{
+        id: 'c1', name: 'Helados',
+        products: [{
+          id: 'p1', name: 'Banana Split Especial', description: null, image_url: null,
+          variants: [{
+            id: 'v1', name: 'Pequeña', price: '15000.00',
+            discounted_price: null, discount_kind: null,
+            promotion: {
+              condition_text: 'Llevando 2 Pequeña pagas $7.000',
+              short_condition: '2 x $7.000',
+              unit_equivalent: '3500',
+              unit_equivalent_approx: false,
+              unit_equivalent_text: '$3.500 c/u',
+              display_text: '2 x $7.000 · $3.500 c/u',
+              type: 'package_price',
+              min_qty: 2,
+              value: '7000.00',
+            },
+          }],
+        }],
+      }],
+    });
+
+    const res = await promise;
+    const promo = res.categories[0].products[0].variants[0].promotion;
+    expect(promo?.unit_equivalent).toBe(3500);
+    expect(promo?.value).toBe(7000);
+    expect(promo?.min_qty).toBe(2);
+  });
+
   it('abre sesión y persiste el session_token', async () => {
     const promise = service.openSession('signed.jwt', 'Ana');
     const req = http.expectOne(`${API}/cart/sessions`);

@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { environment } from '../../../../environments/environment';
 import { PosTablesPanelComponent } from './pos-tables-panel.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
@@ -10,6 +11,8 @@ import { TableService } from '../services/table.service';
 import { Table } from '../interfaces/table.interface';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
+
+const API = environment.apiBaseUrl;
 
 function table(partial: Partial<Table>): Table {
   return {
@@ -196,24 +199,23 @@ describe('PosTablesPanelComponent', () => {
       (b as HTMLButtonElement).textContent?.includes(label),
     ) as HTMLButtonElement | undefined;
 
-  // Bugfix a pedido del usuario: tocar una mesa (libre u ocupada) no debe
-  // hacer nada por ahora -- ni seleccionarla ni navegar. Antes, tocar una
-  // mesa llamaba a store.selectTable(); esa conexión se retiró
-  // deliberadamente del template (ver pos-tables-panel.component.ts).
-  it('tocar una mesa libre no hace nada por ahora (sin seleccionar, sin navegar)', () => {
+  // La selección de mesa se reactivó a pedido del usuario: tocar una mesa
+  // (libre u ocupada) selecciona su detalle en el panel derecho, mismo
+  // mecanismo (select) que ya usan las tarjetas de Para Llevar/Domicilio.
+  it('tocar una mesa libre la selecciona', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'libre' })]);
     fixture.detectChanges();
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const selectSpy = vi.spyOn(store, 'selectTable');
 
     tableCard('Mesa 3')!.click();
 
-    expect(selectSpy).not.toHaveBeenCalled();
-    expect(navigateSpy).not.toHaveBeenCalled();
-    expect(store.selectedTableId()).toBeNull();
+    expect(selectSpy).toHaveBeenCalledWith('t1');
+    expect(store.selectedTableId()).toBe('t1');
+    // selectTable() dispara loadSessionBill() en segundo plano.
+    http.expectOne(`${API}/table-sessions`).flush([]);
   });
 
-  it('tocar una mesa ocupada tampoco hace nada por ahora (sin seleccionar, sin navegar)', () => {
+  it('tocar una mesa ocupada también la selecciona', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'ocupada' })]);
     store.orders.set([
       {
@@ -226,14 +228,14 @@ describe('PosTablesPanelComponent', () => {
       } as unknown as ReturnType<PosTerminalStore['orders']>[number],
     ]);
     fixture.detectChanges();
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const selectSpy = vi.spyOn(store, 'selectTable');
 
     tableCard('Mesa 3')!.click();
 
-    expect(selectSpy).not.toHaveBeenCalled();
-    expect(navigateSpy).not.toHaveBeenCalled();
-    expect(store.selectedTableId()).toBeNull();
+    expect(selectSpy).toHaveBeenCalledWith('t1');
+    expect(store.selectedTableId()).toBe('t1');
+    // selectTable() dispara loadSessionBill() en segundo plano.
+    http.expectOne(`${API}/table-sessions`).flush([]);
   });
 
   function standaloneOrder(

@@ -166,7 +166,7 @@ describe('SessionBillPanelComponent', () => {
 
     it('sigue mostrando el desglose de la cuenta (no se pierde información)', () => {
       expect(fixture.nativeElement.textContent).toContain('Ana');
-      expect(fixture.nativeElement.textContent).toContain('12,000.00');
+      expect(fixture.nativeElement.textContent).toContain('12.000');
     });
   });
 
@@ -265,8 +265,8 @@ describe('SessionBillPanelComponent', () => {
 
       const texto = fixture.nativeElement.textContent as string;
       expect(texto).toContain('Ya pagado');
-      expect(texto).toContain('7,000.00');
-      expect(texto).toContain('1,000.00');
+      expect(texto).toContain('7.000');
+      expect(texto).toContain('1.000');
     });
 
     it('se muestra incluso sin ninguna cuenta pendiente (bill=null, mesa ya toda pagada)', () => {
@@ -396,5 +396,107 @@ describe('SessionBillPanelComponent', () => {
     expect((req.request.body as CloseSessionPayload).billing_mode).toBe('unified');
     req.flush({ table_session: {}, sale_ids: ['s1'] });
     await done;
+  });
+});
+
+// ── Cuentas: tarjetas seleccionables + productos de la cuenta elegida ──────
+describe('SessionBillPanelComponent — Cuentas', () => {
+  let fixture: ComponentFixture<SessionBillPanelComponent>;
+  let panel: SessionBillPanelComponent;
+  let http: HttpTestingController;
+
+  const billConItems: SessionBill = {
+    table_session_id: 'ts5',
+    dining_table_id: 't5',
+    total: '20000',
+    order_ids: ['o5'],
+    split: [
+      {
+        participant_id: 'p1',
+        display_label: 'Andres',
+        subtotal: '12000',
+        discount: '0',
+        items: [{ description: 'Sundae', quantity: '2', unit_price: '6000', line_total: '12000' }],
+      },
+      {
+        participant_id: 'p2',
+        display_label: 'Jose',
+        subtotal: '8000',
+        discount: '0',
+        items: [{ description: 'Malteada', quantity: '1', unit_price: '8000', line_total: '8000' }],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SessionBillPanelComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    fixture = TestBed.createComponent(SessionBillPanelComponent);
+    panel = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.componentRef.setInput('bill', billConItems);
+    fixture.componentRef.setInput('methods', methods);
+    fixture.componentRef.setInput('cashShiftId', 'shift-1');
+    fixture.detectChanges();
+  });
+
+  afterEach(() => http.verify());
+
+  const cardButtons = (): HTMLButtonElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
+      (b as HTMLButtonElement).textContent?.includes('ítems'),
+    ) as HTMLButtonElement[];
+
+  it('muestra una tarjeta de Cuenta por comensal, con la primera seleccionada por defecto', () => {
+    const cards = cardButtons();
+    expect(cards.length).toBe(2);
+    expect(cards.map((c) => c.textContent)).toEqual([
+      expect.stringContaining('Andres'),
+      expect.stringContaining('Jose'),
+    ]);
+    expect(panel.selectedIndex()).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Sundae');
+    expect(fixture.nativeElement.textContent).not.toContain('Malteada');
+  });
+
+  it('tocar otra tarjeta cambia los productos mostrados a los de esa cuenta', () => {
+    cardButtons()[1].click();
+    fixture.detectChanges();
+
+    expect(panel.selectedIndex()).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('Malteada');
+    expect(fixture.nativeElement.textContent).not.toContain('Sundae');
+  });
+
+  it('el total a cobrar sigue siendo el de toda la mesa, no el de la cuenta seleccionada', () => {
+    cardButtons()[1].click();
+    fixture.detectChanges();
+
+    // La cuenta seleccionada (Jose) es $8.000, pero lo que se cobra son los
+    // $20.000 de la mesa completa -- nunca deben coincidir en este fixture.
+    expect(fixture.nativeElement.textContent).toContain('Total a cobrar');
+    expect(fixture.nativeElement.textContent).toContain('20.000');
+  });
+
+  it('cambiar de cuenta no altera el método de pago ya elegido para la mesa', async () => {
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    select.value = 'pm2';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    cardButtons()[1].click();
+    fixture.detectChanges();
+
+    expect(select.value).toBe('pm2');
+  });
+
+  it('cambiar la cuenta (bill) selecciona de nuevo la primera cuenta', () => {
+    fixture.componentRef.setInput('bill', { ...billConItems, split: [...billConItems.split].reverse() });
+    fixture.detectChanges();
+
+    expect(panel.selectedIndex()).toBe(0);
   });
 });

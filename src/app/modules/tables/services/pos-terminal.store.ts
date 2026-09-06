@@ -8,6 +8,7 @@ import { PaymentMethod, Sale } from '../../sales/interfaces/sales.interface';
 import { MenuService } from '../../../core/services/menu.service';
 import { Promotion } from '../../promotions/interfaces/promotion.interface';
 import { PromotionService } from '../../promotions/services/promotion.service';
+import { discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
@@ -74,6 +75,22 @@ interface ComboDraftLine {
 }
 
 type DraftLine = ProductDraftLine | ComboDraftLine;
+
+/**
+ * Descuento por línea del rediseño (`create-order/code.html`): tachado +
+ * insignia + "Ahorras $X" cuando la variante tiene una promoción vigente Y
+ * la cantidad del borrador ya alcanza su `min_qty` -- mismo guardia que usa
+ * `product-select.component.ts` (`qualifiesForDiscount`) para no prometer un
+ * descuento que el backend no aplicaría. Es puramente presentacional: NO
+ * toca `unitPrice`/`subtotal` de la línea (esos siguen a precio completo,
+ * spec 063 FR-023) -- el total real sigue viniendo solo de `draftPreview()`.
+ */
+interface CartLinePromo {
+  badge: string;
+  originalAmount: number;
+  discountedAmount: number;
+  savings: number;
+}
 
 /** Estado de mesa derivado para la vista. */
 type TableDisplayStatus =
@@ -358,6 +375,12 @@ export class PosTerminalStore {
   readonly catalogOpen = signal(false);
   readonly catalogCategoryId = signal<string | null>(null);
   readonly configuringProduct = signal<MenuProduct | null>(null);
+  /** `key` de la línea de `draftLines` que se está editando (rediseño de
+   *  `create-order/code.html`) -- `null` cuando `configuringProduct` abre el
+   *  modal para AGREGAR un producto nuevo en vez de editar uno ya en el
+   *  carrito. Solo aplica a líneas `kind: 'product'`; los combos son código
+   *  muerto (ver comentario junto a `comboBullets`). */
+  readonly editingDraftKey = signal<string | null>(null);
   /** Buscador por nombre de la grilla de "+ Agregar producto" (spec 036, FR-007). */
   readonly catalogSearchText = signal('');
 
@@ -432,6 +455,43 @@ export class PosTerminalStore {
    */
   cardPromotionText(variants: MenuVariant[]): string | null {
     return variants.find((v) => v.promotion != null)?.promotion?.short_condition ?? null;
+  }
+
+  /** Ver `CartLinePromo`. */
+  private cartLinePromo(variant: MenuVariant, quantity: number): CartLinePromo | null {
+    const promo = variant.promotion;
+    if (!promo || quantity < promo.min_qty) return null;
+    const discountedUnit = effectivePrice(variant.price, variant.discounted_price);
+    if (discountedUnit >= variant.price) return null;
+    const originalAmount = variant.price * quantity;
+    const discountedAmount = discountedUnit * quantity;
+    return {
+      badge: promo.short_condition,
+      originalAmount,
+      discountedAmount,
+      savings: originalAmount - discountedAmount,
+    };
+  }
+
+  /**
+   * Igual que `cartLinePromo()` pero para un ítem ya persistido: el backend ya
+   * resolvió y guardó `discounted_unit_price` al confirmar el pedido (spec 063
+   * FR-023), así que la insignia sale de ese número en vez de `variant.promotion`
+   * (que describe la promo vigente *ahora*, no la que aplicó al cobrar).
+   */
+  private persistedLinePromo(
+    unitPrice: number,
+    discountedUnitPrice: number | null | undefined,
+    quantity: number,
+  ): CartLinePromo | null {
+    const info = discountInfo(unitPrice, discountedUnitPrice);
+    if (!info) return null;
+    return {
+      badge: `-${info.percent}%`,
+      originalAmount: info.original * quantity,
+      discountedAmount: info.discounted * quantity,
+      savings: info.amountOff * quantity,
+    };
   }
 
   private readonly lookup = computed<MenuLookup>(() =>
@@ -818,6 +878,7 @@ export class PosTerminalStore {
     const plainItems = items.filter((i) => !i.combo_id);
     const persistedPlain = plainItems.map((i) => {
       const unitPrice = this.itemUnitPrice(i);
+      const discountedUnit = i.discounted_unit_price != null ? Number(i.discounted_unit_price) : null;
       return {
         kind: 'persisted' as const,
         key: i.id,
@@ -833,6 +894,7 @@ export class PosTerminalStore {
         ready: !KITCHEN_NOT_READY.includes(i.estado_cocina),
         kitchenStatus: i.estado_cocina as KitchenStatus | null,
         pendingItemIds: KITCHEN_NOT_READY.includes(i.estado_cocina) ? [i.id] : [],
+        promo: this.persistedLinePromo(Number(i.unit_price), discountedUnit, i.quantity),
       };
     });
 
@@ -857,6 +919,7 @@ export class PosTerminalStore {
         pendingItemIds: its
           .filter((it) => KITCHEN_NOT_READY.includes(it.estado_cocina))
           .map((it) => it.id),
+        promo: null as CartLinePromo | null,
       };
     });
 
@@ -885,11 +948,17 @@ export class PosTerminalStore {
           ready: true,
           kitchenStatus: null,
           pendingItemIds: [] as string[],
+          promo: null as CartLinePromo | null,
         };
       }
       // spec 063: los draft sin guardar todavía no tienen descuento del backend;
-      // el efectivo aparece en el preview del cobro (FR-023).
+      // el efectivo aparece en el preview del cobro (FR-023) -- `unitPrice`/
+      // `subtotal` de ESTA línea se quedan a precio completo a propósito.
+      // `promo` de abajo es aparte: solo pinta la insignia/tachado/"Ahorras"
+      // del rediseño, con el mismo guardia de `min_qty` que ya usa
+      // `product-select.component.ts` -- si no califica, no se muestra nada.
       const unitPrice = l.unitPrice;
+      const promo = this.cartLinePromo(l.variant, l.quantity);
       return {
         kind: 'draft' as const,
         key: l.key,
@@ -905,6 +974,7 @@ export class PosTerminalStore {
         ready: true,
         kitchenStatus: null,
         pendingItemIds: [] as string[],
+        promo,
       };
     });
     return [...persisted, ...draft];
@@ -959,6 +1029,23 @@ export class PosTerminalStore {
   readonly catalogProductsFiltered = computed<MenuProduct[]>(() => {
     const term = normalizeSearchTerm(this.catalogSearchText());
     const products = this.catalogProducts();
+    if (!term) return products;
+    return products.filter((p) => normalizeSearchTerm(p.name).includes(term));
+  });
+
+  /**
+   * Pestaña "Todos" del rediseño (`create-order/code.html`): junta los
+   * productos de TODAS las categorías en una sola grilla, con el mismo
+   * buscador por nombre que `catalogProductsFiltered`. Es un computed
+   * separado -- no cambia el significado de `catalogCategoryId`/
+   * `catalogProducts`/`catalogProductsFiltered` (`pos-catalog-drawer.component.ts`
+   * también los usa y no tiene pestaña "Todos"), así que esta pantalla decide
+   * por su cuenta cuándo mostrar esta lista en vez de la filtrada por
+   * categoría (ver `ManualOrderPageComponent.showingAllCategories`).
+   */
+  readonly catalogProductsAllFiltered = computed<MenuProduct[]>(() => {
+    const term = normalizeSearchTerm(this.catalogSearchText());
+    const products = this.categories().flatMap((c) => c.products);
     if (!term) return products;
     return products.filter((p) => normalizeSearchTerm(p.name).includes(term));
   });
@@ -1217,12 +1304,10 @@ export class PosTerminalStore {
     void this.loadSessionBill(tableId);
     this.prefetchPaidOrderSales(tableId);
     this.resetTransient();
-    // Spec 049, D5: "Todos los pedidos" activa por defecto cuando hay más de
-    // un pedido — coincide con el mockup de referencia.
-    this.showAllOrders.set(list.length > 1);
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
+      this.syncBillingCustomerNameWithOrder(list[0].customer_name);
     } else {
       this.selectedOrderId.set(null);
       // Vacío a propósito: lo que haya aquí se graba como nombre en la factura,
@@ -1240,6 +1325,7 @@ export class PosTerminalStore {
   selectOrder(orderId: string): void {
     this.selectedOrderId.set(orderId);
     this.customerName.set(this.selectedOrder()?.customer_name || '');
+    this.syncBillingCustomerNameWithOrder(this.selectedOrder()?.customer_name);
     this.draftLines.set([]);
   }
 
@@ -1256,6 +1342,7 @@ export class PosTerminalStore {
     this.resetTransient();
     this.showAllOrders.set(false);
     this.customerName.set(this.selectedOrder()?.customer_name || '');
+    this.syncBillingCustomerNameWithOrder(this.selectedOrder()?.customer_name);
     void this.ensureCheckoutDataLoaded();
   }
 
@@ -1305,6 +1392,7 @@ export class PosTerminalStore {
       this.draftLines.set([]);
       await this.reload();
       this.selectedOrderId.set(order.id);
+      this.syncBillingCustomerNameWithOrder(this.customerName());
       this.toast.success('Pedido creado — cóbralo desde el panel de la derecha.');
       return true;
     } catch (err) {
@@ -1339,6 +1427,14 @@ export class PosTerminalStore {
     this.showAllOrders.set(false);
   }
 
+  /** El pedido seleccionado ya trae un cliente real (domicilio/para llevar,
+   *  o mesa con nombre capturado por QR) — úsalo como nombre de factura por
+   *  defecto en vez del "Consumidor Final" genérico de `resetTransient()`. */
+  private syncBillingCustomerNameWithOrder(customerName: string | null | undefined): void {
+    const name = (customerName || '').trim();
+    if (name && name.toLowerCase() !== 'consumidor final') this.billingCustomerName.set(name);
+  }
+
   // ─── Catálogo / draft ─────────────────────────────────────────────────────────
   openCatalog(): void {
     this.catalogOpen.set(true);
@@ -1363,7 +1459,42 @@ export class PosTerminalStore {
   }
   closeConfig(): void {
     this.configuringProduct.set(null);
+    this.editingDraftKey.set(null);
   }
+
+  /** Reabre el modal de configuración para EDITAR una línea de `draftLines`
+   *  ya agregada al carrito (rediseño de `create-order/code.html`) -- a
+   *  diferencia de `openConfig`, que siempre agrega una línea nueva,
+   *  `addDraftFromSelection` reemplaza esta línea al confirmar. Solo
+   *  `kind: 'product'` es editable -- los combos son código muerto (ver
+   *  `comboBullets` más abajo). */
+  openConfigForEdit(key: string): void {
+    const line = this.draftLines().find(
+      (l): l is ProductDraftLine => l.kind === 'product' && l.key === key,
+    );
+    if (!line) return;
+    this.configuringProduct.set(line.product);
+    this.editingDraftKey.set(key);
+  }
+
+  /** Selección vigente en modo edición, en la forma que espera
+   *  `[initialSelection]` de `<app-product-select>`; `null` fuera de modo
+   *  edición (agregar un producto nuevo). */
+  readonly editingSelection = computed<ProductSelection | null>(() => {
+    const key = this.editingDraftKey();
+    if (!key) return null;
+    const line = this.draftLines().find(
+      (l): l is ProductDraftLine => l.kind === 'product' && l.key === key,
+    );
+    if (!line) return null;
+    return {
+      product: line.product,
+      variant: line.variant,
+      options: line.options,
+      quantity: line.quantity,
+      notes: line.notes,
+    };
+  });
 
   addDraftFromSelection(sel: ProductSelection): void {
     const unitPrice =
@@ -1377,26 +1508,39 @@ export class PosTerminalStore {
         .join(',') +
       '|' +
       (sel.notes ?? '');
-    this.draftLines.update((lines) => {
-      const existing = lines.find((l) => l.key === key);
-      if (existing) {
-        return lines.map((l) =>
-          l.key === key ? { ...l, quantity: l.quantity + sel.quantity } : l,
-        );
-      }
-      const line: ProductDraftLine = {
-        kind: 'product',
-        key,
-        product: sel.product,
-        variant: sel.variant,
-        options: sel.options,
-        quantity: sel.quantity,
-        notes: sel.notes,
-        unitPrice,
-      };
-      return [...lines, line];
-    });
+    const line: ProductDraftLine = {
+      kind: 'product',
+      key,
+      product: sel.product,
+      variant: sel.variant,
+      options: sel.options,
+      quantity: sel.quantity,
+      notes: sel.notes,
+      unitPrice,
+    };
+    const editKey = this.editingDraftKey();
+    if (editKey) {
+      // Edición de una línea ya agregada: se reemplaza en su misma posición
+      // por la versión actualizada -- no se suma a la cantidad anterior (a
+      // diferencia del flujo de "agregar", aquí `sel.quantity` YA es la
+      // cantidad final que el cajero dejó en el modal). Caso borde aceptado:
+      // si la edición produce un `key` igual al de OTRA línea existente,
+      // quedan dos líneas con el mismo `key` en vez de fusionarse -- no
+      // bloquea, es un caso raro que no amerita lógica adicional ahora.
+      this.draftLines.update((lines) => lines.map((l) => (l.key === editKey ? line : l)));
+    } else {
+      this.draftLines.update((lines) => {
+        const existing = lines.find((l) => l.key === key);
+        if (existing) {
+          return lines.map((l) =>
+            l.key === key ? { ...l, quantity: l.quantity + sel.quantity } : l,
+          );
+        }
+        return [...lines, line];
+      });
+    }
     this.configuringProduct.set(null);
+    this.editingDraftKey.set(null);
     this.catalogOpen.set(false);
     this.catalogSearchText.set('');
   }

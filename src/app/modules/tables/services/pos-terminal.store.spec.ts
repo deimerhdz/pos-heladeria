@@ -1151,6 +1151,180 @@ describe('PosTerminalStore.createManualOrderFromDraft', () => {
   });
 });
 
+// ── Editar una línea del carrito ya agregada (rediseño create-order/code.html) ──
+describe('PosTerminalStore — openConfigForEdit / editingSelection / addDraftFromSelection en modo edición', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  function addMango(): void {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 2,
+      notes: 'Sin azúcar',
+    });
+  }
+
+  it('openConfigForEdit abre el modal con el producto de la línea y marca editingDraftKey', () => {
+    addMango();
+    const key = store.draftLines()[0].key;
+
+    store.openConfigForEdit(key);
+
+    expect(store.configuringProduct()?.name).toBe('Mango Tropical');
+    expect(store.editingDraftKey()).toBe(key);
+  });
+
+  it('openConfigForEdit con una key inexistente no hace nada', () => {
+    store.openConfigForEdit('no-existe');
+
+    expect(store.configuringProduct()).toBeNull();
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('editingSelection refleja la línea en edición como ProductSelection; null fuera de edición', () => {
+    expect(store.editingSelection()).toBeNull();
+
+    addMango();
+    const key = store.draftLines()[0].key;
+    store.openConfigForEdit(key);
+
+    expect(store.editingSelection()).toEqual(
+      expect.objectContaining({ quantity: 2, notes: 'Sin azúcar' }),
+    );
+  });
+
+  it('closeConfig limpia editingDraftKey además de configuringProduct', () => {
+    addMango();
+    store.openConfigForEdit(store.draftLines()[0].key);
+
+    store.closeConfig();
+
+    expect(store.configuringProduct()).toBeNull();
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('confirmar una edición REEMPLAZA la línea en su lugar, no suma cantidades ni agrega una línea nueva', () => {
+    addMango();
+    const originalKey = store.draftLines()[0].key;
+    store.openConfigForEdit(originalKey);
+
+    // El cajero quita el azúcar de las notas y deja la cantidad en 2 (la
+    // precargada) -- `sel.quantity` YA es la cantidad final, no se suma.
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 2,
+      notes: null,
+    });
+
+    expect(store.draftLines().length).toBe(1);
+    expect(store.draftLines()[0].notes).toBeNull();
+    expect(store.draftLines()[0].quantity).toBe(2);
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('cancelar la edición (closeConfig) no modifica la línea original', () => {
+    addMango();
+    const key = store.draftLines()[0].key;
+    store.openConfigForEdit(key);
+
+    store.closeConfig();
+
+    expect(store.draftLines().length).toBe(1);
+    expect(store.draftLines()[0].notes).toBe('Sin azúcar');
+  });
+});
+
+// ── Descuento por línea del carrito -- cartView().promo (rediseño create-order/code.html) ──
+describe('PosTerminalStore.cartView — promo por línea', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('con cantidad >= min_qty, la línea trae promo con el tachado/descuento/ahorro correctos', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 2,
+      notes: null,
+    });
+
+    const row = store.cartView()[0];
+    expect(row.promo).toEqual({
+      badge: '2x1 Promo',
+      originalAmount: 14000,
+      discountedAmount: 11000,
+      savings: 3000,
+    });
+    // `subtotal`/`unitPrice` NO cambian -- siguen a precio completo (FR-023);
+    // `promo` es aparte, solo para pintar la insignia/tachado/ahorro.
+    expect(row.subtotal).toBe(14000);
+  });
+
+  it('con cantidad < min_qty, la línea no trae promo (mismo guardia que product-select)', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+
+    expect(store.cartView()[0].promo).toBeNull();
+  });
+
+  it('sin promoción en la variante, la línea no trae promo', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Cono' } as never,
+      variant: { id: 'v1', price: 8000 } as never,
+      options: [],
+      quantity: 3,
+      notes: null,
+    });
+
+    expect(store.cartView()[0].promo).toBeNull();
+  });
+});
+
 // ── spec 056: totals() suma deliveryFee solo con "domicilios" ──────────────
 describe('PosTerminalStore.totals — deliveryFee (spec 056, FR-009/FR-012)', () => {
   let store: PosTerminalStore;

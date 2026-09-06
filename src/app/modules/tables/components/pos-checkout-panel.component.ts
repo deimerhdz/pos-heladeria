@@ -13,6 +13,7 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
+import { BillSummaryComponent } from './bill-summary.component';
 import {
   PaymentDraft,
   emptyPaymentDraft,
@@ -21,7 +22,9 @@ import {
 } from '../services/payment-draft.util';
 
 /**
- * Columna derecha: cuenta de la mesa y cobro.
+ * Cuenta de la mesa y cobro -- se apila debajo de `app-pos-order-panel`
+ * (siempre en una sola columna, a pedido del usuario; antes iba al lado en
+ * pantallas anchas).
  *
  * Feature 028 ("terminal híbrida por origen"): la barra lateral ya no muestra
  * siempre el mismo panel de cobro — se decide por el **origen** del pedido
@@ -47,11 +50,11 @@ import {
 @Component({
   selector: 'app-pos-checkout-panel',
   standalone: true,
-  imports: [SessionBillPanelComponent, PaymentInputComponent],
+  imports: [SessionBillPanelComponent, PaymentInputComponent, BillSummaryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
-      class="w-full lg:w-[320px] shrink-0 flex flex-col border-t border-gray-200 lg:border-t-0 lg:border-l min-h-0 bg-white"
+      class="w-full shrink-0 flex flex-col border-t border-[#e5e7eb] min-h-0 bg-white"
     >
       <div class="flex-1 overflow-y-auto p-4">
         <!--
@@ -63,19 +66,19 @@ import {
         -->
         @if (store.billStale() && !store.billLoading()) {
           <div
-            class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+            class="mb-3 flex items-center gap-2 rounded-[6px] border border-[#fef3c7] bg-[#fffbeb] px-3 py-2"
           >
-            <span class="text-sm text-amber-800 flex-1">La cuenta cambió</span>
+            <span class="text-[13px] text-[#92400e] flex-1">La cuenta cambió</span>
             <button
               (click)="store.refreshBill()"
-              class="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors"
+              class="px-2.5 py-1 rounded-[6px] bg-[#d97706] hover:bg-[#b45309] text-white text-[11px] font-semibold transition-colors"
             >
               Actualizar
             </button>
           </div>
         }
         @if (store.billLoading()) {
-          <p class="text-xs text-gray-400 py-8 text-center">Cargando cuenta…</p>
+          <p class="text-[12px] text-[#9ca3af] py-8 text-center">Cargando cuenta…</p>
         } @else if (sidebarMode() === 'resumen') {
           <!-- Origen QR: solo lectura (T004/T009). -->
           <app-session-bill-panel
@@ -118,7 +121,7 @@ import {
             <button
               (click)="store.rejectOrder()"
               [disabled]="store.submitting()"
-              class="w-full min-h-11 py-2 mt-2 border border-red-200 text-red-700 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-40 transition-colors"
+              class="w-full min-h-11 py-2 mt-2 border border-[#fecaca] text-[#b91c1c] rounded-[6px] text-[13px] font-medium hover:bg-[#fef2f2] disabled:opacity-40 transition-colors"
             >
               Rechazar pedido
             </button>
@@ -126,7 +129,7 @@ import {
         } @else {
           <!-- Origen mostrador (o mesa sin pedido todavía): cobro editable (T024). -->
           <div class="flex flex-col h-full">
-            <h2 class="text-base font-bold text-gray-900 mb-3">
+            <h2 class="text-[15px] font-bold text-[#111827] mb-3">
               {{ store.selectedOrder() ? 'Cobrar pedido' : 'Pedido de mostrador' }}
             </h2>
 
@@ -140,13 +143,13 @@ import {
                 (click)="goToNewOrder()"
                 [disabled]="!newOrderTableId()"
                 [title]="!newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
-                class="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                class="w-full py-2.5 bg-[#4f46e5] text-white rounded-[6px] text-[13px] font-semibold hover:bg-[#4338ca] disabled:opacity-40 transition-colors"
               >
                 + Crear pedido nuevo
               </button>
             } @else {
               <div class="mb-2">
-                <label class="block text-sm font-medium text-gray-600 mb-1"
+                <label class="block text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide mb-1"
                   >Facturar a nombre de</label
                 >
                 <div class="relative">
@@ -157,15 +160,14 @@ import {
                     (input)="store.billingCustomerName.set($any($event.target).value)"
                     (blur)="onFacturacionBlur()"
                     placeholder="Consumidor Final"
-                    class="w-full min-h-11 px-3 py-2 pr-9 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                    [class.bg-gray-50]="!editandoFacturacion()"
-                    [class.text-gray-500]="!editandoFacturacion()"
+                    class="w-full min-h-11 px-3 py-2 pr-9 border border-[#e5e7eb] rounded-[6px] text-[14px] text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#4f46e5]"
+                    [class]="editandoFacturacion() ? '' : 'bg-[#f9fafb] text-[#6b7280]'"
                   />
                   <button
                     type="button"
                     (click)="toggleEditarFacturacion()"
                     title="Editar nombre de facturación"
-                    class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                    class="absolute right-2 inset-y-0 flex items-center text-[#9ca3af] hover:text-[#4b5563] transition-colors"
                   >
                     ✏️
                   </button>
@@ -179,36 +181,27 @@ import {
                 que la cuenta de mesa; Descuento y Domicilio solo si son > 0.
               -->
               @if (preview(); as p) {
-                <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 my-3 space-y-1 text-sm">
-                  <div class="flex justify-between text-gray-600">
-                    <span>Subtotal</span><span>{{ store.fmt(+p.subtotal) }}</span>
-                  </div>
-                  @if (+p.discount > 0) {
-                    <div class="flex justify-between text-emerald-700">
-                      <span>Descuento</span><span>− {{ store.fmt(+p.discount) }}</span>
-                    </div>
-                  }
-                  @if (+p.delivery_fee > 0) {
-                    <div class="flex justify-between text-gray-600">
-                      <span>Domicilio</span><span>{{ store.fmt(+p.delivery_fee) }}</span>
-                    </div>
-                  }
-                  <div class="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
-                    <span>Total</span><span>{{ store.fmt(+p.total) }}</span>
-                  </div>
+                <div class="rounded-[6px] border border-[#e5e7eb] bg-[#f9fafb] px-3 py-2 my-3 space-y-1">
+                  <app-bill-summary
+                    [subtotal]="+p.subtotal"
+                    [discount]="+p.discount"
+                    [deliveryFee]="+p.delivery_fee"
+                    [total]="+p.total"
+                    size="sm"
+                  />
                 </div>
               } @else {
                 <!-- FR-007a: nunca un total provisional — estado "calculando"
                      visible y "Cobrar" deshabilitado hasta recibir el total. -->
-                <p class="text-sm text-gray-400 py-3 text-center">Calculando el total…</p>
+                <p class="text-[13px] text-[#9ca3af] py-3 text-center">Calculando el total…</p>
               }
 
               @if (store.checkoutPreviewStale() && !store.checkoutPreviewLoading()) {
-                <div class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                  <span class="text-sm text-amber-800 flex-1">El total cambió</span>
+                <div class="mb-3 flex items-center gap-2 rounded-[6px] border border-[#fef3c7] bg-[#fffbeb] px-3 py-2">
+                  <span class="text-[13px] text-[#92400e] flex-1">El total cambió</span>
                   <button
                     (click)="store.loadCheckoutPreview(store.selectedOrderId())"
-                    class="px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors"
+                    class="px-2.5 py-1 rounded-[6px] bg-[#d97706] hover:bg-[#b45309] text-white text-[11px] font-semibold transition-colors"
                   >
                     Actualizar
                   </button>
@@ -224,15 +217,15 @@ import {
               }
 
               @if (store.error()) {
-                <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 my-3">
-                  <p class="text-sm text-red-700">{{ store.error() }}</p>
+                <div class="bg-[#fef2f2] border border-[#fecaca] rounded-[6px] px-3 py-2 my-3">
+                  <p class="text-[13px] text-[#b91c1c]">{{ store.error() }}</p>
                 </div>
               }
 
               <button
                 (click)="checkout()"
                 [disabled]="store.checkoutSubmitting() || !preview() || store.checkoutPreviewLoading() || issue() !== null"
-                class="w-full min-h-11 py-2.5 mt-3 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                class="w-full min-h-11 py-2.5 mt-3 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[14px] font-semibold rounded-[6px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 {{ store.checkoutSubmitting() ? 'Cobrando…' : 'Cobrar' }}
               </button>
@@ -241,7 +234,7 @@ import {
               <button
                 (click)="store.rejectOrder()"
                 [disabled]="store.submitting() || store.checkoutSubmitting()"
-                class="w-full min-h-11 py-2 mt-2 border border-red-200 text-red-700 rounded-xl text-sm font-medium hover:bg-red-50 disabled:opacity-40 transition-colors"
+                class="w-full min-h-11 py-2 mt-2 border border-[#fecaca] text-[#b91c1c] rounded-[6px] text-[13px] font-medium hover:bg-[#fef2f2] disabled:opacity-40 transition-colors"
               >
                 Rechazar pedido
               </button>
@@ -258,7 +251,7 @@ import {
           modos del panel (resumen QR, showSessionCharge) sin cambios (FR-008).
         -->
         @if (!pendingCheckout()) {
-          <div class="p-3 border-t border-gray-100 space-y-2 shrink-0">
+          <div class="p-3 border-t border-[#e5e7eb] space-y-2 shrink-0">
             @if (store.selectedOrder(); as order) {
               <!--
                 FR-001/FR-002 (spec 029, Historia 4): única acción de impresión
@@ -271,7 +264,7 @@ import {
               -->
               <button
                 (click)="store.printOrderInvoice(order.id)"
-                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] transition-colors"
               >
                 🧾 Imprimir Factura
               </button>
@@ -288,7 +281,7 @@ import {
               <button
                 (click)="store.releaseTable()"
                 [disabled]="store.submitting()"
-                class="w-full min-h-11 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] disabled:opacity-40 transition-colors"
               >
                 🔓 Liberar Mesa
               </button>

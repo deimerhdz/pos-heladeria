@@ -182,6 +182,63 @@ describe('ProductSelectComponent', () => {
     expect(component.lineTotal()).toBe(12000); // 6000 * 2
   });
 
+  it('el precio de línea aplica el precio de paquete a partir de `promotion.unit_equivalent` cuando el backend no pobló discounted_price (min_qty > 1, caso real del menú)', () => {
+    // spec 066 / menu_unit_discount (backend): con min_qty > 1 el backend deja
+    // discounted_price/discount_kind en null a propósito -- al navegar el menú
+    // sin carrito no puede prometer un precio que depende de una cantidad que
+    // el comensal aún no eligió. `promotion.unit_equivalent` sí llega siempre.
+    const promo: MenuVariantPromotion = {
+      condition_text: 'Llevando 2 Pequeña pagas $7.000',
+      short_condition: '2 x $7.000',
+      unit_equivalent: 3500,
+      unit_equivalent_approx: false,
+      unit_equivalent_text: '$3.500 c/u',
+      display_text: '2 x $7.000 · $3.500 c/u',
+      type: 'package_price',
+      min_qty: 2,
+      value: 7000,
+    };
+    create(makeProduct({
+      variants: [makeVariant({
+        price: 15000, discounted_price: null, discount_kind: null, promotion: promo,
+      })],
+    }));
+
+    // Cantidad arranca en 1: no alcanza el min_qty=2 -> precio normal.
+    expect(component.lineTotal()).toBe(15000);
+
+    component.inc(); // Cantidad = 2: ahora sí califica.
+    expect(component.lineTotal()).toBe(7000); // 3500 * 2, no 15000 * 2
+  });
+
+  it('con min_qty > 1 el remanente que no completa otro bloque va a precio normal, como en el motor real del cobro (_greedy_units)', () => {
+    const promo: MenuVariantPromotion = {
+      condition_text: 'Llevando 2 Pequeña pagas $7.000',
+      short_condition: '2 x $7.000',
+      unit_equivalent: 3500,
+      unit_equivalent_approx: false,
+      unit_equivalent_text: '$3.500 c/u',
+      display_text: '2 x $7.000 · $3.500 c/u',
+      type: 'package_price',
+      min_qty: 2,
+      value: 7000,
+    };
+    create(makeProduct({
+      variants: [makeVariant({
+        price: 15000, discounted_price: null, discount_kind: null, promotion: promo,
+      })],
+    }));
+
+    for (let i = 1; i < 3; i++) component.inc();
+    expect(component.lineTotal()).toBe(22000); // Cantidad = 3: 1 paquete (7000) + 1 normal (15000)
+
+    component.inc();
+    expect(component.lineTotal()).toBe(14000); // Cantidad = 4: 2 paquetes (2*7000), sin remanente
+
+    component.inc();
+    expect(component.lineTotal()).toBe(29000); // Cantidad = 5: 2 paquetes (14000) + 1 normal (15000)
+  });
+
   // ── Topes de cantidad (spec 065, US4) ───────────────────────────────────────
 
   it('el botón "+" de una opción se deshabilita al alcanzar max_quantity_per_option', () => {
@@ -371,5 +428,75 @@ describe('ProductSelectComponent — información de promoción (spec 066)', () 
 
     const lineas = el.textContent?.match(/c\/u/g) ?? [];
     expect(lineas.length).toBe(1);
+  });
+});
+
+// ── `[initialSelection]`: precarga para editar una línea ya agregada
+// (rediseño create-order/code.html) ─────────────────────────────────────────
+describe('ProductSelectComponent — [initialSelection] (edición de una línea del carrito)', () => {
+  let fixture: ComponentFixture<ProductSelectComponent>;
+  let component: ProductSelectComponent;
+
+  function create(product: MenuProduct, initialSelection: ProductSelection | null = null): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ imports: [ProductSelectComponent] });
+    fixture = TestBed.createComponent(ProductSelectComponent);
+    component = fixture.componentInstance;
+    component.product = product;
+    component.initialSelection = initialSelection;
+    fixture.detectChanges(); // ngOnInit
+  }
+
+  it('sin initialSelection, preselecciona la primera variante disponible (no regresión)', () => {
+    const v1 = makeVariant({ id: 'v1' });
+    const v2 = makeVariant({ id: 'v2' });
+    create(makeProduct({ variants: [v1, v2] }));
+
+    expect(component.variantId()).toBe('v1');
+  });
+
+  it('con initialSelection, precarga variante, cantidad y notas', () => {
+    const v1 = makeVariant({ id: 'v1' });
+    const v2 = makeVariant({ id: 'v2' });
+    const product = makeProduct({ variants: [v1, v2] });
+    create(product, {
+      product,
+      variant: v2,
+      options: [],
+      quantity: 3,
+      notes: 'Sin frutos secos',
+    });
+
+    expect(component.variantId()).toBe('v2');
+    expect(component.quantity()).toBe(3);
+    expect(component.notes()).toBe('Sin frutos secos');
+  });
+
+  it('con initialSelection, precarga las opciones elegidas resolviendo su grupo por búsqueda (MenuOption no lleva group_id)', () => {
+    const topping = makeOption({ id: 'top1', name: 'Chispas' });
+    const group = makeGroup({ id: 'g1', options: [topping] });
+    const variant = makeVariant({ id: 'v1', option_groups: [group] });
+    const product = makeProduct({ variants: [variant] });
+    create(product, {
+      product,
+      variant,
+      options: [{ option: topping, quantity: 1 }],
+      quantity: 1,
+      notes: null,
+    });
+
+    expect(component.optionQuantity(group.id, topping.id)).toBe(1);
+  });
+
+  it('el botón de confirmar dice "Guardar cambios" en modo edición, "Agregar" si no', () => {
+    const variant = makeVariant({ id: 'v1' });
+    const product = makeProduct({ variants: [variant] });
+
+    create(product, { product, variant, options: [], quantity: 1, notes: null });
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Guardar cambios');
+
+    create(product);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Guardar cambios');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Agregar');
   });
 });

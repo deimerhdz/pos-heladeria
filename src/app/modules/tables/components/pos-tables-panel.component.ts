@@ -75,10 +75,6 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
         <div class="flex-1 min-w-0 overflow-y-auto p-3">
           <div data-testid="mesas-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
             @for (t of store.tablesView(); track t.id) {
-              <!-- Selección de mesa deshabilitada a pedido del usuario --
-                   "por ahora no debe suceder nada" al tocar una mesa. Para
-                   reactivarla, restaurar el binding (select) a
-                   store.selectTable(t.id) en este mismo elemento. -->
               <app-order-summary-card
                 [title]="'Mesa ' + t.number"
                 [statusLabel]="t.statusLabelShort"
@@ -88,6 +84,7 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
                 [totalLabel]="t.totalLabel"
                 [ordersCount]="t.ordersCount"
                 [selected]="t.selected"
+                (select)="store.selectTable(t.id)"
               />
             }
           </div>
