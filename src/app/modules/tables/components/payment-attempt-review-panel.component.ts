@@ -15,6 +15,8 @@ import { DiningSessionService } from '../services/dining-session.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { formatMoney } from '../../../shared/money';
+import { BillSummaryComponent } from './bill-summary.component';
 
 /**
  * Revisión de pagos del cajero para una orden (spec 024): aprobar/rechazar el
@@ -34,7 +36,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
 @Component({
   selector: 'app-payment-attempt-review-panel',
   standalone: true,
-  imports: [FormsModule, MoneyInputComponent],
+  imports: [FormsModule, MoneyInputComponent, BillSummaryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (loading()) {
@@ -57,23 +59,14 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           y el chequeo del "monto recibido" salen de este mismo Total.
         -->
         @if (checkoutPreview(); as p) {
-          <div class="rounded-lg border border-amber-100 bg-white/70 px-3 py-2 space-y-1 text-sm">
-            <div class="flex justify-between text-gray-600">
-              <span>Subtotal</span><span>$ {{ money(p.subtotal) }}</span>
-            </div>
-            @if (+p.discount > 0) {
-              <div class="flex justify-between text-emerald-700">
-                <span>Descuento</span><span>− $ {{ money(p.discount) }}</span>
-              </div>
-            }
-            @if (+p.delivery_fee > 0) {
-              <div class="flex justify-between text-gray-600">
-                <span>Domicilio</span><span>$ {{ money(p.delivery_fee) }}</span>
-              </div>
-            }
-            <div class="flex justify-between font-bold text-gray-900 pt-1 border-t border-amber-100">
-              <span>Total</span><span>$ {{ money(p.total) }}</span>
-            </div>
+          <div class="rounded-lg border border-amber-100 bg-white/70 px-3 py-2 space-y-1">
+            <app-bill-summary
+              [subtotal]="+p.subtotal"
+              [discount]="+p.discount"
+              [deliveryFee]="+p.delivery_fee"
+              [total]="+p.total"
+              size="sm"
+            />
           </div>
         } @else if (checkoutPreviewError()) {
           <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center justify-between gap-2">
@@ -98,8 +91,8 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           <div class="rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2 text-sm text-amber-900 space-y-1.5">
             <p>
               El total cambió respecto al declarado por el comensal:
-              antes $ {{ money(cardDeclaredTotal().toString()) }},
-              ahora $ {{ money(checkoutPreview()!.total) }}.
+              antes {{ money(cardDeclaredTotal()) }},
+              ahora {{ money(checkoutPreview()!.total) }}.
             </p>
             @if (!totalChangeAck()) {
               <button
@@ -116,9 +109,10 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
           <!-- Efectivo: el cajero registra el monto, el backend calcula el cambio. -->
           <div class="flex items-center gap-2 flex-wrap">
             <app-money-input
+              class="w-full sm:w-36"
               [(ngModel)]="amountReceived"
               placeholder="Monto recibido"
-              sizeClass="w-36 min-h-11 px-2 py-1 text-base rounded-lg"
+              sizeClass="w-full min-h-11 px-2 py-1 text-base rounded-lg"
             />
             <button
               (click)="confirmCash(attempt)"
@@ -149,7 +143,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
             -->
             <div class="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
               <span class="text-sm font-medium text-emerald-800">Cambio</span>
-              <span class="text-lg font-bold text-emerald-700">$ {{ money(cambio.toString()) }}</span>
+              <span class="text-lg font-bold text-emerald-700">{{ money(cambio) }}</span>
             </div>
           }
         } @else if (attempt.receipt_file_url) {
@@ -238,7 +232,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
         <p class="text-base text-emerald-700 font-medium">✓ Pago confirmado ({{ last.payment_method_name }})</p>
         @if (last.is_cash) {
           <p class="text-sm text-emerald-700">
-            Recibido: $ {{ money(last.amount_received) }} · Cambio: $ {{ money(last.change_amount) }}
+            Recibido: {{ money(last.amount_received) }} · Cambio: {{ money(last.change_amount) }}
           </p>
         }
       } @else {
@@ -392,10 +386,11 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
   }
 
   /** spec 026, FR-004/FR-005: formatea el monto recibido/cambio de forma
-   *  consistente, incluyendo explícitamente "0.00" cuando el cambio es cero
-   *  (nunca se omite el dato). */
-  money(value: string | null): string {
-    return Number(value ?? 0).toFixed(2);
+   *  consistente con el resto de la terminal (`formatMoney`, "$ 17.000"),
+   *  incluyendo explícitamente "$ 0" cuando el cambio es cero (nunca se omite
+   *  el dato). */
+  money(value: string | number | null): string {
+    return formatMoney(Number(value ?? 0));
   }
 
   /** spec 073, US7 (FR-022, research.md D14): el `Total` real a cobrar sale del

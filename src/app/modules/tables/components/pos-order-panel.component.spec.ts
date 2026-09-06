@@ -486,7 +486,7 @@ describe('PosOrderPanelComponent — placeholder cuando no hay mesa seleccionada
   });
 });
 
-/** Spec 049: cabecera de solo lectura + pestañas "Todos los pedidos"/"Pedido N". */
+/** Spec 049: cabecera de solo lectura + pestañas "Pedido N". */
 describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
   let fixture: ComponentFixture<PosOrderPanelComponent>;
   let store: PosTerminalStore;
@@ -557,61 +557,27 @@ describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
     expect(el.querySelector('input[type="text"]')).toBeNull();
   });
 
-  it('con dos pedidos activos aparecen "Todos los pedidos (2)", "Pedido 1", "Pedido 2", con "Todos los pedidos" activa por defecto', () => {
+  it('con dos pedidos activos aparecen "Pedido 1" y "Pedido 2", sin la opción "Todos los pedidos"', () => {
     store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
     store.selectedTableId.set('t1');
     store.selectedOrderId.set('o1');
-    store.showAllOrders.set(true);
     fixture.detectChanges();
 
-    expect(findButton('Todos los pedidos (2)')).toBeDefined();
     expect(findButton('Pedido 1')).toBeDefined();
     expect(findButton('Pedido 2')).toBeDefined();
-    expect(store.showAllOrders()).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Todos los pedidos');
   });
 
-  it('en "Todos los pedidos" se ven ambas tarjetas a la vez, cada una con su hora y su pastilla de estado', () => {
+  it('elegir "Pedido 2" enfoca esa orden', () => {
     store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
     store.selectedTableId.set('t1');
     store.selectedOrderId.set('o1');
-    store.showAllOrders.set(true);
     fixture.detectChanges();
 
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('2x');
-    expect(el.textContent).toContain('Listo');
-    expect(el.textContent).toContain('Pendiente');
-    // 2x por cada una de las dos tarjetas.
-    expect(el.textContent!.match(/2x/g)?.length).toBe(2);
-  });
-
-  it('elegir "Pedido 1" muestra solo esa tarjeta y oculta la de "Pedido 2"', () => {
-    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
-    store.selectedTableId.set('t1');
-    store.selectedOrderId.set('o1');
-    store.showAllOrders.set(true);
+    findButton('Pedido 2')!.click();
     fixture.detectChanges();
 
-    findButton('Pedido 1')!.click();
-    fixture.detectChanges();
-
-    expect(store.showAllOrders()).toBe(false);
-    expect(store.selectedOrderId()).toBe('o1');
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent!.match(/2x/g)?.length).toBe(1);
-  });
-
-  it('"+ Agregar producto" no aparece en "Todos los pedidos" pero sí dentro de una pestaña individual', () => {
-    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
-    store.selectedTableId.set('t1');
-    store.selectedOrderId.set('o1');
-    store.showAllOrders.set(true);
-    fixture.detectChanges();
-    expect(findButton('＋ Agregar producto')).toBeUndefined();
-
-    findButton('Pedido 1')!.click();
-    fixture.detectChanges();
-    expect(findButton('＋ Agregar producto')).toBeDefined();
+    expect(store.selectedOrderId()).toBe('o2');
   });
 
   it('con un único pedido activo no aparece ningún selector de pestañas', () => {
@@ -622,21 +588,6 @@ describe('PosOrderPanelComponent — cabecera y pestañas (spec 049)', () => {
 
     expect(fixture.nativeElement.textContent).not.toContain('Todos los pedidos');
     expect(fixture.nativeElement.textContent).not.toContain('Pedido 1');
-  });
-
-  it('marcar listo desde una tarjeta que no es la seleccionada por defecto afecta al pedido correcto', () => {
-    store.orders.set([ordenSimple('o1', 'listo'), ordenSimple('o2', 'pendiente')]);
-    store.selectedTableId.set('t1');
-    store.selectedOrderId.set('o1'); // seleccionado: o1 (ya "listo", sin botón)
-    store.showAllOrders.set(true);
-    fixture.detectChanges();
-
-    // El único botón "Marcar pedido listo" visible es el de la tarjeta o2
-    // (la única "Pendiente"); confirma que apunta a ese pedido, no al
-    // seleccionado.
-    findButton('Marcar pedido listo')!.click();
-    // PATCH por ítem (bugfix A-16), no "ready" — ver marcarListo().
-    http.expectOne(`${API}/orders/items/o2-i1/kitchen`).flush({ detail: 'boom' }, { status: 500, statusText: 'Error' });
   });
 
   it('spec 049, FR-001: no existe ningún control "+ Nuevo pedido" con varios pedidos activos', () => {

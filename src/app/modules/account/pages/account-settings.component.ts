@@ -23,6 +23,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: 'Super Admin',
   [UserRole.ADMIN]: 'Administrador',
   [UserRole.CASHIER]: 'Cajero',
+  [UserRole.MESERO]: 'Mesero',
 };
 
 @Component({

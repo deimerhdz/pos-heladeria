@@ -23,9 +23,9 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
   host: { class: 'flex-1 flex flex-col min-h-0' },
   template: `
     @if (!store.hasActiveSelection()) {
-      <div class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 p-6 gap-2">
+      <div class="flex-1 flex flex-col items-center justify-center text-center text-[#9ca3af] p-6 gap-2">
         <div class="text-4xl">🍽️</div>
-        <p class="text-sm max-w-xs">
+        <p class="text-[13px] max-w-xs">
           Selecciona una mesa para ver su pedido, o usa el filtro "Pendientes" de arriba para
           encontrar pagos por confirmar.
         </p>
@@ -35,23 +35,53 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
         <!-- Header: mesa + estado + cliente en una sola fila, siempre de solo
              lectura (spec 049, FR-006/FR-008) — el nombre ya no se edita
              desde aquí. -->
-        <div class="p-4 border-b border-gray-100 space-y-2 shrink-0">
+        <div class="p-4 border-b border-[#e5e7eb] space-y-2 shrink-0">
           <div class="flex items-start justify-between gap-2">
-            <div class="flex items-center gap-2 flex-wrap">
-              <h3 class="text-lg font-bold text-gray-900">{{ headerTitle() }}</h3>
-              @if (store.selectedTableStatusMeta(); as meta) {
-                <span class="px-2 py-0.5 rounded-full text-xs font-medium" [class]="meta.chip">{{ meta.label }}</span>
+            <div class="flex items-center gap-2.5 min-w-0">
+              <!-- Insignia numerada: solo tiene sentido con una mesa real
+                   (Domicilio/Para llevar no tienen un número que mostrar). -->
+              @if (store.selectedTable(); as t) {
+                <span class="w-8 h-8 rounded-[6px] bg-[#4f46e5] text-white flex items-center justify-center text-[13px] font-bold shrink-0">{{ t.number }}</span>
               }
-              <span class="text-sm font-semibold text-gray-700">{{ store.customerName() || store.customerPlaceholder() }}</span>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-[16px] font-bold text-[#111827] truncate">{{ headerTitle() }}</h3>
+                  @if (store.selectedTableStatusMeta(); as meta) {
+                    <span class="px-2 py-0.5 rounded-[6px] text-[11px] font-medium" [class]="meta.chip">{{ meta.label }}</span>
+                  }
+                </div>
+                <span class="text-[12px] text-[#6b7280]">{{ store.customerName() || store.customerPlaceholder() }}</span>
+              </div>
             </div>
-            <button (click)="store.cancelSelection()" class="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 shrink-0">← Volver</button>
+            <div class="flex items-center gap-2 shrink-0">
+              <!-- Mismo dato que ya calculaba headerStatusText() ("pago
+                   pendiente"), ahora también como insignia visible de un
+                   vistazo -- no se inventa ningún estado nuevo. -->
+              @if (headerStatusText() === 'pago pendiente') {
+                <span class="px-2.5 py-1 rounded-[6px] bg-[#4f46e5] text-white text-[11px] font-semibold whitespace-nowrap">Cobro pendiente</span>
+              }
+              <!-- Oculto por debajo del breakpoint lg: en móvil/tablet ese
+                   mismo cancelSelection() ya lo ofrece el botón de volver a
+                   nivel de página (table-sessions.component.ts), único para
+                   los 3 estados del panel central -- mostrar los dos apilados
+                   sería redundante. -->
+              <button
+                (click)="store.cancelSelection()"
+                title="Cerrar"
+                class="hidden lg:flex w-8 h-8 rounded-[6px] border border-[#e5e7eb] text-[#6b7280] hover:bg-[#f9fafb] items-center justify-center transition-colors shrink-0"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M18 6 6 18M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Spec 059, Historia 3 (FR-012): datos propios de un pedido de
                Domicilio, capturados al crearlo (spec 056) — solo aplica sin
                mesa y con order_type DELIVERY. -->
           @if (!store.selectedTable() && store.selectedOrder()?.order_type === 'DELIVERY') {
-            <div class="text-xs text-gray-500 space-y-0.5">
+            <div class="text-[12px] text-[#6b7280] space-y-0.5">
               <p>📍 {{ store.selectedOrder()?.delivery_address }}</p>
               @if (store.selectedOrder()?.delivery_phone; as phone) {
                 <p>📞 {{ phone }}</p>
@@ -60,85 +90,27 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
             </div>
           }
 
-          @if (!store.showAllOrders()) {
-            <p class="text-xs text-gray-400">
-              {{ store.selectedOrder() ? ('Pedido · ' + headerStatusText()) : 'Pedido nuevo sin guardar' }}
-            </p>
-          }
+          <p class="text-[12px] text-[#9ca3af]">
+            {{ store.selectedOrder() ? ('Pedido · ' + headerStatusText()) : 'Pedido nuevo sin guardar' }}
+          </p>
 
           @if (store.orderTabs().length > 0) {
-            <!-- Spec 049, FR-009: "Todos los pedidos" agrupa las tarjetas de
-                 todos los pedidos de la mesa; cada "Pedido N" enfoca una sola.
-                 Sin "+ Nuevo pedido" (FR-001, spec 049 — retirado sin
+            <!-- Spec 049, FR-009: cada "Pedido N" enfoca una sola orden de la
+                 mesa. Sin "+ Nuevo pedido" (FR-001, spec 049 — retirado sin
                  reemplazo en este panel). -->
             <div class="flex gap-2 flex-wrap">
-              <button
-                (click)="store.showAllOrders.set(true)"
-                class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
-                [class]="store.showAllOrders() ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
-              >Todos los pedidos ({{ store.orderTabs().length }})</button>
               @for (ot of store.orderTabs(); track ot.id) {
                 <button
                   (click)="selectOrderTab(ot.id)"
-                  class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
-                  [class]="!store.showAllOrders() && store.selectedOrderId() === ot.id ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                  class="px-3 py-1.5 text-[12px] font-medium rounded-[6px] border transition-colors"
+                  [class]="store.selectedOrderId() === ot.id ? 'border-[#4f46e5] bg-[#4f46e5] text-white' : 'border-[#e5e7eb] text-[#4b5563] hover:bg-[#f9fafb]'"
                 >{{ ot.label }}</button>
               }
             </div>
           }
         </div>
 
-        @if (store.showAllOrders() && store.orderTabs().length > 0) {
-          <!-- Vista agregada: una tarjeta por pedido, sin edición (spec 049,
-               D5) — agregar productos exige elegir antes una pestaña
-               individual, sin ambigüedad de a cuál pedido se le agrega. -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-4">
-            @for (card of store.ordersView(); track card.order.id) {
-              <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs text-gray-400">{{ card.createdAtLabel }}</span>
-                  <span
-                    class="px-2 py-0.5 rounded-full text-xs font-medium"
-                    [class]="card.pending ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'"
-                  >{{ card.pending ? 'Pendiente' : 'Listo' }}</span>
-                </div>
-                @for (it of card.items; track it.key) {
-                  <div class="flex items-start justify-between gap-2 pt-1 border-t border-gray-50 first:border-t-0 first:pt-0">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="font-semibold text-gray-900 text-sm">{{ it.qty }}x {{ it.name }}</span>
-                        @if (it.kitchenStatus; as estado) {
-                          <span class="px-2 py-0.5 rounded-full text-xs" [class]="statusClass(estado)">{{ statusLabel(estado) }}</span>
-                        }
-                      </div>
-                      @for (b of it.bullets; track $index) {
-                        <div class="text-sm font-medium text-gray-700 pl-1">• {{ b }}</div>
-                      }
-                      <span class="text-xs text-gray-400">{{ store.fmt(it.unitPrice) }} c/u</span>
-                    </div>
-                    <div class="flex flex-col items-end gap-1 shrink-0">
-                      <span class="font-bold text-gray-900 text-sm">{{ store.fmt(it.subtotal) }}</span>
-                      @if (!it.ready) {
-                        <button
-                          (click)="store.avanzarItem(it.key)"
-                          [disabled]="store.submitting()"
-                          class="text-xs font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
-                        >✓ Listo</button>
-                      }
-                    </div>
-                  </div>
-                }
-                @if (card.pending) {
-                  <button
-                    (click)="store.marcarListo(card.order.id)"
-                    [disabled]="store.submitting()"
-                    class="w-full py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                  >Marcar pedido listo</button>
-                }
-              </div>
-            }
-          </div>
-        } @else if (showCatalog()) {
+        @if (showCatalog()) {
           <!-- Catálogo embebido (spec 036, FR-006/FR-007): reemplaza la lista
                de ítems mientras se agrega un producto, sin overlay de
                pantalla completa — "← Volver" del catálogo regresa aquí sin
@@ -148,28 +120,41 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
         <!-- Cart -->
         <div class="flex-1 overflow-y-auto p-4 space-y-3">
           @for (it of store.cartView(); track it.key) {
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-1.5">
+            <div class="bg-white rounded-[6px] border border-[#e5e7eb] p-3 space-y-1.5">
               <div class="flex items-start justify-between gap-2">
-                <span class="font-semibold text-gray-900 text-sm">{{ it.qty }}x {{ it.name }}</span>
-                <span class="font-bold text-gray-900 text-sm">{{ store.fmt(it.subtotal) }}</span>
+                <span class="flex items-center gap-1.5">
+                  <span class="font-semibold text-[#111827] text-[13px]">{{ it.qty }}x {{ it.name }}</span>
+                  @if (it.promo; as promo) {
+                    <span class="bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] text-[10px] font-bold px-1 py-0.2 rounded-[6px]">{{ promo.badge }}</span>
+                  }
+                </span>
+                @if (it.promo; as promo) {
+                  <span class="font-bold text-[#dc2626] text-[13px]">{{ store.fmt(promo.discountedAmount) }}</span>
+                } @else {
+                  <span class="font-bold text-[#111827] text-[13px]">{{ store.fmt(it.subtotal) }}</span>
+                }
               </div>
+              @if (it.promo; as promo) {
+                <div class="flex items-center gap-1.5">
+                  <span class="line-through text-[11px] text-[#6b7280] font-mono">{{ store.fmt(promo.originalAmount) }}</span>
+                  <span class="text-[11px] text-[#15803d] font-semibold font-mono">Ahorras {{ store.fmt(promo.savings) }}</span>
+                </div>
+              }
               @for (b of it.bullets; track $index) {
-                <div class="text-sm font-medium text-gray-700 pl-1">• {{ b }}</div>
+                <div class="text-[13px] font-medium text-[#4b5563] pl-1">• {{ b }}</div>
               }
               <div class="flex items-center justify-between pt-1">
                 @if (it.kind === 'draft') {
                   <div class="flex items-center gap-2">
-                    <button (click)="store.decDraft(it.key)" class="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold">−</button>
-                    <span class="w-5 text-center font-bold text-sm">{{ it.qty }}</span>
-                    <button (click)="store.incDraft(it.key)" class="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold">+</button>
-                    <span class="text-xs text-gray-400 ml-1">{{ store.fmt(it.unitPrice) }} c/u</span>
+                    <button (click)="store.decDraft(it.key)" class="w-7 h-7 rounded-[6px] border border-[#e5e7eb] text-[#4b5563] hover:bg-[#f9fafb] font-bold">−</button>
+                    <span class="w-5 text-center font-bold text-[13px]">{{ it.qty }}</span>
+                    <button (click)="store.incDraft(it.key)" class="w-7 h-7 rounded-[6px] border border-[#e5e7eb] text-[#4b5563] hover:bg-[#f9fafb] font-bold">+</button>
                   </div>
-                  <button (click)="store.removeDraft(it.key)" class="text-xs font-medium text-red-600 hover:text-red-700">Eliminar</button>
+                  <button (click)="store.removeDraft(it.key)" class="text-[11px] font-medium text-[#dc2626] hover:text-[#b91c1c]">Eliminar</button>
                 } @else {
-                  <div class="flex items-center gap-2 text-xs">
-                    <span class="text-gray-400">{{ store.fmt(it.unitPrice) }} c/u</span>
+                  <div class="flex items-center gap-2 text-[11px]">
                     @if (it.kitchenStatus; as estado) {
-                      <span class="px-2 py-0.5 rounded-full" [class]="statusClass(estado)">
+                      <span class="px-2 py-0.5 rounded-[6px]" [class]="statusClass(estado)">
                         {{ statusLabel(estado) }}
                       </span>
                     }
@@ -182,7 +167,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                       <button
                         (click)="store.avanzarItem(it.key)"
                         [disabled]="store.submitting()"
-                        class="text-xs font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
+                        class="text-[11px] font-semibold text-[#15803d] hover:text-[#166534] disabled:opacity-50"
                       >✓ Listo</button>
                     }
                     <!-- Un pedido ya pagado se asume entregado: no se anula
@@ -190,7 +175,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                     @if (!store.selectedOrder()?.paid) {
                       <button
                         (click)="it.comboId ? store.voidPersistedCombo(it.comboId) : store.voidPersistedItem(it.key)"
-                        class="text-xs font-medium text-red-600 hover:text-red-700"
+                        class="text-[11px] font-medium text-[#dc2626] hover:text-[#b91c1c]"
                       >Anular</button>
                     }
                   </div>
@@ -199,12 +184,12 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
             </div>
           }
           @if (store.cartEmpty()) {
-            <div class="text-center text-gray-400 py-10 text-sm">Aún no hay productos en este pedido.</div>
+            <div class="text-center text-[#9ca3af] py-10 text-[13px]">Aún no hay productos en este pedido.</div>
           }
           @if (!readOnly()) {
             <button
               (click)="store.openCatalog()"
-              class="w-full py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1"
+              class="w-full py-2.5 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] flex items-center justify-center gap-1"
             >＋ Agregar producto</button>
           }
 
@@ -215,13 +200,13 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
           <div class="flex gap-2 pt-1">
             @if (store.hasDraft()) {
               <button (click)="store.saveOrder()" [disabled]="store.submitting()"
-                class="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                class="flex-1 py-2.5 bg-[#4f46e5] text-white rounded-[6px] text-[13px] font-semibold hover:bg-[#4338ca] disabled:opacity-50 transition-colors">
                 {{ store.submitting() ? 'Guardando…' : 'Guardar pedido' }}
               </button>
             }
             @if (store.selectedOrder() && !store.kitchenReady()) {
               <button (click)="store.marcarListo()" [disabled]="store.submitting()"
-                class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                class="flex-1 py-2.5 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] disabled:opacity-50 transition-colors">
                 Marcar pedido listo
               </button>
             }

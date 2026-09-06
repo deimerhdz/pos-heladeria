@@ -1,10 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
+import { TenantInfoService } from './core/tenant/tenant-info.service';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [
+        // Evita la cadena TenantInfoService → TenantContextService (necesita
+        // provideTenantInitializer() al arranque real, no presente aquí).
+        { provide: TenantInfoService, useValue: { businessName: () => 'Heladería' } },
+      ],
     }).compileComponents();
   });
 

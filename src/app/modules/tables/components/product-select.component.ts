@@ -14,6 +14,7 @@ import {
   MenuOptionGroup,
   MenuProduct,
   MenuVariant,
+  MenuVariantPromotion,
 } from '../../products/interfaces/product.interface';
 import { normalizeText } from '../../../shared/normalize-text';
 import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
@@ -333,7 +334,7 @@ export interface ProductSelection {
             @if (blockingLabel(); as falta) {
               {{ falta }}
             } @else {
-              <span>Agregar</span>
+              <span>{{ initialSelection ? 'Guardar cambios' : 'Agregar' }}</span>
               <span class="w-1.5 h-1.5 rounded-full bg-white/40"></span>
               <span>{{ lineTotal() | money }}</span>
             }
@@ -345,6 +346,11 @@ export interface ProductSelection {
 })
 export class ProductSelectComponent implements OnInit {
   @Input() product!: MenuProduct;
+  /** Cuando viene con valor, precarga variante/opciones/cantidad/notas de una
+   *  línea de carrito ya agregada en vez de arrancar desde cero -- modo
+   *  edición del rediseño de `create-order/code.html` (`store.editingSelection()`
+   *  en `pos-terminal.store.ts`). `null`/ausente = modo "agregar" de siempre. */
+  @Input() initialSelection: ProductSelection | null = null;
   @Output() added = new EventEmitter<ProductSelection>();
   @Output() cancelled = new EventEmitter<void>();
 
@@ -367,10 +373,31 @@ export class ProductSelectComponent implements OnInit {
   private readonly SEARCH_THRESHOLD = 10;
 
   ngOnInit(): void {
-    // Preselecciona la primera presentación pedible (a menudo la única).
-    const first =
-      this.product.variants.find((v) => v.available !== false) ?? this.product.variants[0];
-    if (first) this.variantId.set(first.id);
+    const initial = this.initialSelection;
+    if (initial) {
+      // Modo edición: precarga la variante/opciones/cantidad/notas de la
+      // línea que se está editando en vez del arranque "primera variante
+      // disponible + todo vacío". `MenuOption` no lleva su `group.id` propio
+      // (interfaz `product.interface.ts`), así que el grupo de cada opción
+      // elegida se resuelve buscándola dentro de `initial.variant.option_groups`.
+      this.variantId.set(initial.variant.id);
+      const selected: Record<string, Record<string, number>> = {};
+      for (const chosen of initial.options) {
+        const group = initial.variant.option_groups.find((g) =>
+          g.options.some((o) => o.id === chosen.option.id),
+        );
+        if (!group) continue;
+        selected[group.id] = { ...(selected[group.id] ?? {}), [chosen.option.id]: chosen.quantity };
+      }
+      this.selected.set(selected);
+      this.quantity.set(initial.quantity);
+      this.notes.set(initial.notes ?? '');
+    } else {
+      // Preselecciona la primera presentación pedible (a menudo la única).
+      const first =
+        this.product.variants.find((v) => v.available !== false) ?? this.product.variants[0];
+      if (first) this.variantId.set(first.id);
+    }
     this.syncExpanded();
   }
 
@@ -433,28 +460,49 @@ export class ProductSelectComponent implements OnInit {
   /**
    * Precio de línea a cobrar por la cantidad realmente configurada.
    *
-   * `variant.discounted_price` es "el precio si completas la promo" (para
-   * mostrarlo en la lista de presentaciones, `variantPrice`/`discountFor`,
-   * independientemente de cuánto vaya a llevar el comensal). Aplicarlo aquí sin
-   * más era el bug: con "2 x $12.000" (min_qty: 2) y Cantidad en 1, el botón
-   * prometía $6.000 (el precio por unidad del paquete) por una sola unidad que
-   * no califica para el paquete -- el backend nunca cobraría eso. Por eso el
-   * total real solo usa el descuento cuando la cantidad elegida alcanza el
-   * `min_qty` de la promoción.
+   * `variant.discounted_price` solo llega poblado cuando la regla tiene
+   * `min_qty == 1` (`menu_unit_discount` en el backend): al navegar el menú
+   * sin carrito, una regla "2 x $12.000" no puede prometer un precio que
+   * depende de una cantidad que el comensal todavía no eligió, así que ese
+   * campo se queda en `null` aunque `promotion` sí venga poblado. Por eso al
+   * calificar se usa `promotion.unit_equivalent`/`value` -- lo que el backend
+   * ya calculó y ya muestra en el texto de la insignia -- y no
+   * `discounted_price`.
+   *
+   * Con `min_qty > 1` la promoción no cubre TODA la cantidad sin más:
+   * `evaluate_variant_sets` (motor real del cobro, `_greedy_units` en
+   * `promotions/service.py`) agrupa las unidades en bloques completos de
+   * `min_qty` y cobra el paquete solo por esos bloques -- el remanente que no
+   * completa otro bloque va a precio normal. "2 x $7.000" con Cantidad en 3
+   * cobra un paquete (2 unidades) más 1 unidad normal, no 3 unidades al
+   * precio de paquete.
    */
   readonly lineTotal = computed(() => {
     const variant = this.selectedVariant();
     if (!variant) return 0;
     const promo = variant.promotion;
-    const qualifiesForDiscount = !promo || this.quantity() >= promo.min_qty;
-    const base = qualifiesForDiscount
-      ? effectivePrice(variant.price, variant.discounted_price)
-      : variant.price;
+    const quantity = this.quantity();
+    const base = promo
+      ? this.packagePrice(variant.price, promo, quantity)
+      : effectivePrice(variant.price, variant.discounted_price) * quantity;
     const extra = this.selectedOptions().reduce(
       (s, c) => s + c.option.extra_price * c.quantity, 0,
-    );
-    return (base + extra) * this.quantity();
+    ) * quantity;
+    return base + extra;
   });
+
+  /** Precio total de `quantity` unidades de una presentación con promoción vigente. */
+  private packagePrice(normalPrice: number, promo: MenuVariantPromotion, quantity: number): number {
+    const fullSets = Math.floor(quantity / promo.min_qty);
+    const remainder = quantity - fullSets * promo.min_qty;
+    // El precio de paquete es el importe exacto de la regla (`value`), no
+    // `min_qty * unit_equivalent`: ese es un redondeo por unidad para
+    // mostrar (research.md D-4/FR-009) y podría no sumar el mismo total.
+    const setsTotal = promo.type === 'package_price'
+      ? fullSets * promo.value
+      : fullSets * promo.min_qty * promo.unit_equivalent;
+    return setsTotal + remainder * normalPrice;
+  }
 
   /**
    * Precio "desde" del encabezado: el más bajo entre las presentaciones

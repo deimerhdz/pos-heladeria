@@ -62,7 +62,7 @@ export class CashSessionStore {
   /** Categorías sugeridas por tipo de movimiento manual. */
   readonly CATS: Record<MovementKind, string[]> = {
     ingreso: ['Cambio inicial', 'Préstamo de caja', 'Ajuste', 'Otro'],
-    egreso: ['Compra de hielo', 'Bolsas', 'Transporte', 'Gastos menores', 'Otro'],
+    egreso: ['Gastos menores', 'Pago a domiciliario', 'Otro'],
     retiro: ['Consignación bancaria', 'Seguridad', 'Otro'],
   };
 

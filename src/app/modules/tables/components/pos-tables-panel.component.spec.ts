@@ -12,6 +12,8 @@ import { Table } from '../interfaces/table.interface';
 import { PaymentMethodService } from '../../sales/services/payment-method.service';
 import { CashService } from '../../cash-register/services/cash.service';
 
+const API = environment.apiBaseUrl;
+
 function table(partial: Partial<Table>): Table {
   return {
     id: 't1',
@@ -24,8 +26,17 @@ function table(partial: Partial<Table>): Table {
   };
 }
 
-/** Spec 036, Historia 1: pestañas de tipo de orden + filtro de ocupación ya
- *  existente sin cambios de comportamiento. */
+/**
+ * Spec 036, Historia 1: filtro de ocupación ya existente sin cambios de
+ * comportamiento. Rediseño responsive: las pestañas de tipo de orden
+ * (Mesas/Domicilios/Para llevar) se movieron a la sub-barra de
+ * `table-sessions.component.ts` (mockup de referencia) -- este componente ya
+ * no las renderiza, solo reacciona a `store.orderTypeTab()`, así que las
+ * pruebas cambian de tabla la pestaña con `store.setOrderTypeTab()`
+ * directamente en vez de hacer clic en un botón que ya no vive aquí. Esa
+ * cobertura (que las 3 pestañas existen y cambian el signal al hacer clic)
+ * se mudó a `table-sessions.component.spec.ts`.
+ */
 describe('PosTablesPanelComponent', () => {
   let fixture: ComponentFixture<PosTablesPanelComponent>;
   let store: PosTerminalStore;
@@ -76,18 +87,13 @@ describe('PosTablesPanelComponent', () => {
 
   afterEach(() => http.verify());
 
+  // Los botones de filtro de ocupación llevan un badge con el conteo pegado
+  // al label (p. ej. "Libres" + "4") -- se compara con startsWith en vez de
+  // igualdad exacta para no atarse a ese número.
   const tabButton = (label: string): HTMLButtonElement | undefined =>
-    Array.from(fixture.nativeElement.querySelectorAll('button')).find(
-      (b) => (b as HTMLButtonElement).textContent?.trim() === label,
+    Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.trim().startsWith(label),
     ) as HTMLButtonElement | undefined;
-
-  it('muestra las 3 pestañas de tipo de orden', () => {
-    fixture.detectChanges();
-
-    expect(tabButton('Mesas')).toBeDefined();
-    expect(tabButton('Domicilios')).toBeDefined();
-    expect(tabButton('Para llevar')).toBeDefined();
-  });
 
   it('"Mesas" está activa por defecto y muestra la grilla de mesas ya existente', () => {
     tableService.tables.set([table({ id: 't1', number: 5 })]);
@@ -102,7 +108,7 @@ describe('PosTablesPanelComponent', () => {
     tableService.tables.set([table({ id: 't1', number: 5 })]);
     fixture.detectChanges();
 
-    tabButton('Domicilios')!.click();
+    store.setOrderTypeTab('domicilios');
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -115,7 +121,7 @@ describe('PosTablesPanelComponent', () => {
     tableService.tables.set([table({ id: 't1', number: 5 })]);
     fixture.detectChanges();
 
-    tabButton('Para llevar')!.click();
+    store.setOrderTypeTab('para-llevar');
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -147,9 +153,9 @@ describe('PosTablesPanelComponent', () => {
     tableService.tables.set([table({ id: 't1', number: 1, status: 'libre' })]);
     fixture.detectChanges();
 
-    tabButton('Domicilios')!.click();
+    store.setOrderTypeTab('domicilios');
     fixture.detectChanges();
-    tabButton('Mesas')!.click();
+    store.setOrderTypeTab('mesas');
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -157,35 +163,35 @@ describe('PosTablesPanelComponent', () => {
     expect(store.filter()).toBe('todas');
   });
 
-  it('la grilla de mesas es un carrusel (una sola fila) con flechas de desplazamiento', () => {
+  it('la grilla de mesas envuelve en varias filas (sin carrusel horizontal ni flechas) -- rediseño responsive', () => {
     tableService.tables.set([table({ id: 't1', number: 1 }), table({ id: 't2', number: 2 })]);
     fixture.detectChanges();
 
-    const carousel = fixture.nativeElement.querySelector('[class*="overflow-x-auto"]') as HTMLElement;
-    expect(carousel).not.toBeNull();
-    // jsdom no implementa Element.scrollBy ni hace layout real (clientWidth
-    // siempre da 0) — se definen ambos antes de espiar/hacer clic.
-    carousel.scrollBy = vi.fn();
-    Object.defineProperty(carousel, 'clientWidth', { configurable: true, value: 800 });
-    const scrollBySpy = vi.spyOn(carousel, 'scrollBy');
+    const grid = fixture.nativeElement.querySelector('[data-testid="mesas-grid"]') as HTMLElement;
+    expect(grid).not.toBeNull();
+    expect(grid.className).toContain('grid');
+    // Sin flechas de desplazamiento ni contenedor de scroll horizontal --
+    // decisión de rediseño: la grilla envuelve y hace scroll vertical en su
+    // lugar (mejor para móvil/tablet), reemplazando el carrusel de spec 036.
+    expect(
+      fixture.nativeElement.querySelector('button[aria-label="Ver mesas anteriores"]'),
+    ).toBeNull();
+    expect(fixture.nativeElement.querySelector('button[aria-label="Ver más mesas"]')).toBeNull();
+    expect(grid.querySelector('[class*="overflow-x-auto"]')).toBeNull();
+  });
 
-    const prevButton = fixture.nativeElement.querySelector(
-      'button[aria-label="Ver mesas anteriores"]',
-    ) as HTMLButtonElement;
-    const nextButton = fixture.nativeElement.querySelector(
-      'button[aria-label="Ver más mesas"]',
-    ) as HTMLButtonElement;
-    expect(prevButton).not.toBeNull();
-    expect(nextButton).not.toBeNull();
+  it('cada botón de filtro de ocupación muestra el conteo de mesas correspondiente', () => {
+    tableService.tables.set([
+      table({ id: 't1', number: 1, status: 'libre' }),
+      table({ id: 't2', number: 2, status: 'ocupada' }),
+      table({ id: 't3', number: 3, status: 'ocupada' }),
+    ]);
+    fixture.detectChanges();
 
-    nextButton.click();
-    expect(scrollBySpy).toHaveBeenCalledWith(expect.objectContaining({ left: expect.any(Number) }));
-    const forwardOptions = scrollBySpy.mock.calls[0][0] as ScrollToOptions;
-    expect(forwardOptions.left).toBeGreaterThan(0);
-
-    prevButton.click();
-    const backwardOptions = scrollBySpy.mock.calls[1][0] as ScrollToOptions;
-    expect(backwardOptions.left).toBeLessThan(0);
+    expect(tabButton('Todas')!.textContent).toContain('3');
+    expect(tabButton('Libres')!.textContent).toContain('1');
+    expect(tabButton('Ocupadas')!.textContent).toContain('2');
+    expect(tabButton('Pendientes')!.textContent).toContain('0');
   });
 
   const tableCard = (label: string): HTMLButtonElement | undefined =>
@@ -193,22 +199,23 @@ describe('PosTablesPanelComponent', () => {
       (b as HTMLButtonElement).textContent?.includes(label),
     ) as HTMLButtonElement | undefined;
 
-  it('seleccionar una mesa libre solo la selecciona, sin navegar (spec 045: la tarjeta solo muestra el pedido)', () => {
+  // La selección de mesa se reactivó a pedido del usuario: tocar una mesa
+  // (libre u ocupada) selecciona su detalle en el panel derecho, mismo
+  // mecanismo (select) que ya usan las tarjetas de Para Llevar/Domicilio.
+  it('tocar una mesa libre la selecciona', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'libre' })]);
     fixture.detectChanges();
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const selectSpy = vi.spyOn(store, 'selectTable');
 
     tableCard('Mesa 3')!.click();
 
     expect(selectSpy).toHaveBeenCalledWith('t1');
-    expect(navigateSpy).not.toHaveBeenCalled();
-    // selectTable() dispara la carga de la cuenta de la mesa (comportamiento
-    // ya existente, sin cambios) — se resuelve para no dejar la petición abierta.
-    http.expectOne(`${environment.apiBaseUrl}/table-sessions`).flush([]);
+    expect(store.selectedTableId()).toBe('t1');
+    // selectTable() dispara loadSessionBill() en segundo plano.
+    http.expectOne(`${API}/table-sessions`).flush([]);
   });
 
-  it('seleccionar una mesa ocupada sigue llamando a store.selectTable() sin cambios (no navega)', () => {
+  it('tocar una mesa ocupada también la selecciona', () => {
     tableService.tables.set([table({ id: 't1', number: 3, status: 'ocupada' })]);
     store.orders.set([
       {
@@ -221,16 +228,14 @@ describe('PosTablesPanelComponent', () => {
       } as unknown as ReturnType<PosTerminalStore['orders']>[number],
     ]);
     fixture.detectChanges();
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const selectSpy = vi.spyOn(store, 'selectTable');
 
     tableCard('Mesa 3')!.click();
 
     expect(selectSpy).toHaveBeenCalledWith('t1');
-    expect(navigateSpy).not.toHaveBeenCalled();
-    // selectTable() dispara la carga de la cuenta de la mesa (comportamiento
-    // ya existente, sin cambios) — se resuelve para no dejar la petición abierta.
-    http.expectOne(`${environment.apiBaseUrl}/table-sessions`).flush([]);
+    expect(store.selectedTableId()).toBe('t1');
+    // selectTable() dispara loadSessionBill() en segundo plano.
+    http.expectOne(`${API}/table-sessions`).flush([]);
   });
 
   function standaloneOrder(
@@ -254,7 +259,7 @@ describe('PosTablesPanelComponent', () => {
     store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
     fixture.detectChanges();
 
-    tabButton('Para llevar')!.click();
+    store.setOrderTypeTab('para-llevar');
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -268,7 +273,7 @@ describe('PosTablesPanelComponent', () => {
     store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
     fixture.detectChanges();
 
-    tabButton('Domicilios')!.click();
+    store.setOrderTypeTab('domicilios');
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -279,7 +284,7 @@ describe('PosTablesPanelComponent', () => {
   it('seleccionar una tarjeta de pedido "Para llevar" llama a store.selectStandaloneOrder() (spec 059, Historia 3)', () => {
     store.orders.set([standaloneOrder('o1', 'TAKEAWAY', 'María G.')]);
     fixture.detectChanges();
-    tabButton('Para llevar')!.click();
+    store.setOrderTypeTab('para-llevar');
     fixture.detectChanges();
     const selectSpy = vi.spyOn(store, 'selectStandaloneOrder');
 

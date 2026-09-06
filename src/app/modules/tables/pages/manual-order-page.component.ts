@@ -1,15 +1,17 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ProductSelectComponent } from '../components/product-select.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.component';
+import { BillSummaryComponent } from '../components/bill-summary.component';
 import {
   SearchableSelectComponent,
   SearchableSelectOption,
 } from '../../../shared/searchable-select/searchable-select.component';
+import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /**
  * Vista dedicada para armar un pedido de mostrador nuevo (ajuste posterior a
@@ -17,7 +19,7 @@ import {
  * "+ Crear Orden Manual" que antes se mostraba embebido en la Terminal de
  * Mesas (`manual-order-panel.component.ts`) — el cajero llega aquí al
  * seleccionar una mesa libre, arma el pedido con el mismo catálogo/carrito
- * ya existentes en el store, y "Confirmar y Enviar" lo crea
+ * ya existentes en el store, y "Crear pedido" lo crea
  * (`createManualOrderFromDraft()`, sin cambios) y vuelve a la terminal.
  *
  * "Para Llevar" ya está habilitada (spec 055): comparte `store.orderTypeTab`
@@ -28,124 +30,294 @@ import {
  * Provee su propia instancia de `PosTerminalStore` (no es singleton,
  * `@Injectable()` sin `providedIn`) porque esta vista vive en una ruta
  * aparte de `table-sessions.component.ts` — mismo patrón que esa página.
+ *
+ * Rediseño (`create-order/code.html`/`screen.png`): réplica fiel del mockup
+ * -- cabecera de terminal compartida con `table-sessions.component.ts`
+ * (`app-pos-terminal-header`), barra de búsqueda + contadores, nav de
+ * categorías con pestaña "Todos" (`showingAllCategories`,
+ * `store.catalogProductsAllFiltered()` -- computed nuevo y aparte, no
+ * cambia el significado de `catalogCategoryId`/`catalogProductsFiltered`
+ * que también usa `pos-catalog-drawer.component.ts`), tarjetas de producto,
+ * y el panel de ticket con la tabla de líneas (Producto/Cant./Costo/
+ * Acciones) incluyendo insignia + tachado + "Ahorras $X" por línea cuando la
+ * variante tiene promoción vigente y la cantidad ya califica
+ * (`store.cartLinePromo`, puramente presentacional -- ver comentario en
+ * `pos-terminal.store.ts`, el total real lo sigue calculando el backend).
+ * Por debajo de `lg` se muestra una sola tarjeta (catálogo/ticket) a la vez
+ * (`viewingCart`), con un botón "Ver pedido" flotante y uno de volver;
+ * desde `lg` van lado a lado (65%/35%), mismo mecanismo que
+ * `table-sessions.component.ts`. Cada línea del carrito tiene botones de
+ * editar que reabren `app-product-select` precargado
+ * (`store.openConfigForEdit`/`store.editingSelection`).
  */
 @Component({
   selector: 'app-manual-order-page',
   standalone: true,
   providers: [PosTerminalStore],
-  imports: [DecimalPipe, FormsModule, ProductSelectComponent, IconComponent, SearchableSelectComponent],
+  imports: [
+    FormsModule,
+    ProductSelectComponent,
+    IconComponent,
+    SearchableSelectComponent,
+    PosTerminalHeaderComponent,
+    BillSummaryComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="flex flex-col h-[calc(100dvh-57px)] -m-4 md:-m-6 bg-gray-50">
-      <!-- Barra superior: solo volver (spec 052 — Tipo de Orden y Mesas se
-           unificaron en el panel derecho, junto a Nueva orden). -->
-      <div class="bg-white border-b border-gray-200 px-4 py-3 shrink-0">
+    <div class="flex flex-col h-[calc(100dvh-57px)] -m-4 md:-m-6 bg-[#f9fafb] overflow-x-hidden">
+      <app-pos-terminal-header />
+
+      <!-- Barra secundaria: solo volver (spec 052 — el resto vive en el
+           encabezado "Nueva orden" del panel derecho). -->
+      <div class="h-10 bg-white border-b border-[#e5e7eb] px-4 flex items-center shrink-0">
         <button
           type="button"
           (click)="backToTerminal()"
-          class="min-h-9 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+          class="flex items-center gap-1 text-[13px] font-medium text-[#6b7280] hover:text-[#111827] transition-colors"
         >
-          ← Volver a la Terminal
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+            <path d="m15 18-6-6 6-6"></path>
+          </svg>
+          Volver a la Terminal
         </button>
       </div>
 
-      <!-- Catálogo (izquierda) + panel de configuración y pedido (derecha) -->
-      <div class="flex-1 flex min-h-0">
-        <div class="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto p-4 gap-3">
-          <input
-            type="text"
-            [value]="store.catalogSearchText()"
-            (input)="store.setCatalogSearchText($any($event.target).value)"
-            placeholder="Buscar productos (Ej. Fresa, Vaso grande…)"
-            class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
+      <!-- Catálogo (izquierda) + panel de configuración y pedido (derecha):
+           una sola tarjeta a la vez por debajo de lg, lado a lado desde lg
+           (mismo mecanismo que table-sessions.component.ts). -->
+      <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <div
+          data-testid="catalogo-column"
+          class="flex-col min-h-0 flex-1 lg:flex-1 gap-3"
+          [class]="viewingCart() ? 'hidden lg:flex' : 'flex'"
+        >
+          <!-- Barra de búsqueda + contadores (mockup: una sola caja blanca). -->
+          <div class="h-11 shrink-0 bg-white border border-[#e5e7eb] rounded-[6px] px-3 flex items-center gap-2">
+            <div class="flex-1 flex items-center gap-2 min-w-0 pr-3 border-r border-[#e5e7eb]">
+              <svg class="w-[18px] h-[18px] stroke-[#6b7280] shrink-0" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <input
+                type="text"
+                [value]="store.catalogSearchText()"
+                (input)="store.setCatalogSearchText($any($event.target).value)"
+                placeholder="Buscar producto, sabor o código... [F2]"
+                class="flex-1 min-w-0 bg-transparent border-none text-[13px] text-[#111827] placeholder-[#6b7280] focus:outline-none h-full"
+              />
+              <div class="flex items-center gap-1.5 shrink-0">
+                <kbd class="font-mono text-[11px] font-semibold text-[#6b7280] bg-[#f3f4f6] px-1.5 py-0.5 border border-[#e5e7eb] rounded-[6px]">[F2]</kbd>
+                <button type="button" title="Escanear código" class="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#6b7280] hover:text-[#111827] hover:bg-[#f3f4f6] transition-colors">
+                  <svg class="w-[17px] h-[17px]" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+                    <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+                    <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+                    <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+                    <path d="M7 12h10"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="hidden sm:flex items-center gap-1.5 shrink-0 pl-1 overflow-x-auto">
+              <div class="flex items-center gap-1.5 px-2 py-1 bg-[#fffbeb] border border-[#fef3c7] rounded-[6px] text-[11px] font-semibold text-[#b45309] whitespace-nowrap">
+                <span class="w-1.5 h-1.5 bg-[#f59e0b] rounded-full inline-block"></span>
+                <span>{{ store.tableCounts().pendientes }} Por atender</span>
+              </div>
+              <div class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap">
+                <svg class="w-[14px] h-[14px] stroke-[#6b7280]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path d="M4 10h16M4 10a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2M4 10v2M20 10v2M8 12v8M16 12v8"></path>
+                </svg>
+                <span class="text-[#111827] font-semibold">{{ store.tableCounts().ocupadas }}</span>
+                <span>Mesas</span>
+              </div>
+              <div class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap">
+                <svg class="w-[14px] h-[14px] stroke-[#6b7280]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+                  <path d="M3 6h18"></path>
+                  <path d="M16 10a4 4 0 0 1-8 0"></path>
+                </svg>
+                <span class="text-[#111827] font-semibold">{{ store.ordersByType('para-llevar').length }}</span>
+                <span>Llevar</span>
+              </div>
+              <div class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap">
+                <svg class="w-[14px] h-[14px] stroke-[#4f46e5]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <circle cx="5.5" cy="17.5" r="3.5"></circle>
+                  <circle cx="18.5" cy="17.5" r="3.5"></circle>
+                  <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 11.5V14l-3-3 4-3 2 3h2"></path>
+                </svg>
+                <span class="text-[#111827] font-semibold">{{ store.ordersByType('domicilios').length }}</span>
+                <span>Domicilios</span>
+              </div>
+            </div>
+          </div>
 
-          <div class="flex gap-1.5 flex-wrap">
+          <!-- Nav de categorías: "Todos" junta todas las categorías (nuevo,
+               computed aparte catalogProductsAllFiltered), igual al mockup. -->
+          <nav class="h-12 shrink-0 bg-white border border-[#e5e7eb] rounded-[6px] p-1 flex items-center gap-1 overflow-x-auto">
+            <button
+              type="button"
+              (click)="selectAllCategories()"
+              class="h-full px-3.5 text-[13px] whitespace-nowrap rounded-[6px] flex items-center gap-1.5 transition-colors"
+              [class]="
+                showingAllCategories()
+                  ? 'bg-[#f3f4f6] border border-[#e5e7eb] text-[#111827] font-semibold'
+                  : 'bg-white hover:bg-[#f9fafb] border border-transparent hover:border-[#e5e7eb] text-[#4b5563] hover:text-[#111827] font-medium'
+              "
+            >
+              <span class="text-[11px] text-[#6b7280] font-mono">[F1]</span>
+              <span>Todos</span>
+            </button>
             @for (c of store.categories(); track c.id) {
               <button
                 type="button"
-                (click)="store.setCatalogCategory(c.id)"
-                class="px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                (click)="selectCategory(c.id)"
+                class="h-full px-3.5 text-[13px] whitespace-nowrap rounded-[6px] flex items-center transition-colors"
                 [class]="
-                  store.catalogCategoryId() === c.id
-                    ? 'border-indigo-500 bg-indigo-600 text-white'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  !showingAllCategories() && store.catalogCategoryId() === c.id
+                    ? 'bg-[#f3f4f6] border border-[#e5e7eb] text-[#111827] font-semibold'
+                    : 'bg-white hover:bg-[#f9fafb] border border-transparent hover:border-[#e5e7eb] text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
                 {{ c.name }}
               </button>
             }
+          </nav>
+
+          <div class="flex-1 min-h-0 overflow-y-auto pr-0.5">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+              @for (p of catalogProducts(); track p.id) {
+                <button
+                  type="button"
+                  (click)="store.openConfig(p)"
+                  class="relative p-2.5 bg-white border border-[#e5e7eb] hover:bg-[#f9fafb] active:bg-[#f3f4f6] rounded-[6px] flex flex-col gap-2 text-left transition-colors"
+                >
+                  <div class="relative w-full h-28 overflow-hidden bg-[#f3f4f6] rounded-[6px]">
+                    @if (store.cardPromotionText(p.variants); as promo) {
+                      <!-- spec 073, FR-016: condición legible del backend (spec 066), no la insignia local. -->
+                      <span class="absolute top-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-[6px] bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] z-10">{{ promo }}</span>
+                    }
+                    @if (p.image_url) {
+                      <img [src]="p.image_url" [alt]="p.name" class="w-full h-full object-cover" />
+                    } @else {
+                      <span class="w-full h-full flex items-center justify-center text-[#d1d5db]"><span class="w-10 h-10"><app-icon name="image-off" /></span></span>
+                    }
+                  </div>
+                  <div class="flex flex-col justify-between flex-1 min-w-0 w-full">
+                    <span class="text-[14px] font-semibold text-[#111827] tracking-tight leading-tight truncate">{{ p.name }}</span>
+                    <div class="flex items-center justify-between mt-2">
+                      <div class="flex flex-col">
+                        <span class="text-[11px] text-[#6b7280] leading-none">Desde</span>
+                        <span class="font-mono font-bold text-[15px] text-[#111827]">{{ store.fmt(minPrice(p)) }}</span>
+                      </div>
+                      <!-- Solo decorativo: el click de agregar es el de toda la
+                           tarjeta, no un botón anidado (evita <button> dentro
+                           de <button>). -->
+                      <span class="w-9 h-9 rounded-[6px] flex items-center justify-center bg-[#4f46e5] text-white shrink-0" aria-hidden="true">
+                        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                          <circle cx="8" cy="21" r="1"></circle>
+                          <circle cx="19" cy="21" r="1"></circle>
+                          <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 2-1.58l1.65-7.42H5.12"></path>
+                        </svg>
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              }
+              @if (catalogProducts().length === 0) {
+                <p class="col-span-full text-center text-[13px] text-[#9ca3af] py-10">Sin productos que coincidan.</p>
+              }
+            </div>
           </div>
 
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-            @for (p of store.catalogProductsFiltered(); track p.id) {
+          <!-- Botón flotante "Ver pedido": solo por debajo de lg, con el carrito no vacío. -->
+          @if (!store.cartEmpty()) {
+            <div class="lg:hidden shrink-0">
               <button
                 type="button"
-                (click)="store.openConfig(p)"
-                class="text-left bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-indigo-300 transition-colors"
+                (click)="viewingCart.set(true)"
+                class="w-full h-11 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[14px] font-semibold flex items-center justify-between px-4 transition-colors"
               >
-                <div class="relative w-full aspect-square bg-indigo-50 flex items-center justify-center overflow-hidden">
-                  @if (store.cardPromotionText(p.variants); as promo) {
-                    <!-- spec 073, FR-016: condición legible del backend (spec 066), no la insignia local. -->
-                    <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ promo }}</span>
-                  }
-                  @if (p.image_url) {
-                    <img [src]="p.image_url" [alt]="p.name" class="w-full h-full object-cover" />
-                  } @else {
-                    <span class="w-10 h-10 text-gray-300"><app-icon name="image-off" /></span>
-                  }
-                </div>
-                <div class="p-3">
-                  <div class="font-semibold text-gray-900 text-sm">{{ p.name }}</div>
-                  <div class="text-sm font-bold text-gray-900 mt-1">Desde $ {{ minPrice(p) | number: '1.0-0' }}</div>
-                </div>
+                <span>Ver pedido ({{ store.cartView().length }})</span>
+                <span>{{ store.fmt(store.subtotal()) }}</span>
               </button>
-            }
-            @if (store.catalogProductsFiltered().length === 0) {
-              <p class="col-span-full text-center text-sm text-gray-400 py-10">Sin productos que coincidan.</p>
-            }
-          </div>
+            </div>
+          }
         </div>
 
-        <div class="w-full sm:w-[400px] shrink-0 flex flex-col min-h-0 border-l border-gray-200 bg-white">
-          <div class="p-4 border-b border-gray-100 shrink-0 space-y-3">
-            <h2 class="text-base font-bold text-gray-900">Tipo de Orden</h2>
-            <div class="flex gap-1.5 flex-wrap">
+        <div
+          data-testid="ticket-column"
+          class="flex-col min-h-0 lg:w-[35%] lg:shrink-0 lg:flex-none bg-white rounded-[6px] border border-[#e5e7eb] lg:overflow-hidden"
+          [class]="viewingCart() ? 'flex flex-1' : 'hidden lg:flex'"
+        >
+          <div class="lg:hidden shrink-0 px-3 pt-3">
+            <button
+              type="button"
+              data-testid="page-back-button"
+              (click)="viewingCart.set(false)"
+              class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
+            >
+              ← Volver al catálogo
+            </button>
+          </div>
+
+          <!-- Encabezado + tipo de orden + campos (mockup: una sola sección). -->
+          <div class="border-b border-[#e5e7eb] bg-white shrink-0 p-3 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <h2 class="text-[14px] font-bold tracking-tight text-[#111827]">Nueva orden</h2>
+              <span class="flex items-center gap-1 text-[11px] text-[#15803d] font-semibold">
+                <span class="w-1.5 h-1.5 bg-[#15803d] rounded-full inline-block"></span> Abierta
+              </span>
+            </div>
+
+            <div class="grid grid-cols-3 p-0.5 bg-[#f3f4f6] border border-[#e5e7eb] rounded-[6px]">
               <button
                 type="button"
                 (click)="setOrderTypeTab('mesas')"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                class="h-11 text-[13px] rounded-[6px] flex items-center justify-center gap-1 transition-all"
                 [class]="
                   store.orderTypeTab() === 'mesas'
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    ? 'bg-white text-[#111827] font-semibold border border-[#e5e7eb]'
+                    : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                🍽️ En Mesa
+                <svg class="w-[18px] h-[18px]" [class]="store.orderTypeTab() === 'mesas' ? 'text-[#4f46e5]' : ''" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path d="M4 10h16M4 10a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2M4 10v2M20 10v2M8 12v8M16 12v8"></path>
+                </svg>
+                Mesa
               </button>
               <button
                 type="button"
                 (click)="setOrderTypeTab('para-llevar')"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                class="h-11 text-[13px] rounded-[6px] flex items-center justify-center gap-1 transition-all"
                 [class]="
                   store.orderTypeTab() === 'para-llevar'
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    ? 'bg-white text-[#111827] font-semibold border border-[#e5e7eb]'
+                    : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                🛍️ Para Llevar
+                <svg class="w-[18px] h-[18px]" [class]="store.orderTypeTab() === 'para-llevar' ? 'text-[#4f46e5]' : ''" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
+                  <path d="M3 6h18"></path>
+                  <path d="M16 10a4 4 0 0 1-8 0"></path>
+                </svg>
+                Para llevar
               </button>
               <button
                 type="button"
                 (click)="setOrderTypeTab('domicilios')"
-                class="min-h-9 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors"
+                class="h-11 text-[13px] rounded-[6px] flex items-center justify-center gap-1 transition-all"
                 [class]="
                   store.orderTypeTab() === 'domicilios'
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    ? 'bg-white text-[#111827] font-semibold border border-[#e5e7eb]'
+                    : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                🛵 Domicilio
+                <svg class="w-[18px] h-[18px]" [class]="store.orderTypeTab() === 'domicilios' ? 'text-[#4f46e5]' : ''" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <circle cx="5.5" cy="17.5" r="3.5"></circle>
+                  <circle cx="18.5" cy="17.5" r="3.5"></circle>
+                  <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 11.5V14l-3-3 4-3 2 3h2"></path>
+                </svg>
+                Domicilio
               </button>
             </div>
 
@@ -153,173 +325,373 @@ import {
               <!-- Solo las mesas libres se pueden elegir: esta vista arma un
                    pedido nuevo, no edita una mesa ya ocupada (spec 053: mesas
                    ocupadas siguen visibles en el select, no seleccionables). -->
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Mesas</h3>
-              <app-searchable-select
-                placeholder="Buscar mesa…"
-                [options]="mesaOptions()"
-                [ngModel]="store.selectedTableId()"
-                (ngModelChange)="selectTable($event)"
-              />
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 sm:items-end">
+                <div class="sm:col-span-7 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Cliente</label>
+                  <div class="relative flex items-center h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] focus-within:border-[#111827] focus-within:bg-white">
+                    <input
+                      type="text"
+                      [value]="store.customerName()"
+                      [readOnly]="!editandoCliente()"
+                      (input)="store.customerName.set($any($event.target).value)"
+                      (blur)="onClienteBlur()"
+                      class="w-full bg-transparent border-none p-0 text-[13px] font-medium text-[#111827] focus:outline-none truncate"
+                      [class]="editandoCliente() ? '' : 'text-[#6b7280]'"
+                    />
+                    <button type="button" (click)="toggleEditarCliente()" title="Editar nombre" class="text-[#6b7280] hover:text-[#4f46e5] transition-colors shrink-0">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="sm:col-span-5 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Mesa asignada</label>
+                  <app-searchable-select
+                    placeholder="Buscar mesa…"
+                    [options]="mesaOptions()"
+                    [ngModel]="store.selectedTableId()"
+                    (ngModelChange)="selectTable($event)"
+                  />
+                </div>
+              </div>
             }
 
-            @if (store.orderTypeTab() !== 'domicilios') {
+            @if (store.orderTypeTab() === 'para-llevar') {
               <!-- Cliente de la orden: "Consumidor final" por defecto (spec
                    054; también para "Para Llevar", spec 055 FR-010), editable
-                   con el botón ✏️; nunca se guarda vacío. -->
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
-              <div class="relative">
-                <input
-                  type="text"
-                  [value]="store.customerName()"
-                  [readOnly]="!editandoCliente()"
-                  (input)="store.customerName.set($any($event.target).value)"
-                  (blur)="onClienteBlur()"
-                  class="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  [class.bg-gray-50]="!editandoCliente()"
-                  [class.text-gray-500]="!editandoCliente()"
-                />
-                <button
-                  type="button"
-                  (click)="toggleEditarCliente()"
-                  title="Editar cliente"
-                  class="absolute right-2 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  ✏️
-                </button>
+                   con el botón de lápiz; nunca se guarda vacío. -->
+              <div class="flex flex-col gap-0.5">
+                <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Cliente / Para llevar</label>
+                <div class="flex items-center h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] focus-within:border-[#111827] focus-within:bg-white">
+                  <svg class="w-4 h-4 text-[#4f46e5] mr-1.5 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                  </svg>
+                  <input
+                    type="text"
+                    [value]="store.customerName()"
+                    [readOnly]="!editandoCliente()"
+                    (input)="store.customerName.set($any($event.target).value)"
+                    (blur)="onClienteBlur()"
+                    class="w-full bg-transparent border-none p-0 text-[13px] font-medium text-[#111827] focus:outline-none truncate"
+                    [class]="editandoCliente() ? '' : 'text-[#6b7280]'"
+                  />
+                  <button type="button" (click)="toggleEditarCliente()" title="Editar nombre" class="text-[#6b7280] hover:text-[#4f46e5] transition-colors shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                    </svg>
+                  </button>
+                </div>
               </div>
-            } @else {
+            }
+
+            @if (store.orderTypeTab() === 'domicilios') {
               <!-- "Domicilio" (spec 056): a diferencia de "En Mesa"/"Para
                    Llevar", el cliente NO tiene valor por defecto — campo
                    simple siempre editable, sin el toggle de solo-lectura
                    (no hay nada que proteger, FR-003). Dirección y valor del
                    domicilio son obligatorios (FR-004, FR-006); teléfono
                    siempre opcional (FR-008). -->
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Cliente</h3>
-              <input
-                type="text"
-                [value]="store.customerName()"
-                (input)="store.customerName.set($any($event.target).value)"
-                placeholder="Nombre del cliente"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Dirección</h3>
-              <input
-                type="text"
-                [value]="store.deliveryAddress()"
-                (input)="store.deliveryAddress.set($any($event.target).value)"
-                placeholder="Dirección de entrega"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Teléfono</h3>
-              <input
-                type="text"
-                [value]="store.deliveryPhone()"
-                (input)="store.deliveryPhone.set($any($event.target).value)"
-                placeholder="Opcional"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Valor del domicilio</h3>
-              <input
-                type="number"
-                min="0"
-                [value]="store.deliveryFee()"
-                (input)="onDeliveryFeeInput($any($event.target).value)"
-                placeholder="$ 0"
-                class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5">
+                <div class="sm:col-span-7 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Nombre cliente</label>
+                  <input
+                    type="text"
+                    [value]="store.customerName()"
+                    (input)="store.customerName.set($any($event.target).value)"
+                    placeholder="Ej: Juan Pérez"
+                    class="h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] font-medium focus:outline-none focus:border-[#111827] focus:bg-white"
+                  />
+                </div>
+                <div class="sm:col-span-5 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Teléfono</label>
+                  <input
+                    type="text"
+                    [value]="store.deliveryPhone()"
+                    (input)="store.deliveryPhone.set($any($event.target).value)"
+                    placeholder="Ej: 300 123 4567"
+                    class="h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] font-mono text-[#111827] focus:outline-none focus:border-[#111827] focus:bg-white"
+                  />
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5">
+                <div class="sm:col-span-7 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Dirección de entrega</label>
+                  <input
+                    type="text"
+                    [value]="store.deliveryAddress()"
+                    (input)="store.deliveryAddress.set($any($event.target).value)"
+                    placeholder="Ej: Calle 45 # 22-10"
+                    class="h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] focus:outline-none focus:border-[#111827] focus:bg-white"
+                  />
+                </div>
+                <div class="sm:col-span-5 flex flex-col gap-0.5">
+                  <label class="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wider">Tarifa Domicilio</label>
+                  <input
+                    type="number"
+                    min="0"
+                    [value]="store.deliveryFee()"
+                    (input)="onDeliveryFeeInput($any($event.target).value)"
+                    placeholder="$5.000"
+                    class="h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] font-mono font-semibold text-[#111827] focus:outline-none focus:border-[#111827] focus:bg-white"
+                  />
+                </div>
+              </div>
             }
           </div>
 
-          <div class="p-4 border-b border-gray-100 shrink-0">
-            <h3 class="text-base font-bold text-gray-900">Nueva orden</h3>
-            <p class="text-xs text-gray-400 mt-0.5">
-              @if (store.orderTypeTab() === 'para-llevar') {
-                Para llevar
-              } @else if (store.orderTypeTab() === 'domicilios') {
-                Domicilio
-              } @else {
-                {{ store.selectedTable() ? 'Mesa ' + store.selectedTable()!.number : 'Selecciona una mesa libre' }}
-              }
-            </p>
-          </div>
+          <!-- Detalle del pedido: encabezado + tabla de líneas. Por debajo de
+               lg NO tiene scroll propio -- crece con su contenido y es la
+               tarjeta completa (ticket-column) + el contenedor externo los
+               que crecen/scrollean como una sola pieza (mismo criterio que
+               el usuario pidió para esta sección: nada se apiña en una caja
+               chica con su propio scroll). Desde lg sí necesita su scroll
+               interno (columna de ancho fijo, layout de escritorio del
+               mockup). -->
+          <div class="lg:flex-1 lg:overflow-y-auto px-4 py-3 flex flex-col bg-white">
+            <div class="flex items-center gap-2 flex-wrap pb-3 border-b border-[#e5e7eb]">
+              <h3 class="text-[17px] font-bold text-[#111827] tracking-tight">Detalle del pedido</h3>
+              <span class="px-2 py-0.5 text-[12px] font-medium text-[#4b5563] bg-[#f3f4f6] border border-[#e5e7eb] rounded-[6px] whitespace-nowrap">Ítems: {{ store.cartView().length }}</span>
+            </div>
 
-          <div class="flex-1 overflow-y-auto p-4 space-y-3">
-            @for (it of store.cartView(); track it.key) {
-              <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3 space-y-1.5">
-                <div class="flex items-start justify-between gap-2">
-                  <span class="font-semibold text-gray-900 text-sm">{{ it.qty }}x {{ it.name }}</span>
-                  <span class="font-bold text-gray-900 text-sm">{{ store.fmt(it.subtotal) }}</span>
-                </div>
-                @for (b of it.bullets; track $index) {
-                  <div class="text-xs text-gray-500 pl-1">• {{ b }}</div>
-                }
-                <div class="flex items-center justify-between pt-1">
-                  <div class="flex items-center gap-2">
-                    <button (click)="store.decDraft(it.key)" class="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold">−</button>
-                    <span class="w-5 text-center font-bold text-sm">{{ it.qty }}</span>
-                    <button (click)="store.incDraft(it.key)" class="w-7 h-7 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold">+</button>
+            @if (!store.cartEmpty()) {
+              <div class="hidden sm:grid grid-cols-12 text-[13px] font-semibold text-[#111827] py-2.5 border-b border-[#e5e7eb]">
+                <div class="col-span-5 text-left">Producto</div>
+                <div class="col-span-2 text-center">Cant.</div>
+                <div class="col-span-3 text-right pr-3">Costo</div>
+                <div class="col-span-2 text-right">Acciones</div>
+              </div>
+            }
+
+            <div class="flex flex-col divide-y divide-[#e5e7eb]">
+              @for (it of store.cartView(); track it.key) {
+                <!-- Envoltorio único por ítem: divide-y del contenedor padre
+                     necesita un solo hijo por iteración (si las dos variantes
+                     de abajo fueran hermanas sueltas, divide-y les pintaría
+                     un borde entre sí aunque una esté oculta por CSS, ya que
+                     su selector mira el atributo HTML hidden, no la clase). -->
+                <div>
+                <!-- Tabla (desde sm/tablet+): pixel-igual al mockup. -->
+                <div
+                  class="hidden sm:grid grid-cols-12 items-center py-3 gap-1"
+                  [class]="it.promo ? 'bg-[#fffbeb]/40 -mx-2 px-2 border-l-2 border-[#f59e0b]' : ''"
+                >
+                  <div class="col-span-5 flex flex-col min-w-0 pr-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <span class="text-[13px] font-semibold text-[#111827] truncate leading-tight">{{ it.name }}</span>
+                      @if (it.promo; as promo) {
+                        <span class="bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] text-[10px] font-bold px-1 py-0.2 rounded-[6px] shrink-0 leading-none">{{ promo.badge }}</span>
+                      }
+                    </div>
+                    @for (b of it.bullets; track $index) {
+                      <span class="text-[11px] text-[#6b7280] truncate mt-0.5">{{ b }}</span>
+                    }
+                    @if (it.promo; as promo) {
+                      <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="line-through text-[11px] text-[#6b7280] font-mono">{{ store.fmt(promo.originalAmount) }}</span>
+                        <span class="text-[11px] text-[#15803d] font-semibold font-mono">Ahorras {{ store.fmt(promo.savings) }}</span>
+                      </div>
+                    }
                   </div>
-                  <button (click)="store.removeDraft(it.key)" class="text-xs font-medium text-red-600 hover:text-red-700">Eliminar</button>
+                  <div class="col-span-2 flex items-center justify-center gap-1">
+                    <button (click)="store.decDraft(it.key)" class="w-6 h-6 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#4b5563] flex items-center justify-center text-[13px] font-bold transition-colors">−</button>
+                    <span class="font-mono font-medium text-[13px] text-[#111827] tabular-nums min-w-[12px] text-center">{{ it.qty }}</span>
+                    <button (click)="store.incDraft(it.key)" class="w-6 h-6 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#4b5563] flex items-center justify-center text-[13px] font-bold transition-colors">+</button>
+                  </div>
+                  <div class="col-span-3 text-right pr-3">
+                    @if (it.promo; as promo) {
+                      <div class="font-semibold text-[15px] text-[#dc2626] tabular-nums font-mono">{{ store.fmt(promo.discountedAmount) }}</div>
+                    } @else {
+                      <div class="font-semibold text-[15px] text-[#111827] tabular-nums font-mono">{{ store.fmt(it.subtotal) }}</div>
+                    }
+                  </div>
+                  <div class="col-span-2 flex items-center justify-end gap-0.5">
+                    @if (it.kind === 'draft' && !it.comboId) {
+                      <button
+                        type="button"
+                        (click)="store.openConfigForEdit(it.key)"
+                        title="Ver/Editar Notas"
+                        class="p-1 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        (click)="store.openConfigForEdit(it.key)"
+                        title="Modificar Toppings"
+                        class="p-1 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                          <path d="M12 3a4 4 0 0 1 4 4c0 .34-.03.67-.08 1H8.08A4 4 0 0 1 12 3Z"></path>
+                          <path d="M7 8h10l-3.5 12a1.5 1.5 0 0 1-3 0L7 8Z"></path>
+                        </svg>
+                      </button>
+                    }
+                    <button
+                      (click)="store.removeDraft(it.key)"
+                      title="Eliminar ítem"
+                      class="p-1 text-[#6b7280] hover:text-[#dc2626] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path d="M3 6h18"></path>
+                        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            }
+
+                <!-- Tarjeta apilada (por debajo de sm): crece verticalmente
+                     según su contenido en vez de apretar el stepper y los 3
+                     íconos en columnas angostas -- mismos datos/acciones. -->
+                <div
+                  class="flex sm:hidden flex-col gap-2 py-3"
+                  [class]="it.promo ? 'bg-[#fffbeb]/40 -mx-2 px-2 border-l-2 border-[#f59e0b]' : ''"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="text-[13px] font-semibold text-[#111827] leading-tight">{{ it.name }}</span>
+                        @if (it.promo; as promo) {
+                          <span class="bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] text-[10px] font-bold px-1 py-0.2 rounded-[6px] shrink-0 leading-none">{{ promo.badge }}</span>
+                        }
+                      </div>
+                      @for (b of it.bullets; track $index) {
+                        <span class="block text-[11px] text-[#6b7280] mt-0.5">{{ b }}</span>
+                      }
+                      @if (it.promo; as promo) {
+                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span class="line-through text-[11px] text-[#6b7280] font-mono">{{ store.fmt(promo.originalAmount) }}</span>
+                          <span class="text-[11px] text-[#15803d] font-semibold font-mono">Ahorras {{ store.fmt(promo.savings) }}</span>
+                        </div>
+                      }
+                    </div>
+                    <div class="text-right shrink-0">
+                      @if (it.promo; as promo) {
+                        <div class="font-semibold text-[15px] text-[#dc2626] tabular-nums font-mono">{{ store.fmt(promo.discountedAmount) }}</div>
+                      } @else {
+                        <div class="font-semibold text-[15px] text-[#111827] tabular-nums font-mono">{{ store.fmt(it.subtotal) }}</div>
+                      }
+                    </div>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <button (click)="store.decDraft(it.key)" class="w-7 h-7 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#4b5563] flex items-center justify-center text-[13px] font-bold transition-colors">−</button>
+                      <span class="font-mono font-medium text-[13px] text-[#111827] tabular-nums min-w-[12px] text-center">{{ it.qty }}</span>
+                      <button (click)="store.incDraft(it.key)" class="w-7 h-7 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#4b5563] flex items-center justify-center text-[13px] font-bold transition-colors">+</button>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      @if (it.kind === 'draft' && !it.comboId) {
+                        <button
+                          type="button"
+                          (click)="store.openConfigForEdit(it.key)"
+                          title="Ver/Editar Notas"
+                          class="p-1.5 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          (click)="store.openConfigForEdit(it.key)"
+                          title="Modificar Toppings"
+                          class="p-1.5 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path d="M12 3a4 4 0 0 1 4 4c0 .34-.03.67-.08 1H8.08A4 4 0 0 1 12 3Z"></path>
+                            <path d="M7 8h10l-3.5 12a1.5 1.5 0 0 1-3 0L7 8Z"></path>
+                          </svg>
+                        </button>
+                      }
+                      <button
+                        (click)="store.removeDraft(it.key)"
+                        title="Eliminar ítem"
+                        class="p-1.5 text-[#6b7280] hover:text-[#dc2626] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                          <path d="M3 6h18"></path>
+                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              }
+            </div>
             @if (store.cartEmpty()) {
-              <div class="text-center text-gray-400 py-10 text-sm">Agrega productos desde el catálogo.</div>
+              <div class="text-center text-[#9ca3af] py-10 text-[13px]">Agrega productos desde el catálogo.</div>
             }
           </div>
 
-          <div class="border-t border-gray-100 p-4 space-y-2 bg-gray-50 shrink-0">
-            @let tot = store.totals();
-            @if (store.draftPreview(); as p) {
-              <!-- spec 073, FR-013/FR-014: el desglose (con descuento por
-                   promoción) lo calcula el backend sobre el borrador. -->
-              <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(+p.subtotal) }}</span></div>
-              @if (+p.discount > 0) {
-                <div class="flex justify-between text-sm text-emerald-700"><span>Descuento</span><span>− {{ store.fmt(+p.discount) }}</span></div>
+          <div class="border-t border-[#e5e7eb] bg-white shrink-0 flex flex-col">
+            <div class="p-3 bg-[#f9fafb] border-b border-[#e5e7eb] flex flex-col gap-1">
+              @let tot = store.totals();
+              @if (store.draftPreview(); as p) {
+                <!-- spec 073, FR-013/FR-014: el desglose (con descuento por
+                     promoción) lo calcula el backend sobre el borrador. -->
+                <app-bill-summary
+                  [subtotal]="+p.subtotal"
+                  [discount]="+p.discount"
+                  [deliveryFee]="+p.delivery_fee"
+                  deliveryFeeLabel="Costo de domicilio"
+                  [showDeliveryIcon]="true"
+                  [total]="+p.total"
+                  totalLabel="TOTAL ORDEN"
+                  size="lg"
+                />
+              } @else {
+                <!-- FR-015: sin descuento verificado (cargando o sin conexión) —
+                     subtotal sin descuento + aviso; NO bloquea confirmar. -->
+                <app-bill-summary
+                  [subtotal]="tot.subtotal"
+                  [deliveryFee]="store.orderTypeTab() === 'domicilios' ? tot.deliveryFee : 0"
+                  deliveryFeeLabel="Costo de domicilio"
+                  [showDeliveryIcon]="true"
+                  [total]="tot.total"
+                  totalLabel="TOTAL ORDEN"
+                  size="lg"
+                />
+                @if (store.draftPreviewError()) {
+                  <p class="text-[11px] text-[#b45309]">El descuento se confirma al cobrar.</p>
+                } @else if (store.draftPreviewLoading()) {
+                  <p class="text-[11px] text-[#9ca3af]">Calculando el descuento…</p>
+                }
               }
-              <div class="flex justify-between text-sm"><span>Impuesto</span><span>{{ store.fmt(0) }}</span></div>
-              @if (+p.delivery_fee > 0) {
-                <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(+p.delivery_fee) }}</span></div>
-              }
-              <div class="border-t border-gray-200 my-1"></div>
-              <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(+p.total) }}</span></div>
-            } @else {
-              <!-- FR-015: sin descuento verificado (cargando o sin conexión) —
-                   subtotal sin descuento + aviso; NO bloquea confirmar. -->
-              <div class="flex justify-between text-sm"><span>Subtotal</span><span>{{ store.fmt(tot.subtotal) }}</span></div>
-              <div class="flex justify-between text-sm">
-                <!-- FR-011 (spec 036, decisión A-41): impuesto siempre $0. -->
-                <span>Impuesto</span><span>{{ store.fmt(0) }}</span>
-              </div>
-              @if (store.orderTypeTab() === 'domicilios') {
-                <div class="flex justify-between text-sm"><span>Domicilio</span><span>{{ store.fmt(tot.deliveryFee) }}</span></div>
-              }
-              <div class="border-t border-gray-200 my-1"></div>
-              <div class="flex justify-between font-bold text-xl"><span>Total</span><span>{{ store.fmt(tot.total) }}</span></div>
-              @if (store.draftPreviewError()) {
-                <p class="text-xs text-amber-700">El descuento se confirma al cobrar.</p>
-              } @else if (store.draftPreviewLoading()) {
-                <p class="text-xs text-gray-400">Calculando el descuento…</p>
-              }
-            }
+            </div>
 
-            <button
-              (click)="confirm()"
-              [disabled]="
-                store.cartEmpty() ||
-                store.submitting() ||
-                (store.orderTypeTab() === 'mesas' && !store.selectedTableId()) ||
-                (store.orderTypeTab() === 'domicilios' && (
-                  !store.customerName().trim() || !store.deliveryAddress().trim() || store.deliveryFee() == null
-                ))
-              "
-              class="w-full py-3 mt-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-            >
-              {{ store.submitting() ? 'Guardando…' : '➤ Confirmar y Enviar' }}
-            </button>
+            <div class="p-2 flex flex-col gap-1.5">
+              <button
+                (click)="confirm()"
+                [disabled]="
+                  store.cartEmpty() ||
+                  store.submitting() ||
+                  (store.orderTypeTab() === 'mesas' && !store.selectedTableId()) ||
+                  (store.orderTypeTab() === 'domicilios' && (
+                    !store.customerName().trim() || !store.deliveryAddress().trim() || store.deliveryFee() == null
+                  ))
+                "
+                class="w-full h-12 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white font-semibold text-[15px] flex items-center justify-center gap-2 rounded-[6px] disabled:opacity-50 transition-colors"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                  <rect height="14" rx="2" width="20" x="2" y="5"></rect>
+                  <line x1="2" x2="22" y1="10" y2="10"></line>
+                </svg>
+                <span>{{ store.submitting() ? 'Guardando…' : 'Crear pedido' }}</span>
+              </button>
+              <button
+                type="button"
+                (click)="backToTerminal()"
+                class="w-full h-8 border border-[#e5e7eb] bg-white hover:bg-[#f3f4f6] text-[#4b5563] hover:text-[#111827] text-[12px] font-medium flex items-center justify-center gap-1.5 rounded-[6px] transition-colors"
+              >
+                Regresar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -328,6 +700,7 @@ import {
     @if (store.configuringProduct(); as product) {
       <app-product-select
         [product]="product"
+        [initialSelection]="store.editingSelection()"
         (added)="store.addDraftFromSelection($event)"
         (cancelled)="store.closeConfig()"
       />
@@ -339,6 +712,27 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly confirmSvc = inject(ConfirmService);
+
+  /** Por debajo de `lg`, cuál de las dos tarjetas (catálogo/ticket) se
+   *  muestra -- mismo patrón que `store.hasActiveSelection()` en
+   *  `table-sessions.component.ts`, aquí como signal local porque no hay
+   *  ninguna selección de mesa/pedido que lo derive: el usuario alterna con
+   *  el botón "Ver pedido" y el de volver al catálogo. Desde `lg` ambas
+   *  tarjetas van lado a lado sin importar este valor. */
+  readonly viewingCart = signal(false);
+
+  /** Pestaña "Todos" del rediseño (`create-order/code.html`): activa por
+   *  defecto, igual que el mockup. `store.catalogCategoryId()` sigue
+   *  existiendo y se sincroniza al elegir una categoría puntual (para que
+   *  `store.openConfig`/otros usos del store no se enteren de esta pestaña),
+   *  pero mientras esta signal es `true` el grid usa
+   *  `store.catalogProductsAllFiltered()` en su lugar. */
+  readonly showingAllCategories = signal(true);
+
+  /** Fuente de datos del grid según la pestaña activa. */
+  readonly catalogProducts = computed(() =>
+    this.showingAllCategories() ? this.store.catalogProductsAllFiltered() : this.store.catalogProductsFiltered(),
+  );
 
   /**
    * spec 073, FR-013: recalcula el desglose del borrador (con descuento por
@@ -377,6 +771,15 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.store.stop();
+  }
+
+  selectAllCategories(): void {
+    this.showingAllCategories.set(true);
+  }
+
+  selectCategory(id: string): void {
+    this.showingAllCategories.set(false);
+    this.store.setCatalogCategory(id);
   }
 
   selectTable(id: string): void {
@@ -423,8 +826,10 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
     this.router.navigate(['/dashboard/mesas-sesiones']);
   }
 
-  minPrice(p: { variants: { price: number }[] }): number {
-    return p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : 0;
+  minPrice(p: { variants: { price: number; discounted_price?: number | null }[] }): number {
+    return p.variants.length
+      ? Math.min(...p.variants.map((v) => effectivePrice(v.price, v.discounted_price)))
+      : 0;
   }
 
   /** spec 056: `store.deliveryFee` nunca tiene valor por defecto — un campo

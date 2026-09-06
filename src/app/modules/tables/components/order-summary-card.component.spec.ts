@@ -32,7 +32,7 @@ describe('OrderSummaryCardComponent', () => {
     expect(text).toContain('Mesa 3');
     expect(text).toContain('Ocupada');
     expect(text).toContain('2 productos');
-    expect(text).toContain('🕐 12 min');
+    expect(text).toContain('12 min');
     expect(text).toContain('$25.000');
   });
 

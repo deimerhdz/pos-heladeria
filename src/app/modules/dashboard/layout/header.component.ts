@@ -8,12 +8,14 @@ const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: 'Administrador',
   [UserRole.ADMIN]: 'Administrador',
   [UserRole.CASHIER]: 'Cajero',
+  [UserRole.MESERO]: 'Mesero',
 };
 
 const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: 'bg-purple-100 text-purple-700',
   [UserRole.ADMIN]: 'bg-purple-100 text-purple-700',
   [UserRole.CASHIER]: 'bg-blue-100 text-blue-700',
+  [UserRole.MESERO]: 'bg-amber-100 text-amber-700',
 };
 
 @Component({
@@ -24,23 +26,24 @@ const ROLE_BADGE_CLASSES: Record<UserRole, string> = {
     <header
       class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center gap-3 justify-between shrink-0 z-10"
     >
-      <!-- Hamburger — solo visible en móvil -->
-      <button
-        (click)="layoutService.toggle()"
-        class="md:hidden p-2 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors shrink-0"
-        aria-label="Abrir menú"
-      >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 6h16M4 12h16M4 18h16"
-          />
-        </svg>
-      </button>
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <button
+          (click)="layoutService.toggle()"
+          class="p-2 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors shrink-0"
+          aria-label="Abrir menú"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          </svg>
+        </button>
 
-      <h2 class="text-base font-semibold text-gray-700 flex-1 md:flex-none">Panel de Control</h2>
+        <h2 class="text-base font-semibold text-gray-700 truncate">Panel de Control</h2>
+      </div>
 
       <div class="relative">
         <button

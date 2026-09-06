@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ProductSelectComponent } from './product-select.component';
+import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
 
 /**
  * Catálogo del "+ Agregar producto": buscador por nombre + categorías + grid de
@@ -93,7 +94,9 @@ import { ProductSelectComponent } from './product-select.component';
 export class PosCatalogDrawerComponent {
   readonly store = inject(PosTerminalStore);
 
-  minPrice(p: { variants: { price: number }[] }): number {
-    return p.variants.length ? Math.min(...p.variants.map((v) => v.price)) : 0;
+  minPrice(p: { variants: { price: number; discounted_price?: number | null }[] }): number {
+    return p.variants.length
+      ? Math.min(...p.variants.map((v) => effectivePrice(v.price, v.discounted_price)))
+      : 0;
   }
 }

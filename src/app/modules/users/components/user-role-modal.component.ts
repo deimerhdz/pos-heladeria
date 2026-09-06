@@ -56,6 +56,7 @@ import { UsersService } from '../services/users.service';
               <option value="" disabled>Selecciona un rol</option>
               <option value="ADMIN">Admin</option>
               <option value="CASHIER">Cajero</option>
+              <option value="MESERO">Mesero</option>
             </select>
             @if (roleControl.invalid && roleControl.touched) {
               <p class="text-red-500 text-xs mt-1">Selecciona un rol</p>
@@ -105,7 +106,8 @@ export class UserRoleModalComponent implements OnChanges {
   ngOnChanges(): void {
     this.usersService.error.set(null);
     const current = this.user?.role_name?.toUpperCase();
-    const role: RoleName | '' = current === 'ADMIN' || current === 'CASHIER' ? current : '';
+    const role: RoleName | '' =
+      current === 'ADMIN' || current === 'CASHIER' || current === 'MESERO' ? current : '';
     this.form.reset({ role });
   }
 
