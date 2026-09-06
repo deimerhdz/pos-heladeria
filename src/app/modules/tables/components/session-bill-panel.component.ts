@@ -10,7 +10,6 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
 import {
   CloseSessionPayload,
   CloseSessionResponse,
@@ -20,6 +19,8 @@ import {
 import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interface';
 import { TableSessionService } from '../services/table-session.service';
 import { PaymentInputComponent } from './payment-input.component';
+import { BillSummaryComponent } from './bill-summary.component';
+import { formatMoney } from '../../../shared/money';
 import {
   PaymentDraft,
   emptyPaymentDraft,
@@ -38,11 +39,11 @@ import { ToastService } from '../../../shared/feedback/toast.service';
 @Component({
   selector: 'app-session-bill-panel',
   standalone: true,
-  imports: [DecimalPipe, PaymentInputComponent],
+  imports: [PaymentInputComponent, BillSummaryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex flex-col h-full">
-      <h2 class="text-base font-bold text-gray-900 mb-3">Cuenta de la mesa</h2>
+      <h2 class="text-[15px] font-bold text-[#111827] mb-3">Cuenta de la mesa</h2>
 
       @if (paidSummary; as pagado) {
         <!-- Bugfix reportado sobre spec 049: la mesa puede tener pedidos ya
@@ -50,80 +51,92 @@ import { ToastService } from '../../../shared/feedback/toast.service';
              desglose de abajo no incluye a propósito (evita cobrar dos
              veces) — este bloque muestra ese consumo ya pagado aparte, sin
              mezclarlo con lo pendiente. -->
-        <div class="mb-3 pb-3 border-b border-gray-100 space-y-1">
-          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ya pagado</p>
-          <div class="flex items-center justify-between text-sm text-gray-600">
-            <span>Subtotal</span>
-            <span>$ {{ pagado.subtotal | number: '1.2-2' }}</span>
-          </div>
-          @if (pagado.discount > 0) {
-            <div class="flex items-center justify-between text-sm text-emerald-700">
-              <span>Descuento</span>
-              <span>- $ {{ pagado.discount | number: '1.2-2' }}</span>
-            </div>
-          }
-          <div class="flex items-center justify-between text-sm font-semibold text-gray-800">
-            <span>Total pagado</span>
-            <span>$ {{ pagado.total | number: '1.2-2' }}</span>
-          </div>
+        <div class="mb-3 pb-3 border-b border-[#e5e7eb] space-y-1">
+          <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide">Ya pagado</p>
+          <app-bill-summary
+            [subtotal]="pagado.subtotal"
+            [discount]="pagado.discount"
+            [total]="pagado.total"
+            totalLabel="Total pagado"
+            size="sm"
+          />
         </div>
       }
 
       @if (!bill) {
         @if (orphan) {
-          <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3 space-y-1">
-            <p class="text-base font-semibold text-amber-900">No se puede cobrar esta mesa</p>
-            <p class="text-sm text-amber-800">
+          <div class="bg-[#fffbeb] border border-[#fef3c7] rounded-[6px] px-3 py-3 space-y-1">
+            <p class="text-[14px] font-semibold text-[#92400e]">No se puede cobrar esta mesa</p>
+            <p class="text-[13px] text-[#b45309]">
               Tiene pedidos sin cobrar, pero su sesión está cerrada. Avisa al administrador.
             </p>
           </div>
         } @else {
-          <p class="text-base text-gray-400 py-6 text-center">Selecciona una mesa con consumo.</p>
+          <p class="text-[14px] text-[#9ca3af] py-6 text-center">Selecciona una mesa con consumo.</p>
         }
       } @else {
-        <!-- Desglose: ítems, descuento y subtotal por comensal (spec 026, FR-006) -->
-        <div class="space-y-3 mb-4">
-          @for (line of bill.split; track line.participant_id) {
-            <div class="space-y-0.5">
-              <div class="flex items-center justify-between text-base">
-                <span class="text-gray-700 font-medium truncate">{{ lineLabel(line.display_label) }}</span>
-                <span class="font-medium text-gray-900">$ {{ +line.subtotal | number: '1.2-2' }}</span>
-              </div>
-              <ul class="pl-3 space-y-0.5">
-                @for (item of line.items; track $index) {
-                  <li class="flex items-center justify-between text-sm text-gray-500">
-                    <span class="truncate">{{ +item.quantity }}× {{ item.description }}</span>
-                    <span>$ {{ +item.line_total | number: '1.2-2' }}</span>
-                  </li>
-                }
-              </ul>
-              @if (+line.discount > 0) {
-                <div class="flex items-center justify-between text-sm text-emerald-700 pl-3">
-                  <span>Descuento aplicado</span>
-                  <span>- $ {{ +line.discount | number: '1.2-2' }}</span>
+        <!-- Cuentas: una tarjeta seleccionable por comensal (incluida la de
+             participant_id null -- "sin asignar", ítems del mesero). Se
+             elige por índice, no por participant_id, porque ese campo
+             legítimamente puede ser null para "sin asignar" y necesitamos
+             distinguir "sin selección" de "seleccioné la de sin asignar". -->
+        <div class="mb-3">
+          <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide mb-1.5">Cuentas</p>
+          <div class="flex flex-wrap gap-1.5">
+            @for (line of bill.split; track $index; let i = $index) {
+              <button
+                type="button"
+                (click)="selectedIndex.set(i)"
+                class="flex-1 min-w-[140px] text-left px-2.5 py-2 rounded-[6px] border transition-colors"
+                [class]="i === selectedIndex() ? 'border-[#4f46e5] bg-[#eef2ff]' : 'border-[#e5e7eb] bg-white hover:bg-[#f9fafb]'"
+              >
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="i === selectedIndex() ? 'bg-[#4f46e5]' : 'bg-[#d1d5db]'"></span>
+                  <span class="text-[13px] font-semibold text-[#111827] truncate">{{ lineLabel(line.display_label) }}</span>
+                  <span class="text-[10px] font-medium text-[#6b7280] shrink-0">{{ line.items.length }} ítems</span>
                 </div>
-              }
-            </div>
-          }
-          @let summary = billSummary();
-          @if (summary) {
-            <div class="flex items-center justify-between pt-2 border-t border-gray-100 text-sm text-gray-600">
-              <span>Subtotal</span>
-              <span>$ {{ summary.subtotal | number: '1.2-2' }}</span>
-            </div>
-            @if (summary.discount > 0) {
-              <div class="flex items-center justify-between text-sm text-emerald-700">
-                <span>Descuento</span>
-                <span>- $ {{ summary.discount | number: '1.2-2' }}</span>
-              </div>
+                <div class="text-[13px] font-bold text-[#4f46e5] mt-0.5">{{ money(+line.subtotal) }}</div>
+              </button>
             }
-          }
-          <div class="flex items-center justify-between pt-2" [class.border-t]="!summary" [class.border-gray-100]="!summary">
-            <span class="text-base font-semibold text-gray-800">Total</span>
-            <span class="text-lg font-bold text-gray-900">
-              $ {{ +bill.total | number: '1.2-2' }}
-            </span>
           </div>
+        </div>
+
+        <!-- Productos de la cuenta seleccionada -->
+        @if (selectedLine(); as line) {
+          <div class="mb-3 pb-3 border-b border-[#e5e7eb]">
+            <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide mb-1.5">
+              Productos en {{ lineLabel(line.display_label) }} ({{ line.items.length }} ítems)
+            </p>
+            <ul class="space-y-1">
+              @for (item of line.items; track $index) {
+                <li class="flex items-center justify-between text-[13px] text-[#4b5563]">
+                  <span class="truncate">{{ +item.quantity }}× {{ item.description }}</span>
+                  <span class="font-medium text-[#111827]">{{ money(+item.line_total) }}</span>
+                </li>
+              }
+            </ul>
+            <app-bill-summary
+              [discount]="+line.discount"
+              [total]="+line.subtotal"
+              [totalLabel]="'Subtotal ' + lineLabel(line.display_label)"
+              size="sm"
+            />
+          </div>
+        }
+
+        <!-- Totales de TODA la mesa -- lo que realmente cobra el botón de
+             abajo, siempre visible aparte del subtotal de la cuenta
+             seleccionada para no sugerir un cobro parcial que no existe. -->
+        <div class="mb-4">
+          @let summary = billSummary();
+          <app-bill-summary
+            [subtotal]="summary ? summary.subtotal : undefined"
+            [subtotalLabel]="'Subtotal mesa (' + bill.split.length + ' cuenta' + (bill.split.length === 1 ? '' : 's') + ')'"
+            [discount]="summary ? summary.discount : 0"
+            [total]="+bill.total"
+            totalLabel="Total a cobrar"
+            size="md"
+          />
         </div>
 
         @if (readOnly) {
@@ -135,7 +148,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
             origen: cobrar de nuevo una mesa ya pagada por QR fallaba con un
             error que el cajero no sabía interpretar.
           -->
-          <p class="text-sm text-gray-400 py-2">
+          <p class="text-[13px] text-[#9ca3af] py-2">
             Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
           </p>
         } @else {
@@ -149,15 +162,15 @@ import { ToastService } from '../../../shared/feedback/toast.service';
         </div>
 
         @if (error()) {
-          <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-            <p class="text-sm text-red-700">{{ error() }}</p>
+          <div class="bg-[#fef2f2] border border-[#fecaca] rounded-[6px] px-3 py-2 mb-3">
+            <p class="text-[13px] text-[#b91c1c]">{{ error() }}</p>
           </div>
         }
 
         <button
           (click)="charge()"
           [disabled]="submitting() || !ready()"
-          class="w-full min-h-11 py-2.5 bg-indigo-600 text-white text-base font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="w-full min-h-11 py-2.5 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[14px] font-semibold rounded-[6px] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {{ submitting() ? 'Cobrando...' : 'Cobrar y cerrar mesa' }}
         </button>
@@ -221,6 +234,16 @@ export class SessionBillPanelComponent implements OnChanges {
 
   readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
 
+  /** Cuenta seleccionada en la sección "Cuentas" -- por índice de
+   *  `bill.split`, no por `participant_id` (ese campo puede legítimamente
+   *  ser `null` para "sin asignar", así que un índice evita la ambigüedad
+   *  entre "nada seleccionado" y "seleccioné la de sin asignar"). Se
+   *  resetea a la primera cuenta cada vez que cambia `bill` (mismo punto
+   *  que ya resetea `unifiedPayment`). */
+  readonly selectedIndex = signal(0);
+
+  readonly selectedLine = computed(() => this.currentBill()?.split[this.selectedIndex()] ?? null);
+
   /**
    * Subtotal/descuento agregados de toda la cuenta, sumando las mismas
    * columnas que ya trae `bill.split` por comensal (spec 049, FR-003/FR-004).
@@ -265,6 +288,7 @@ export class SessionBillPanelComponent implements OnChanges {
     this.error.set(null);
     this.currentBill.set(this.bill);
     this.unifiedPayment.set(emptyPaymentDraft());
+    this.selectedIndex.set(0);
   }
 
   /** Los ítems sin comensal los añadió el mesero — spec 057, FR-005/FR-006:
@@ -274,6 +298,10 @@ export class SessionBillPanelComponent implements OnChanges {
   lineLabel(label: string | null): string {
     if (label) return label;
     return this.customerName.trim() || 'Sin asignar (mesero)';
+  }
+
+  money(n: number): string {
+    return formatMoney(n);
   }
 
   async charge(): Promise<void> {

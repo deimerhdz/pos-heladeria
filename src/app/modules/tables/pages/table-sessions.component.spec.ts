@@ -253,3 +253,262 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
     expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
   });
 });
+
+/**
+ * Rediseño responsive: en escritorio (breakpoint lg y superior) la grilla de
+ * mesas y el panel de detalle conviven siempre lado a lado, igual que antes.
+ * Por debajo de lg, jsdom no evalúa media queries -- se afirma sobre las
+ * clases `hidden`/`flex` que decide `store.hasActiveSelection()`, que es lo
+ * que realmente controla cuál de las dos columnas se ve en cada tamaño.
+ */
+describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el panel de detalle', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  const mesasColumn = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="mesas-column"]');
+  const detailColumn = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="detail-column"]');
+  // La utilidad `hidden` se busca como clase propia, no como subcadena --
+  // ambas tarjetas también llevan `overflow-hidden` (mockup: esquinas
+  // redondeadas recortan el contenido), que contiene la subcadena "hidden"
+  // pero no es la clase de visibilidad que decide store.hasActiveSelection().
+  const hasHiddenClass = (el: HTMLElement): boolean => el.classList.contains('hidden');
+
+  it('sin selección: la columna de mesas queda visible por debajo de lg y la de detalle oculta', () => {
+    fixture.detectChanges();
+
+    expect(hasHiddenClass(mesasColumn())).toBe(false);
+    expect(hasHiddenClass(detailColumn())).toBe(true);
+  });
+
+  it('con una mesa seleccionada (con pedido en curso): la columna de mesas se oculta por debajo de lg y la de detalle queda visible', () => {
+    // t1 sin pedidos caería en el estado "mesa-libre", que ya no muestra la
+    // tarjeta de detalle en absoluto (ver el describe de más abajo) -- para
+    // probar el colapso genérico hace falta una mesa con contenido real.
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'recibida',
+        version: 1,
+        dining_table_id: 't1',
+        customer_name: null,
+        created_at: '2026-08-28T10:00:00',
+        items: [],
+      } as DiningOrder,
+    ]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(hasHiddenClass(mesasColumn())).toBe(true);
+    expect(hasHiddenClass(detailColumn())).toBe(false);
+  });
+
+  it('bugfix: el CTA "+ Crear pedido nuevo" de la sub-barra sigue visible con una mesa/pedido seleccionado', () => {
+    // Antes el botón vivía dentro de un `@if (!showingDetail())`, así que
+    // desaparecía justo al seleccionar una mesa con pedido en curso -- se
+    // reporta como bug porque el cajero pierde el acceso al CTA fijo
+    // mientras trabaja sobre una mesa ya abierta.
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'recibida',
+        version: 1,
+        dining_table_id: 't1',
+        customer_name: null,
+        created_at: '2026-08-28T10:00:00',
+        items: [],
+      } as DiningOrder,
+    ]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(hasHiddenClass(detailColumn())).toBe(false);
+    const cta = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    );
+    expect(cta).toBeTruthy();
+  });
+
+  it('el botón de volver de página llama a store.cancelSelection(), único para los 3 estados del panel central', () => {
+    // t1 sin pedidos caería en "mesa-libre", que ya no tiene panel de
+    // detalle (ni botón de volver) propio -- se le da un pedido para probar
+    // el botón en un estado que sí renderiza la tarjeta de detalle.
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'recibida',
+        version: 1,
+        dining_table_id: 't1',
+        customer_name: null,
+        created_at: '2026-08-28T10:00:00',
+        items: [],
+      } as DiningOrder,
+    ]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+    const cancelSpy = vi.spyOn(store, 'cancelSelection');
+
+    const backButton = fixture.nativeElement.querySelector(
+      '[data-testid="page-back-button"]',
+    ) as HTMLButtonElement;
+    expect(backButton).not.toBeNull();
+    backButton.click();
+
+    expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  it('sin selección, el botón de volver de página no se muestra', () => {
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="page-back-button"]')).toBeNull();
+  });
+});
+
+/**
+ * Bugfix reportado sobre el rediseño: al seleccionar una mesa libre (sin
+ * ningún pedido), el panel central informativo ("Mesa N está libre...") y el
+ * "Pedido de mostrador" + botón del panel de cobro aparecían lado a lado
+ * repitiendo el mismo mensaje ("crea un pedido nuevo") dos veces. A pedido
+ * del usuario, ese estado dejó de tener panel propio por completo -- la
+ * tarjeta de detalle no renderiza nada (ver el describe de más abajo) y el
+ * único CTA vive en la sub-barra junto al resumen de mesas.
+ */
+describe('TableSessionsComponent — mesa libre seleccionada: un único panel, no dos mensajes repetidos', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  it('no renderiza el panel de cobro (app-pos-checkout-panel) para una mesa libre', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    expect(store.centralState()).toBe('mesa-libre');
+    expect(fixture.nativeElement.querySelector('app-pos-checkout-panel')).toBeNull();
+  });
+
+  it('muestra un solo botón "+ Crear pedido nuevo", no el heading duplicado "Pedido de mostrador"', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Pedido de mostrador');
+    const ctaButtons = Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    );
+    expect(ctaButtons).toHaveLength(1);
+  });
+
+  it('el CTA único navega a la vista de armado de pedido para esa mesa', () => {
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    const cta = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    ) as HTMLButtonElement;
+    cta.click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
+  });
+});
+
+// ── A pedido del usuario: sin panel vacío, CTA en la sub-barra ─────────────
+describe('TableSessionsComponent — sin selección: sin panel de detalle vacío, CTA en la sub-barra', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  it('sin selección, la tarjeta de detalle no renderiza ningún contenido (ni el estado vacío de antes)', () => {
+    fixture.detectChanges();
+
+    const detailColumn = fixture.nativeElement.querySelector('[data-testid="detail-column"]') as HTMLElement;
+    expect(detailColumn.classList.contains('hidden')).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Sin selección');
+    expect(fixture.nativeElement.textContent).not.toContain('Atajos de teclado');
+  });
+
+  it('sin selección, "Crear pedido nuevo" aparece en la sub-barra', () => {
+    fixture.detectChanges();
+
+    const cta = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    ) as HTMLButtonElement | undefined;
+    expect(cta).toBeTruthy();
+  });
+
+  it('el CTA se queda en la sub-barra al seleccionar una mesa libre, ya que su panel de detalle tampoco se muestra', () => {
+    fixture.detectChanges();
+    const detailColumn = (): HTMLElement =>
+      fixture.nativeElement.querySelector('[data-testid="detail-column"]');
+    const findCta = (): HTMLButtonElement =>
+      Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+        (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+      ) as HTMLButtonElement;
+
+    // Sin selección: el único CTA vive en la sub-barra, fuera del detalle.
+    expect(detailColumn().contains(findCta())).toBe(false);
+
+    // Con t1 (libre, sin pedidos) seleccionada: cae en el estado "mesa-libre",
+    // que ya no tiene panel de detalle propio -- el CTA sigue siendo el mismo
+    // botón de la sub-barra (store.newOrderTableId() prioriza la mesa libre
+    // seleccionada), y la tarjeta de detalle sigue sin mostrar nada.
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+    expect(detailColumn().contains(findCta())).toBe(false);
+    expect(detailColumn().classList.contains('hidden')).toBe(true);
+  });
+});

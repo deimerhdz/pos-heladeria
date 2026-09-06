@@ -246,6 +246,60 @@ describe('PublicMenuComponent', () => {
     expect(texto.split('sin banana').length - 1).toBe(1);
   });
 
+  // ── Precio, promoción y total del pedido en "Mis pedidos" ─────────────────
+
+  it('muestra el precio de cada línea y el total del pedido', async () => {
+    const order: DiningOrder = {
+      id: 'o1',
+      channel: 'QR_MENU',
+      status: 'recibida',
+      created_at: new Date().toISOString(),
+      items: [
+        { id: 'it1', product_variant_id: 'v1', quantity: 2, unit_price: '5000', estado_cocina: 'pendiente' },
+        { id: 'it2', product_variant_id: 'v1', quantity: 1, unit_price: '3000', estado_cocina: 'pendiente' },
+      ],
+    };
+    const { fixture } = await createComponent('tok-1', [], { withSession: true });
+    fixture.componentInstance.myOrders.set([order]);
+    fixture.componentInstance.section.set('pedidos');
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('$ 10.000'); // 2 × 5.000
+    expect(texto).toContain('$ 3.000');
+    expect(texto).toContain('$ 13.000'); // total del pedido
+  });
+
+  it('tacha el precio de lista y muestra el descontado cuando la línea tiene promoción', async () => {
+    const order: DiningOrder = {
+      id: 'o1',
+      channel: 'QR_MENU',
+      status: 'recibida',
+      created_at: new Date().toISOString(),
+      items: [
+        {
+          id: 'it1',
+          product_variant_id: 'v1',
+          quantity: 2,
+          unit_price: '5000',
+          discounted_unit_price: '4000',
+          discounted_line_total: '8000',
+          estado_cocina: 'pendiente',
+        },
+      ],
+    };
+    const { fixture } = await createComponent('tok-1', [], { withSession: true });
+    fixture.componentInstance.myOrders.set([order]);
+    fixture.componentInstance.section.set('pedidos');
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('$ 10.000'); // tachado: precio de lista sin descuento
+    expect(texto).toContain('$ 8.000'); // total con descuento
+    const lineThrough = (fixture.nativeElement as HTMLElement).querySelector('.line-through');
+    expect(lineThrough?.textContent).toContain('10.000');
+  });
+
   // ── spec 066 (A-67, FR-013 a FR-015) — insignia genérica en la tarjeta ────
 
   function promocion(over: Partial<MenuVariantPromotion> = {}): MenuVariantPromotion {

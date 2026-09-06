@@ -3,10 +3,16 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { OrderSummaryCardComponent } from './order-summary-card.component';
 
 /**
- * Franja superior de la terminal: pestañas de tipo de orden, buscador y
- * filtro de ocupación en una sola fila horizontal, con un carrusel de
- * tarjetas de mesa (una sola fila, con flechas de desplazamiento) debajo —
- * según el prototipo de referencia (spec 036).
+ * Contenido de la tarjeta blanca de mesas (mockup de referencia,
+ * terminal-de-mesas/code.html): franja de filtros de ocupación + buscador,
+ * con la grilla responsive de tarjetas de mesa debajo (2 columnas en móvil,
+ * 3 en tablet, 4 en escritorio, 5 en pantallas anchas) que envuelve y hace
+ * scroll vertical — reemplaza el carrusel de una sola fila de la spec 036.
+ * Las pestañas de tipo de orden (Mesas/Domicilios/Para llevar) y el resumen
+ * de ocupación viven un nivel arriba, en la sub-barra de
+ * `table-sessions.component.ts` -- ahí ocupan todo el ancho de la pantalla,
+ * igual que en el mockup, en vez de quedar encajonadas dentro de esta sola
+ * columna.
  */
 @Component({
   selector: 'app-pos-tables-panel',
@@ -14,69 +20,64 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [OrderSummaryCardComponent],
   template: `
-    <div class="w-full min-w-0 flex flex-col bg-white">
-      <div class="flex flex-wrap items-center gap-3 p-4 border-b border-gray-100">
-        <!-- Pestañas de tipo de orden (spec 036, FR-001): eje independiente
-             del filtro de ocupación. "Domicilios"/"Para llevar" no tienen
-             todavía ninguna vía de creación de orden (FR-003). -->
-        <div class="flex gap-1.5 shrink-0">
-          @for (t of orderTypeTabs; track t.key) {
-            <button
-              (click)="store.setOrderTypeTab(t.key)"
-              class="min-h-11 px-3 py-2 text-sm font-medium rounded-lg border transition-colors whitespace-nowrap"
-              [class]="store.orderTypeTab() === t.key ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
-            >
-              {{ t.label }}
-            </button>
-          }
-        </div>
-
-        @if (store.orderTypeTab() === 'mesas') {
-          <input
-            #searchInput
-            type="text"
-            [value]="store.search()"
-            (input)="store.search.set($any($event.target).value)"
-            placeholder="Buscar mesa… (F2)"
-            class="flex-1 min-w-[180px] px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          />
-          <div class="flex gap-1.5 shrink-0">
+    <div class="w-full min-w-0 h-full flex flex-col bg-white">
+      @if (store.orderTypeTab() === 'mesas') {
+        <div class="flex flex-col gap-2 p-3 border-b border-[#e5e7eb] sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div class="flex gap-1.5 overflow-x-auto pb-0.5 sm:overflow-visible sm:flex-wrap shrink-0">
             @for (f of filters; track f.key) {
               <button
                 (click)="store.filter.set(f.key)"
-                class="min-h-11 px-3 py-2 text-sm font-medium rounded-lg border transition-colors whitespace-nowrap"
-                [class]="store.filter() === f.key ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                class="shrink-0 h-9 sm:h-11 px-3 rounded-[6px] text-[13px] flex items-center gap-2 transition-colors whitespace-nowrap"
+                [class]="
+                  store.filter() === f.key
+                    ? 'bg-[#f3f4f6] text-[#111827] font-semibold'
+                    : 'border border-[#e5e7eb] text-[#4b5563] font-medium hover:bg-[#f3f4f6]'
+                "
               >
-                {{ f.label }}
+                <span>{{ f.label }}</span>
+                <span
+                  class="px-1.5 py-0.5 text-[11px] font-medium rounded-[6px] tabular-nums"
+                  [class]="
+                    store.filter() === f.key
+                      ? 'bg-white border border-[#e5e7eb] text-[#111827]'
+                      : 'bg-[#f3f4f6] text-[#4b5563]'
+                  "
+                >
+                  {{ countFor(f.key) }}
+                </span>
               </button>
             }
           </div>
-        }
-      </div>
+          <div class="relative sm:w-64 shrink-0">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+              <svg class="w-[18px] h-[18px] stroke-[#6b7280]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" x2="16.65" y1="21" y2="16.65"></line>
+              </svg>
+            </span>
+            <input
+              #searchInput
+              type="text"
+              [value]="store.search()"
+              (input)="store.search.set($any($event.target).value)"
+              placeholder="Buscar mesa…"
+              class="w-full h-9 sm:h-11 pl-9 pr-12 bg-white border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] placeholder-[#6b7280] focus:outline-none focus:border-[#111827]"
+            />
+            <span class="hidden sm:inline absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-[#f3f4f6] border border-[#e5e7eb] text-[#6b7280] text-[11px] rounded-[6px] pointer-events-none">
+              [F2]
+            </span>
+          </div>
+        </div>
 
-      @if (store.orderTypeTab() === 'mesas') {
-        <!-- Carrusel horizontal (una sola fila) con botones de
-             desplazamiento, en vez de una grilla que envuelve en varias
-             filas — según el prototipo de referencia (spec 036). Cada
-             tarjeta ocupa 1/4 del ancho visible (no un px fijo) para que se
-             vean exactamente 4 por defecto y el carrusel sea responsive: al
-             cambiar el ancho de pantalla, las 4 tarjetas visibles se
-             reajustan en vez de quedar recortadas o dejar espacio muerto. -->
-        <div class="flex items-center gap-2 min-w-0 px-2 py-4">
-          <button
-            type="button"
-            (click)="scrollCarousel(-1)"
-            [disabled]="store.tablesView().length === 0"
-            title="Ver mesas anteriores"
-            aria-label="Ver mesas anteriores"
-            class="shrink-0 w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
-          >‹</button>
-
-          <div #carousel class="flex-1 min-w-0 flex gap-3 overflow-x-auto scroll-smooth">
+        <!-- Grilla que envuelve y hace scroll vertical (no un carrusel de una
+             sola fila): 2 columnas en móvil, 3 en tablet, 4 en escritorio, 5
+             en pantallas anchas. -->
+        <div class="flex-1 min-w-0 overflow-y-auto p-3">
+          <div data-testid="mesas-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
             @for (t of store.tablesView(); track t.id) {
               <app-order-summary-card
                 [title]="'Mesa ' + t.number"
-                [statusLabel]="t.statusLabel"
+                [statusLabel]="t.statusLabelShort"
                 [statusClass]="t.chipClass"
                 [secondaryLabel]="t.itemsLabel"
                 [elapsedLabel]="t.elapsedLabel"
@@ -86,26 +87,17 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
                 (select)="store.selectTable(t.id)"
               />
             }
-            @if (store.noTablesFound()) {
-              <p class="shrink-0 text-base text-gray-400 py-8 px-4">Sin resultados</p>
-            }
           </div>
-
-          <button
-            type="button"
-            (click)="scrollCarousel(1)"
-            [disabled]="store.tablesView().length === 0"
-            title="Ver más mesas"
-            aria-label="Ver más mesas"
-            class="shrink-0 w-8 h-8 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
-          >›</button>
+          @if (store.noTablesFound()) {
+            <p class="text-center text-[13px] text-[#6b7280] py-8">Sin resultados</p>
+          }
         </div>
       } @else if (store.ordersByType(store.orderTypeTab()).length > 0) {
         <!-- Spec 059, Historia 2/3: pedidos Domicilio/Para llevar pendientes
-             de cobro, mismo formato de tarjeta que las mesas — seleccionar
-             una abre su detalle y su cobro (Historia 3). -->
-        <div class="flex items-center gap-2 min-w-0 px-2 py-4">
-          <div class="flex-1 min-w-0 flex flex-wrap gap-3 overflow-x-auto scroll-smooth">
+             de cobro, mismo formato de tarjeta y de grilla que las mesas —
+             seleccionar una abre su detalle y su cobro (Historia 3). -->
+        <div class="flex-1 min-w-0 overflow-y-auto p-3">
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             @for (o of store.ordersByType(store.orderTypeTab()); track o.id) {
               <app-order-summary-card
                 [title]="o.title"
@@ -123,9 +115,9 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
       } @else {
         <!-- FR-003/FR-009: listado vacío con mensaje claro, no un error ni
              una grilla en blanco sin explicación. -->
-        <div class="flex flex-col items-center justify-center text-center text-gray-400 p-8 gap-3">
+        <div class="flex flex-col items-center justify-center text-center text-[#6b7280] p-8 gap-3">
           <div class="text-4xl">🧾</div>
-          <p class="text-sm max-w-xs">
+          <p class="text-[13px] max-w-xs">
             Todavía no hay ningún pedido de
             {{ store.orderTypeTab() === 'domicilios' ? 'domicilio' : 'para llevar' }} pendiente de
             cobro.
@@ -138,13 +130,6 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
 export class PosTablesPanelComponent {
   readonly store = inject(PosTerminalStore);
   readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-  readonly carousel = viewChild<ElementRef<HTMLDivElement>>('carousel');
-
-  readonly orderTypeTabs = [
-    { key: 'mesas' as const, label: 'Mesas' },
-    { key: 'domicilios' as const, label: 'Domicilios' },
-    { key: 'para-llevar' as const, label: 'Para llevar' },
-  ];
 
   readonly filters = [
     { key: 'todas' as const, label: 'Todas' },
@@ -157,13 +142,12 @@ export class PosTablesPanelComponent {
     this.searchInput()?.nativeElement.focus();
   }
 
-  scrollCarousel(direction: -1 | 1): void {
-    const el = this.carousel()?.nativeElement;
-    if (!el) return;
-    // Las tarjetas miden 1/4 del ancho visible (responsive, no un px
-    // fijo) — se recalcula en cada clic para desplazar una tarjeta
-    // completa sin importar el tamaño de pantalla.
-    const step = el.clientWidth / 4;
-    el.scrollBy({ left: direction * step, behavior: 'smooth' });
+  /** Número a mostrar en el badge de cada botón de filtro (store.tableCounts()). */
+  countFor(key: 'todas' | 'libres' | 'ocupadas' | 'pendientes'): number {
+    const counts = this.store.tableCounts();
+    if (key === 'todas') return counts.total;
+    if (key === 'libres') return counts.libres;
+    if (key === 'ocupadas') return counts.ocupadas;
+    return counts.pendientes;
   }
 }

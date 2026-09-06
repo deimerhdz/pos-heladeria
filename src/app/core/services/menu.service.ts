@@ -34,15 +34,8 @@ interface MenuVariantResponse {
   id: string;
   name: string;
   price: string;
-  /**
-   * spec 066 (FR-016): la terminal gana la **condición** de la promoción.
-   *
-   * `discounted_price` y `discount_kind` siguen **deliberadamente ausentes** de
-   * este tipo: es así como la terminal los descarta. Mapearlos haría que
-   * `effectivePrice` empezara a mostrar precios con descuento en la terminal, lo
-   * que choca con FR-017 y con la spec 063 FR-023 — el importe de la terminal lo
-   * resuelve el preview del cobro, no el menú (research.md D-10). No añadirlos.
-   */
+  discounted_price?: string | null;
+  discount_kind?: string | null;
   promotion?: MenuVariantPromotion | null;
   option_groups?: MenuOptionGroupResponse[];
   available?: boolean;
@@ -62,6 +55,24 @@ interface MenuCategoryResponse {
   id: string;
   name: string;
   products?: MenuProductResponse[];
+}
+
+/**
+ * Mapea el bloque `promotion` de una variante, o `null` si el backend no lo pobló.
+ *
+ * El backend serializa sus `Decimal` como string JSON (`"unit_equivalent": "3500"`,
+ * igual que `price`/`discounted_price`), así que sin este `Number(...)` el `+` de
+ * `lineTotal()` en `product-select.component.ts` concatena en vez de sumar
+ * ("3500" + 0 → "35000") y el total termina multiplicado por 10.
+ */
+function toPromotion(p: MenuVariantPromotion | null | undefined): MenuVariantPromotion | null {
+  if (p == null) return null;
+  return {
+    ...p,
+    unit_equivalent: Number(p.unit_equivalent),
+    min_qty: Number(p.min_qty),
+    value: Number(p.value),
+  };
 }
 
 function toGroup(g: MenuOptionGroupResponse): MenuOptionGroup {
@@ -121,9 +132,9 @@ export class MenuService {
           id: v.id,
           name: v.name,
           price: Number(v.price),
-          // spec 066 (FR-016): solo la condición. Ningún importe con descuento
-          // entra a la terminal por aquí (FR-017, research.md D-10).
-          promotion: v.promotion ?? null,
+          discounted_price: v.discounted_price != null ? Number(v.discounted_price) : null,
+          discount_kind: v.discount_kind ?? null,
+          promotion: toPromotion(v.promotion),
           option_groups: (v.option_groups ?? []).map(toGroup),
           available: v.available ?? true,
         })),

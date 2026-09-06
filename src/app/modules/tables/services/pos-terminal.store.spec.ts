@@ -317,6 +317,66 @@ describe('PosTerminalStore — orden "pagada" ya lista sigue visible (gap spec 0
 });
 
 /**
+ * Rediseño responsive de la terminal: `tableCounts` alimenta los badges de
+ * la franja de filtros (Todas/Libres/Ocupadas/Pendientes) -- reutiliza los
+ * mismos predicados que ya aplica `tablesView()` al filtrar, para que el
+ * número de cada badge coincida exactamente con lo que ese filtro muestra.
+ */
+describe('PosTerminalStore.tableCounts', () => {
+  let store: PosTerminalStore;
+  let tableService: TableService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    tableService = TestBed.inject(TableService);
+    tableService.tables.set([
+      { id: 't1', number: 1, name: null, qr_token: 'qr-t1', active: true, status: 'libre' },
+      { id: 't2', number: 2, name: null, qr_token: 'qr-t2', active: true, status: 'ocupada' },
+      { id: 't3', number: 3, name: null, qr_token: 'qr-t3', active: true, status: 'ocupada' },
+      { id: 't4', number: 4, name: null, qr_token: 'qr-t4', active: true, status: 'ocupada' },
+    ]);
+    store.orders.set([
+      { ...order('o2', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't2' },
+      { ...order('o3', 'recibida'), channel: 'QR_MENU', dining_table_id: 't3' },
+      { ...order('o4', 'bloqueada'), channel: 'POS', dining_table_id: 't4' },
+    ]);
+  });
+
+  it('cuenta libres/ocupadas/pendientes con el mismo criterio que el filtro de la grilla', () => {
+    const counts = store.tableCounts();
+    expect(counts.total).toBe(4);
+    expect(counts.libres).toBe(1); // t1
+    expect(counts.ocupadas).toBe(3); // t2, t3 (por confirmar), t4 (pago pendiente)
+    expect(counts.pendientes).toBe(2); // t3, t4
+  });
+
+  it('tableCounts().pendientes coincide con el tamaño de tablesView() bajo el filtro "pendientes"', () => {
+    store.filter.set('pendientes');
+    expect(store.tablesView().length).toBe(store.tableCounts().pendientes);
+  });
+
+  it('tableCounts().libres coincide con el tamaño de tablesView() bajo el filtro "libres"', () => {
+    store.filter.set('libres');
+    expect(store.tablesView().length).toBe(store.tableCounts().libres);
+  });
+
+  it('no aplica el término de búsqueda: los conteos son del salón completo', () => {
+    store.search.set('mesa-que-no-existe');
+    expect(store.tableCounts().total).toBe(4);
+  });
+});
+
+/**
  * Spec 048: cuando la mesa tiene a la vez un pago pendiente de confirmar y
  * un pedido pagado/activo, el cajero necesita poder ver ambos -- antes de
  * este fix, `centralState()` le daba prioridad absoluta al pago pendiente y
@@ -1088,6 +1148,180 @@ describe('PosTerminalStore.createManualOrderFromDraft', () => {
     req.flush({ id: 'o1', channel: 'POS', order_type: 'DELIVERY', status: 'recibida', created_at: '2026-08-29' });
 
     expect(await promise).toBe(true);
+  });
+});
+
+// ── Editar una línea del carrito ya agregada (rediseño create-order/code.html) ──
+describe('PosTerminalStore — openConfigForEdit / editingSelection / addDraftFromSelection en modo edición', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  function addMango(): void {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 2,
+      notes: 'Sin azúcar',
+    });
+  }
+
+  it('openConfigForEdit abre el modal con el producto de la línea y marca editingDraftKey', () => {
+    addMango();
+    const key = store.draftLines()[0].key;
+
+    store.openConfigForEdit(key);
+
+    expect(store.configuringProduct()?.name).toBe('Mango Tropical');
+    expect(store.editingDraftKey()).toBe(key);
+  });
+
+  it('openConfigForEdit con una key inexistente no hace nada', () => {
+    store.openConfigForEdit('no-existe');
+
+    expect(store.configuringProduct()).toBeNull();
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('editingSelection refleja la línea en edición como ProductSelection; null fuera de edición', () => {
+    expect(store.editingSelection()).toBeNull();
+
+    addMango();
+    const key = store.draftLines()[0].key;
+    store.openConfigForEdit(key);
+
+    expect(store.editingSelection()).toEqual(
+      expect.objectContaining({ quantity: 2, notes: 'Sin azúcar' }),
+    );
+  });
+
+  it('closeConfig limpia editingDraftKey además de configuringProduct', () => {
+    addMango();
+    store.openConfigForEdit(store.draftLines()[0].key);
+
+    store.closeConfig();
+
+    expect(store.configuringProduct()).toBeNull();
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('confirmar una edición REEMPLAZA la línea en su lugar, no suma cantidades ni agrega una línea nueva', () => {
+    addMango();
+    const originalKey = store.draftLines()[0].key;
+    store.openConfigForEdit(originalKey);
+
+    // El cajero quita el azúcar de las notas y deja la cantidad en 2 (la
+    // precargada) -- `sel.quantity` YA es la cantidad final, no se suma.
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 2,
+      notes: null,
+    });
+
+    expect(store.draftLines().length).toBe(1);
+    expect(store.draftLines()[0].notes).toBeNull();
+    expect(store.draftLines()[0].quantity).toBe(2);
+    expect(store.editingDraftKey()).toBeNull();
+  });
+
+  it('cancelar la edición (closeConfig) no modifica la línea original', () => {
+    addMango();
+    const key = store.draftLines()[0].key;
+    store.openConfigForEdit(key);
+
+    store.closeConfig();
+
+    expect(store.draftLines().length).toBe(1);
+    expect(store.draftLines()[0].notes).toBe('Sin azúcar');
+  });
+});
+
+// ── Descuento por línea del carrito -- cartView().promo (rediseño create-order/code.html) ──
+describe('PosTerminalStore.cartView — promo por línea', () => {
+  let store: PosTerminalStore;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+  });
+
+  it('con cantidad >= min_qty, la línea trae promo con el tachado/descuento/ahorro correctos', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 2,
+      notes: null,
+    });
+
+    const row = store.cartView()[0];
+    expect(row.promo).toEqual({
+      badge: '2x1 Promo',
+      originalAmount: 14000,
+      discountedAmount: 11000,
+      savings: 3000,
+    });
+    // `subtotal`/`unitPrice` NO cambian -- siguen a precio completo (FR-023);
+    // `promo` es aparte, solo para pintar la insignia/tachado/ahorro.
+    expect(row.subtotal).toBe(14000);
+  });
+
+  it('con cantidad < min_qty, la línea no trae promo (mismo guardia que product-select)', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Paleta Frutos Rojos' } as never,
+      variant: {
+        id: 'v1',
+        price: 7000,
+        discounted_price: 5500,
+        promotion: { min_qty: 2, short_condition: '2x1 Promo' },
+      } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+
+    expect(store.cartView()[0].promo).toBeNull();
+  });
+
+  it('sin promoción en la variante, la línea no trae promo', () => {
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Cono' } as never,
+      variant: { id: 'v1', price: 8000 } as never,
+      options: [],
+      quantity: 3,
+      notes: null,
+    });
+
+    expect(store.cartView()[0].promo).toBeNull();
   });
 });
 
