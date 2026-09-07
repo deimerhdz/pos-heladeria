@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, provideBrowserGlobalErrorListeners, isDevMode } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
@@ -7,6 +7,7 @@ import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
 import { routes } from './app.routes';
 import { provideTenantInitializer } from './core/tenant/tenant.initializer';
 import { authTokenInterceptor } from './core/auth/auth-token.interceptor';
+import { provideServiceWorker } from '@angular/service-worker';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -34,5 +35,15 @@ export const appConfig: ApplicationConfig = {
         },
       }),
     ),
+    // Spec 077: se registra `push-sw.js` (public/push-sw.js) y no
+    // `ngsw-worker.js` directamente — envuelve al Service Worker de Angular
+    // (`importScripts`) y le agrega el listener `push` con deduplicación por
+    // foco que RF-004/research.md §5 exigen. `SwPush`/`SwUpdate` funcionan
+    // igual: siguen hablando con "el Service Worker activo", sin importar
+    // el nombre del archivo que lo registró.
+    provideServiceWorker('push-sw.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000',
+    }),
   ],
 };

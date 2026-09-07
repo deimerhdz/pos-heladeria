@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs/operators';
@@ -9,6 +9,7 @@ import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { ToastContainerComponent } from '../../../shared/feedback/toast-container.component';
 import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.component';
+import { RealtimeService } from '../../../core/realtime/realtime.service';
 
 @Component({
   selector: 'app-dashboard-layout',
@@ -49,10 +50,11 @@ import { ConfirmDialogComponent } from '../../../shared/feedback/confirm-dialog.
     </div>
   `,
 })
-export class DashboardLayoutComponent implements OnInit {
+export class DashboardLayoutComponent implements OnInit, OnDestroy {
   readonly layoutService = inject(LayoutService);
   private readonly tenantInfo = inject(TenantInfoService);
   private readonly planSummaryService = inject(PlanSummaryService);
+  private readonly realtime = inject(RealtimeService);
 
   /** Carga branding y plan una vez para todo el dashboard (los lee el sidebar
    * para pintar el logo/nombre y para ocultar ítems que el plan no incluye,
@@ -62,6 +64,15 @@ export class DashboardLayoutComponent implements OnInit {
   ngOnInit(): void {
     void this.tenantInfo.load();
     void this.planSummaryService.load();
+    // Spec 077 (research.md §2): la conexión SSE del staff vive aquí, en el
+    // shell autenticado, en vez de en una página hija (`pos-terminal.store.ts`
+    // antes). Así sobrevive a la navegación entre secciones del POS — el
+    // cajero sigue recibiendo avisos aunque no esté en Terminal de Mesas.
+    this.realtime.connectStaff();
+  }
+
+  ngOnDestroy(): void {
+    this.realtime.disconnect();
   }
 
   constructor() {

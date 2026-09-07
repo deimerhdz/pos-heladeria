@@ -59,6 +59,16 @@ const REFRESH_DEBOUNCE_MS = 250;
   template: `
     <div class="min-h-screen bg-gray-50">
 
+      <!-- Spec 077 (RF-005): confirmación de pago en tiempo real, sin recargar. -->
+      @if (paymentConfirmed()) {
+        <div
+          class="fixed top-0 inset-x-0 z-50 bg-green-600 text-white text-sm font-medium px-4 py-3 text-center shadow-md"
+          role="status"
+        >
+          ✓ Pago confirmado — ¡gracias!
+        </div>
+      }
+
       <!-- Loading -->
       @if (view() === 'loading') {
         <div class="flex items-center justify-center min-h-screen">
@@ -614,6 +624,12 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   /** spec 040: promociones de precio por presentación vigentes ahora (FR-021). */
   readonly promotionAnnouncements = signal<MenuPromotionAnnouncement[]>([]);
   readonly errorMessage = signal<string | null>(null);
+  /** Spec 077 (RF-005): banner de confirmación de pago, autodesaparece — no
+   * reemplaza la vista actual (a diferencia de `session.closed`, este evento
+   * no siempre cierra la sesión: en cobro dividido puede haber otros
+   * comensales todavía pagando). */
+  readonly paymentConfirmed = signal(false);
+  private paymentConfirmedTimeout: ReturnType<typeof setTimeout> | null = null;
 
   readonly tableNumber = signal<number | null>(null);
   readonly tableName = signal<string | null>(null);
@@ -1226,8 +1242,19 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       this.realtime.on('session.closed', () =>
         this.expireSession('La mesa se cerró. ¡Gracias por tu visita!'),
       ),
+      // Spec 077 (RF-005): mismo evento que ya recibe el staff — antes solo
+      // se enrutaba al canal `staff`, nunca al de esta sesión. No siempre
+      // cierra la sesión (cobro dividido puede tener otros comensales
+      // pagando todavía), así que solo muestra el banner, no navega.
+      this.realtime.on('payment.completed', () => this.showPaymentConfirmed()),
     );
     this.realtime.connectDiner(token);
+  }
+
+  private showPaymentConfirmed(): void {
+    this.paymentConfirmed.set(true);
+    if (this.paymentConfirmedTimeout !== null) clearTimeout(this.paymentConfirmedTimeout);
+    this.paymentConfirmedTimeout = setTimeout(() => this.paymentConfirmed.set(false), 5000);
   }
 
   private disconnectRealtime(): void {
@@ -1237,6 +1264,10 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     if (this.refreshHandle !== null) {
       clearTimeout(this.refreshHandle);
       this.refreshHandle = null;
+    }
+    if (this.paymentConfirmedTimeout !== null) {
+      clearTimeout(this.paymentConfirmedTimeout);
+      this.paymentConfirmedTimeout = null;
     }
   }
 
