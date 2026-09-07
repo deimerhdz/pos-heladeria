@@ -84,30 +84,33 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
           </nav>
         </div>
 
-        @if (store.orderTypeTab() === 'mesas') {
-          <!-- A pedido del usuario: "+ Crear pedido nuevo" es un CTA fijo de
-               la sub-barra -- debe seguir visible sin importar si hay una
-               mesa/pedido seleccionado (antes se ocultaba con
-               showingDetail(), lo que lo hacía desaparecer justo cuando el
-               cajero quería crear otro pedido desde una mesa ya abierta). -->
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              (click)="goToNewOrder()"
-              [disabled]="!store.newOrderTableId()"
-              [title]="!store.newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
-              class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" x2="12" y1="8" y2="16"></line>
-                <line x1="8" x2="16" y1="12" y2="12"></line>
-              </svg>
-              <span class="hidden sm:inline">Crear pedido nuevo</span>
-              <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
-            </button>
-          </div>
-        }
+        <!-- spec 078 (US2, FR-007/FR-013/FR-015): el CTA "Crear pedido nuevo"
+             está fuera del guard de pestaña — visible y habilitado en las tres
+             pestañas y en los tres anchos, con etiqueta de texto siempre (nunca
+             solo el ícono +). Solo en "Mesas" exige una mesa libre; Domicilio y
+             Para llevar no exigen mesa y goToNewOrder() navega a la ruta sin
+             tableId con el query param tipo. -->
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            (click)="goToNewOrder()"
+            [disabled]="store.orderTypeTab() === 'mesas' && !store.newOrderTableId()"
+            [title]="
+              store.orderTypeTab() === 'mesas' && !store.newOrderTableId()
+                ? 'No hay ninguna mesa libre disponible'
+                : ''
+            "
+            class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" x2="12" y1="8" y2="16"></line>
+              <line x1="8" x2="16" y1="12" y2="12"></line>
+            </svg>
+            <span>Crear pedido nuevo</span>
+            <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
+          </button>
+        </div>
       </div>
 
       @if (store.loading()) {
@@ -323,10 +326,20 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     this.store.stop();
   }
 
-  /** Mismo CTA que el panel de cobro ofrece con una mesa libre ya
-   *  seleccionada (`store.newOrderTableId()`), aquí para el estado vacío sin
-   *  ninguna selección. */
+  /** CTA "Crear pedido nuevo" de la sub-barra (spec 078, US2, FR-008–FR-010).
+   *  El destino depende de la pestaña activa:
+   *  - "Domicilios" / "Para llevar" → ruta sin `:tableId` con `?tipo=` (no
+   *    exigen mesa; `createManualOrderFromDraft()` lo contempla).
+   *  - "Mesas" → comportamiento de siempre: navega con `newOrderTableId()` (la
+   *    mesa libre seleccionada), y el `[disabled]` del botón ya cubre el caso
+   *    de que no haya ninguna. */
   goToNewOrder(): void {
+    const tab = this.store.orderTypeTab();
+    if (tab === 'domicilios' || tab === 'para-llevar') {
+      const tipo = tab === 'domicilios' ? 'domicilio' : 'para-llevar';
+      this.router.navigate(['/dashboard/mesas-sesiones/orden-manual'], { queryParams: { tipo } });
+      return;
+    }
     const tableId = this.store.newOrderTableId();
     if (!tableId) return;
     this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
@@ -343,6 +356,21 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     return this.store.hasActiveSelection() && this.store.effectiveCentralView() !== 'mesa-libre';
   }
 
+  /** Destino del atajo F3 (spec 078, US2, Edge Case "el cajero pulsa el
+   *  atajo…"): en "Domicilios" / "Para llevar" navega a la ruta sin `:tableId`
+   *  con el `?tipo=` correspondiente; en "Mesas" el comportamiento no cambia —
+   *  solo navega si hay una mesa seleccionada. */
+  private openNewOrderFromShortcut(): void {
+    const tab = this.store.orderTypeTab();
+    if (tab === 'domicilios' || tab === 'para-llevar') {
+      const tipo = tab === 'domicilios' ? 'domicilio' : 'para-llevar';
+      this.router.navigate(['/dashboard/mesas-sesiones/orden-manual'], { queryParams: { tipo } });
+      return;
+    }
+    const tableId = this.store.selectedTableId();
+    if (tableId) this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+  }
+
   @HostListener('window:keydown', ['$event'])
   onKey(e: KeyboardEvent): void {
     const tag = (document.activeElement?.tagName ?? '').toUpperCase();
@@ -352,12 +380,7 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
       this.tablesPanel()?.focusSearch();
     } else if (e.key === 'F3') {
       e.preventDefault();
-      // Mismo gatillo que el CTA "+ Crear Orden Manual" (feature 028, T022;
-      // ajuste posterior de spec 036: ahora navega a la vista dedicada de
-      // armado de pedido en vez de abrir el catálogo embebido) — solo hace
-      // algo si hay una mesa seleccionada.
-      const tableId = this.store.selectedTableId();
-      if (tableId) this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+      this.openNewOrderFromShortcut();
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
       else this.store.cancelSelection();

@@ -25,7 +25,12 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
  * "Para Llevar" ya está habilitada (spec 055): comparte `store.orderTypeTab`
  * con `pos-tables-panel.component.ts` (spec 036), pero esta vista tiene su
  * propia instancia de store, así que no hay ningún efecto cruzado entre
- * ambas pantallas. "Domicilio" se mantiene deshabilitada — spec 055, FR-012.
+ * ambas pantallas. "Domicilio" también está habilitada (spec 056) y el
+ * `@if (store.orderTypeTab() === 'domicilios')` del template la usa.
+ *
+ * spec 078 (US2): al llegar desde el CTA de la Terminal en la pestaña
+ * "Domicilios" / "Para llevar", `ngOnInit` lee `?tipo=` y preselecciona ese
+ * tipo una sola vez — sigue siendo editable dentro del formulario (FR-011).
  *
  * Provee su propia instancia de `PosTerminalStore` (no es singleton,
  * `@Injectable()` sin `providedIn`) porque esta vista vive en una ruta
@@ -766,6 +771,16 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
     await this.store.init();
     const tableId = this.route.snapshot.paramMap.get('tableId');
     if (tableId) this.store.selectTable(tableId);
+    // spec 078 (US2, research.md D3): tipo preseleccionado desde la pestaña de
+    // origen de la Terminal. Se usa el `setOrderTypeTab()` local (no
+    // `store.setOrderTypeTab()` directo) para que "Cliente" por defecto se
+    // ajuste igual que al cambiar el tipo dentro del formulario. Una sola vez,
+    // antes de `applyDefaultCustomerName()`. Valor ausente / `'mesas'` /
+    // inválido → no hace nada (comportamiento idéntico al de hoy). El tipo
+    // sigue siendo editable en el formulario (FR-011).
+    const tipo = this.route.snapshot.queryParamMap.get('tipo');
+    if (tipo === 'domicilio') this.setOrderTypeTab('domicilios');
+    else if (tipo === 'para-llevar') this.setOrderTypeTab('para-llevar');
     this.applyDefaultCustomerName();
   }
 
