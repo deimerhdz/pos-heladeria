@@ -4,12 +4,13 @@ import { Table, TableStatus } from '../interfaces/table.interface';
 import { TableService } from '../services/table.service';
 import { TableFormComponent } from '../components/table-form.component';
 import { TableQrComponent } from '../components/table-qr.component';
+import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import { ToastService } from '../../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-tables-page',
   standalone: true,
-  imports: [RouterLink, TableFormComponent, TableQrComponent],
+  imports: [RouterLink, TableFormComponent, TableQrComponent, PaginationBarComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -42,14 +43,14 @@ import { ToastService } from '../../../shared/feedback/toast.service';
       }
 
       <!-- Loading -->
-      @if (tableService.loading() && tableService.tables().length === 0) {
+      @if (tableService.tablesLoading() && tableService.pagedTables().length === 0) {
         <div class="flex justify-center py-12">
           <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
         </div>
       } @else {
         <!-- Table list -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          @if (tableService.tables().length === 0) {
+          @if (tableService.pagedTables().length === 0) {
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
               <div class="text-5xl mb-4">🪑</div>
               <p class="text-gray-600 font-medium">Aún no hay mesas registradas</p>
@@ -72,7 +73,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-50">
-                @for (table of tableService.tables(); track table.id) {
+                @for (table of tableService.pagedTables(); track table.id) {
                   <tr [class.opacity-50]="!table.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
@@ -137,6 +138,16 @@ import { ToastService } from '../../../shared/feedback/toast.service';
                 }
               </tbody>
             </table>
+
+            <app-pagination-bar
+              [page]="tableService.tablesPage()"
+              [size]="tableService.tablesSize()"
+              [total]="tableService.tablesTotal()"
+              [totalPages]="tableService.tablesTotalPages()"
+              [loading]="tableService.tablesLoading()"
+              (pageChange)="tableService.loadTablesPage($event, tableService.tablesSize())"
+              (sizeChange)="tableService.loadTablesPage(1, $event)"
+            />
           }
         </div>
       }
@@ -170,7 +181,7 @@ export class TablesPageComponent implements OnInit {
   readonly qrTable = signal<Table | null>(null);
 
   ngOnInit(): void {
-    this.tableService.loadTables();
+    this.tableService.loadTablesPage(1, 20);
   }
 
   openCreate(): void {
@@ -190,11 +201,14 @@ export class TablesPageComponent implements OnInit {
 
   async onToggle(table: Table): Promise<void> {
     await this.tableService.toggleActive(table.id, table.active);
+    this.tableService.refreshTablesPage();
   }
 
   onSaved(): void {
     this.showForm.set(false);
     this.editingTable.set(null);
+    // Tras crear/editar, la lista paginada se recoloca en una página válida (FR-022).
+    this.tableService.refreshTablesPage();
   }
 
   onCancelled(): void {
@@ -210,6 +224,7 @@ export class TablesPageComponent implements OnInit {
   async changeStatus(table: Table, status: TableStatus): Promise<void> {
     if (status === table.status) return;
     const ok = await this.tableService.setStatus(table.id, status);
+    this.tableService.refreshTablesPage();
     if (ok) this.toast.success(`Mesa ${table.number}: ${this.statusLabel(status)}`);
     else this.toast.error(this.tableService.error() ?? 'No se pudo cambiar el estado');
   }
