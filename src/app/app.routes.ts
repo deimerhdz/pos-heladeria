@@ -62,49 +62,66 @@ export const routes: Routes = [
       import('./modules/dashboard/routes').then(m => m.dashboardRoutes),
   },
   {
-    // Vista de pasos de revisión y pago (spec 034) — ruta propia en vez de un
-    // modal, para que la recarga tenga una URL con sentido propio por paso.
-    // Va **antes** de `menu/t/:token` (sin hijos, no puede consumir estos
-    // segmentos de más); `checkoutHydrationGuard` corre una sola vez por
-    // entrada, no en cada paso hermano.
-    path: 'menu/t/:token/checkout',
-    canActivate: [checkoutHydrationGuard],
+    // Spec 077 (corrección post-implementación): padre sin `path` que envuelve
+    // el menú y el checkout del comensal — antes eran rutas hermanas, así que
+    // navegar al checkout destruía `PublicMenuComponent` y con él la única
+    // conexión SSE del comensal (se perdía cualquier evento, incluida la
+    // confirmación de pago, mientras pagaba). `DinerShellComponent` es ahora
+    // el único dueño de esa conexión (mismo rol que `DashboardLayoutComponent`
+    // del lado del staff) y sobrevive a la navegación entre ambos hijos.
+    // Cada hijo conserva su propio `:token` completo en su path — no se usa
+    // `paramsInheritanceStrategy`, así que ningún guard/step cambia cómo lee
+    // `route.snapshot.paramMap.get('token')`.
+    path: '',
+    loadComponent: () =>
+      import('./modules/tables/pages/diner-shell.component').then(m => m.DinerShellComponent),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'review' },
       {
-        path: 'review',
-        loadComponent: () =>
-          import('./modules/tables/pages/checkout/review-step.component').then(m => m.ReviewStepComponent),
+        // Vista de pasos de revisión y pago (spec 034) — ruta propia en vez de un
+        // modal, para que la recarga tenga una URL con sentido propio por paso.
+        // Va **antes** de `menu/t/:token` (sin hijos, no puede consumir estos
+        // segmentos de más); `checkoutHydrationGuard` corre una sola vez por
+        // entrada, no en cada paso hermano.
+        path: 'menu/t/:token/checkout',
+        canActivate: [checkoutHydrationGuard],
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'review' },
+          {
+            path: 'review',
+            loadComponent: () =>
+              import('./modules/tables/pages/checkout/review-step.component').then(m => m.ReviewStepComponent),
+          },
+          {
+            path: 'method',
+            loadComponent: () =>
+              import('./modules/tables/pages/checkout/payment-method-step.component').then(
+                m => m.PaymentMethodStepComponent,
+              ),
+          },
+          {
+            path: 'transfer',
+            loadComponent: () =>
+              import('./modules/tables/pages/checkout/transfer-details-step.component').then(
+                m => m.TransferDetailsStepComponent,
+              ),
+          },
+          {
+            path: 'confirmation',
+            loadComponent: () =>
+              import('./modules/tables/pages/checkout/confirmation-step.component').then(
+                m => m.ConfirmationStepComponent,
+              ),
+          },
+        ],
       },
       {
-        path: 'method',
+        // Entrada del comensal. `token` es el JWT **firmado** de la mesa: lleva el
+        // tenant dentro, así que esta ruta funciona en cualquier dominio.
+        path: 'menu/t/:token',
         loadComponent: () =>
-          import('./modules/tables/pages/checkout/payment-method-step.component').then(
-            m => m.PaymentMethodStepComponent,
-          ),
-      },
-      {
-        path: 'transfer',
-        loadComponent: () =>
-          import('./modules/tables/pages/checkout/transfer-details-step.component').then(
-            m => m.TransferDetailsStepComponent,
-          ),
-      },
-      {
-        path: 'confirmation',
-        loadComponent: () =>
-          import('./modules/tables/pages/checkout/confirmation-step.component').then(
-            m => m.ConfirmationStepComponent,
-          ),
+          import('./modules/tables/pages/public-menu.component').then(m => m.PublicMenuComponent),
       },
     ],
-  },
-  {
-    // Entrada del comensal. `token` es el JWT **firmado** de la mesa: lleva el
-    // tenant dentro, así que esta ruta funciona en cualquier dominio.
-    path: 'menu/t/:token',
-    loadComponent: () =>
-      import('./modules/tables/pages/public-menu.component').then(m => m.PublicMenuComponent),
   },
   {
     // QR antiguos (UUID plano). El backend ya no acepta ese formato, pero hay
