@@ -148,8 +148,11 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                perder lo ya agregado (store.closeCatalog()). -->
           <app-pos-catalog-drawer />
         } @else {
-          <!-- Cart -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-3">
+          <!-- Cart: spec 078 (US4, FR-022–FR-024; research.md D5) — única región
+               flex-1 min-h-0 que absorbe el alto libre del panel. El encabezado
+               (arriba, shrink-0) y la barra de acciones (abajo, shrink-0)
+               quedan siempre visibles; solo esta lista scrollea. -->
+          <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
             @for (it of store.cartView(); track it.key) {
               <div class="bg-white rounded-[6px] border border-[#e5e7eb] p-3 space-y-1.5">
                 <div class="flex items-start justify-between gap-2">
@@ -263,12 +266,16 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                 ＋ Agregar producto
               </button>
             }
+          </div>
 
-            <!-- Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró
+          <!-- Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró
                de este panel — vive ahora en session-bill-panel.component.ts
                ("Cuenta de la mesa"). Estas dos acciones no son de cobro, así
-               que se quedan aquí, solo sin el contenedor de totales alrededor. -->
-            <div class="flex gap-2 pt-1">
+               que se quedan aquí, solo sin el contenedor de totales alrededor.
+               spec 078 (US4, FR-023): fuera de la lista scrolleable, shrink-0 —
+               "Guardar pedido" / "Marcar listo" quedan siempre alcanzables. -->
+          @if (store.hasDraft() || (store.selectedOrder() && !store.kitchenReady())) {
+            <div class="flex gap-2 p-4 pt-3 border-t border-[#e5e7eb] shrink-0">
               @if (store.hasDraft()) {
                 <button
                   (click)="store.saveOrder()"
@@ -288,7 +295,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                 </button>
               }
             </div>
-          </div>
+          }
         }
       </div>
     }

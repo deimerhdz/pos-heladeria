@@ -53,10 +53,18 @@ import {
   imports: [SessionBillPanelComponent, PaymentInputComponent, BillSummaryComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <!-- spec 078 (US3/US4, research.md D4/D5): panel apilado bajo el central en
+         la columna de detalle acotada. shrink-0 con un techo propio
+         (max-h-[55%] de la columna, ya acotada por US3 — no es un alto de
+         viewport frágil) para que un desglose largo no empuje "Cobrar" fuera de
+         vista en móvil (FR-025); min-w-0 para que cliente/método largos no lo
+         ensanchen; su zona media conserva el scroll interno
+         (flex-1 min-h-0 overflow-y-auto) y la barra de acciones post-cobro
+         queda shrink-0, siempre visible. -->
     <div
-      class="w-full shrink-0 flex flex-col border-t border-[#e5e7eb] min-h-0 bg-white"
+      class="w-full shrink-0 max-h-[55%] flex flex-col border-t border-[#e5e7eb] min-h-0 min-w-0 bg-white"
     >
-      <div class="flex-1 overflow-y-auto p-4">
+      <div class="flex-1 min-h-0 overflow-y-auto p-4">
         <!--
           El aviso va AQUÍ y no dentro de <app-session-bill-panel> a propósito:
           ese componente resetea el método de pago y el efectivo recibido en su

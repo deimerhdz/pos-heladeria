@@ -180,6 +180,96 @@ describe('PosOrderPanelComponent — sin resumen de totales (spec 049)', () => {
   });
 });
 
+/**
+ * spec 078 (US4, FR-022–FR-024; research.md D5): con la columna de detalle ya
+ * acotada (US3), las secciones fijas del panel de pedido van `shrink-0` y la
+ * lista de productos queda como la ÚNICA región `flex-1 min-h-0 overflow-y-auto`
+ * — recibe todo el alto libre.
+ */
+describe('PosOrderPanelComponent — reparto de alto: lista de productos flex-1 (spec 078, US4)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  function seleccionarPedido(nItems: number): void {
+    store.orders.set([
+      {
+        ...orderConItemListo(false),
+        items: Array.from({ length: nItems }, (_, i) => ({
+          id: `i${i}`,
+          product_variant_id: 'v1',
+          quantity: 1,
+          unit_price: '5000',
+          estado_cocina: 'pendiente' as const,
+        })),
+      },
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  }
+
+  it('el encabezado del panel va shrink-0', () => {
+    seleccionarPedido(6);
+    const header = fixture.nativeElement.querySelector('.border-b.shrink-0') as HTMLElement;
+    expect(header).toBeTruthy();
+    expect(header.className).toContain('shrink-0');
+  });
+
+  const divs = (): HTMLElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('div')) as HTMLElement[];
+
+  it('la lista de productos es la única región flex-1 min-h-0 overflow-y-auto', () => {
+    seleccionarPedido(6);
+    const scrollRegions = divs().filter(
+      (d) =>
+        d.className.includes('overflow-y-auto') &&
+        d.className.includes('flex-1') &&
+        d.className.includes('min-h-0'),
+    );
+    expect(scrollRegions).toHaveLength(1);
+  });
+
+  it('la barra de acciones ("Guardar pedido" / "Marcar listo") va shrink-0, fuera de la lista scrolleable (FR-023)', () => {
+    seleccionarPedido(6);
+    const marcar = (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+      (b) => b.textContent?.includes('Marcar pedido listo'),
+    );
+    expect(marcar).toBeTruthy();
+    const bar = marcar!.parentElement as HTMLElement;
+    expect(bar.className).toContain('shrink-0');
+    expect(bar.className).not.toContain('overflow-y-auto');
+  });
+
+  it('un pedido de 1–2 productos no fuerza alto artificial (la lista es flex-1, sin min-height fijo) (FR-024)', () => {
+    seleccionarPedido(2);
+    const list = divs().find(
+      (d) => d.className.includes('overflow-y-auto') && d.className.includes('flex-1'),
+    ) as HTMLElement;
+    expect(list.className).not.toMatch(/\bh-\[/);
+    expect(list.className).not.toMatch(/\bmin-h-\[/);
+  });
+});
+
 /** Spec 029, Historia 3 (FR-013): el encabezado del pedido distingue tres
  *  estados — "en preparación", "pago pendiente" y "listo para cobrar" —, ya
  *  no solo dos. */
