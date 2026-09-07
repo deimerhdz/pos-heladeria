@@ -3,11 +3,17 @@ import { Component } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { SwPush } from '@angular/service-worker';
 import { DashboardLayoutComponent } from './dashboard-layout.component';
 import { LayoutService } from './layout.service';
 
 @Component({ selector: 'app-blank', standalone: true, template: '' })
 class BlankComponent {}
+
+/** spec 077 sumó `AuthService → PushRegistrationService → SwPush` al árbol de
+ *  inyección del shell; este TestBed no proveía `SwPush` y quedó en `NG0201`.
+ *  Ningún test de aquí ejercita push (spec 078, stub local). */
+const swPushStub = { provide: SwPush, useValue: { isEnabled: false } };
 
 function setViewportWidth(width: number): void {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
@@ -38,6 +44,7 @@ describe('DashboardLayoutComponent — auto-cierre del sidebar solo en móvil (s
       imports: [DashboardLayoutComponent],
       providers: [
         provideRouter([{ path: 'otra', component: BlankComponent }]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
       ],
@@ -66,4 +73,71 @@ describe('DashboardLayoutComponent — auto-cierre del sidebar solo en móvil (s
 
     expect(layoutService.sidebarOpen()).toBe(false);
   });
+
+  // ── spec 078 (US6): umbral md (768) → lg (1024) — el menú se colapsa en tablet ──
+
+  it('en tablet (~900px), navegar a otra página cierra el menú (nuevo — antes se mantenía fijo)', async () => {
+    setViewportWidth(900);
+    layoutService.open();
+
+    await router.navigateByUrl('/otra');
+
+    expect(layoutService.sidebarOpen()).toBe(false);
+  });
+
+  it('justo por debajo de 1024px auto-cierra; en 1024px o más, no', async () => {
+    setViewportWidth(1023);
+    layoutService.open();
+    await router.navigateByUrl('/otra');
+    expect(layoutService.sidebarOpen()).toBe(false);
+
+    setViewportWidth(1024);
+    layoutService.open();
+    await router.navigateByUrl('/');
+    expect(layoutService.sidebarOpen()).toBe(true);
+  });
 });
+
+/**
+ * spec 078 (US6, FR-031–FR-036; research.md D7): el valor inicial de
+ * `sidebarOpen` depende del viewport contra el umbral `lg` (1024), no `md`
+ * (768). Se necesita un TestBed nuevo por ancho para que el `signal` de
+ * `LayoutService` (que lee `window.innerWidth` al construirse) tome el valor.
+ */
+describe('LayoutService — valor inicial de sidebarOpen por ancho (spec 078, US6)', () => {
+  const originalInnerWidth = window.innerWidth;
+  afterEach(() => setViewportWidth(originalInnerWidth));
+
+  function freshLayoutService(width: number): LayoutService {
+    setViewportWidth(width);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    return TestBed.inject(LayoutService);
+  }
+
+  it('en móvil (375px) arranca cerrado', () => {
+    expect(freshLayoutService(375).sidebarOpen()).toBe(false);
+  });
+
+  it('en tablet (900px) arranca cerrado (antes, con umbral md, arrancaba abierto)', () => {
+    expect(freshLayoutService(900).sidebarOpen()).toBe(false);
+  });
+
+  it('en el límite 1023px arranca cerrado; en 1024px arranca abierto', () => {
+    expect(freshLayoutService(1023).sidebarOpen()).toBe(false);
+    expect(freshLayoutService(1024).sidebarOpen()).toBe(true);
+  });
+
+  it('en escritorio (1280px) arranca abierto — sin cambio', () => {
+    expect(freshLayoutService(1280).sidebarOpen()).toBe(true);
+  });
+});
+
+// Nota (spec 078, US6): el cambio de clases `md:hidden`→`lg:hidden` (backdrop) y
+// `md:ml-64`→`lg:ml-64` (margen del contenido) en `dashboard-layout.component.ts`
+// es un swap estático de prefijo de breakpoint. Montar el shell completo en un
+// TestBed para afirmarlo exige `TenantContextService`/`AuthService`/… (el mismo
+// motivo por el que el bloque de arriba evita `detectChanges()`), así que se
+// verifica por lectura de código + el recorrido responsive de quickstart.md
+// (Historia 6). El comportamiento observable — cuándo el menú arranca oculto y
+// cuándo auto-cierra — sí queda cubierto por los tests de este archivo.

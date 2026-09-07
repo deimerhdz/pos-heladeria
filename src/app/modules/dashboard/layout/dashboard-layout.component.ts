@@ -17,10 +17,11 @@ import { RealtimeService } from '../../../core/realtime/realtime.service';
   imports: [RouterOutlet, SidebarComponent, HeaderComponent, ToastContainerComponent, ConfirmDialogComponent],
   template: `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
-      <!-- Overlay backdrop — solo visible en móvil cuando el sidebar está abierto -->
+      <!-- Overlay backdrop — visible en móvil y tablet cuando el sidebar está
+           abierto (spec 078, US6: umbral md → lg). -->
       @if (layoutService.sidebarOpen()) {
         <div
-          class="fixed inset-0 bg-black/40 z-30 md:hidden"
+          class="fixed inset-0 bg-black/40 z-30 lg:hidden"
           (click)="layoutService.close()"
         ></div>
       }
@@ -31,13 +32,13 @@ import { RealtimeService } from '../../../core/realtime/realtime.service';
         El sidebar es "fixed" en todos los breakpoints (spec 036, FR-012): en
         escritorio no ocupa espacio de flexbox por sí solo, así que este
         margen es lo que le cede el ancho al contenido cuando está colapsado
-        (y se lo devuelve cuando vuelve a abrirse). En móvil no aplica
-        (prefijo "md:" en el nombre de la clase) — ahí sigue siendo un
-        slide-over con backdrop, sin desplazar el contenido.
+        (y se lo devuelve cuando vuelve a abrirse). En móvil y tablet no aplica
+        (prefijo "lg:" en el nombre de la clase, spec 078 US6) — ahí sigue
+        siendo un slide-over con backdrop, sin desplazar el contenido.
       -->
       <div
         class="flex flex-col flex-1 min-w-0 overflow-hidden transition-[margin-left] duration-300 ease-in-out"
-        [class.md:ml-64]="layoutService.sidebarOpen()"
+        [class.lg:ml-64]="layoutService.sidebarOpen()"
       >
         <app-header />
         <main class="flex-1 overflow-y-auto p-4 md:p-6">
@@ -86,10 +87,11 @@ export class DashboardLayoutComponent implements OnInit, OnDestroy {
         // de escritorio, no solo el slide-over móvil — cerrar sin condición
         // en cada navegación (como antes) colapsaba el sidebar de escritorio
         // en cuanto el usuario cambiaba de página, perdiendo su elección.
-        // Solo tiene sentido auto-cerrar en móvil (el slide-over debe
-        // taparse tras navegar); en escritorio la navegación no debe tocar
+        // Solo tiene sentido auto-cerrar cuando el menú se superpone al
+        // contenido (móvil y, desde spec 078 US6, también tablet: umbral
+        // 768 → 1024); en escritorio (≥ 1024px) la navegación no debe tocar
         // el estado del sidebar.
-        if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
           this.layoutService.close();
         }
       });
