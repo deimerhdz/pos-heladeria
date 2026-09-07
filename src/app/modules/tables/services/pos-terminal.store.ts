@@ -853,7 +853,18 @@ export class PosTerminalStore {
       statusClass: meta.chip,
       secondaryLabel: o.customer_name || 'Consumidor final',
       elapsedLabel: this.sinceLabel(new Date(o.created_at).getTime()),
-      totalLabel: this.fmt(this.orderSubtotal(o)),
+      // spec 078 (US1, FR-001/FR-002; research.md D1; A-71 punto 2): la tarjeta
+      // muestra el total **real a cobrar** = subtotal de productos post-descuento
+      // + valor del domicilio, el mismo importe que `GET /orders/{id}/checkout-preview`
+      // (`max(0, subtotal − descuento + domicilio)`; estos pedidos no llevan
+      // impuesto ni propina). `orderSubtotal(o)` ya es post-descuento
+      // (`discounted_unit_price` congelado por línea al confirmar). `delivery_fee`
+      // es `null` para mesa/`TAKEAWAY` → `+ 0`, sin cambio para esos tipos (FR-005);
+      // un `delivery_fee` nulo por pedido histórico anterior a spec 056 → cero,
+      // igual que el cobro. **Revierte** la fila `totalLabel` de
+      // `specs/059-terminal-mesas-carga-y-pedidos/data-model.md` (tarjeta = solo
+      // productos), de forma trazable.
+      totalLabel: this.fmt(this.orderSubtotal(o) + (o.delivery_fee ?? 0)),
     };
   }
 
@@ -2197,7 +2208,20 @@ export class PosTerminalStore {
     const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
     const items = (o.items ?? []).filter((i) => i.estado_cocina !== 'anulado');
     const plain = items.filter((i) => !i.combo_id);
-    let total = plain.reduce((s, i) => s + this.itemUnitPrice(i) * i.quantity, 0);
+    // spec 078 (US1, research.md D1 riesgo 3): cuando el backend persiste el
+    // total de línea post-descuento (`discounted_line_total`), es la cifra
+    // autoritativa — usarla evita perder céntimos frente a
+    // `discounted_unit_price * quantity` en líneas con descuento y `quantity > 1`.
+    // Sin ese campo (pedido histórico, o sin promoción), se cae al cálculo de
+    // siempre, así que no cambia el total de ninguna tarjeta que hoy pase por aquí.
+    let total = plain.reduce(
+      (s, i) =>
+        s +
+        (i.discounted_line_total != null
+          ? Number(i.discounted_line_total)
+          : this.itemUnitPrice(i) * i.quantity),
+      0,
+    );
     // spec 063: `combo_id` histórico — los componentes se cobran a su precio.
     for (const it of items.filter((i) => i.combo_id)) {
       total += Number(it.unit_price) * it.quantity;

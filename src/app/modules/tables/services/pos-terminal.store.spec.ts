@@ -1949,6 +1949,138 @@ describe('PosTerminalStore.ordersByType (spec 059, Historia 2)', () => {
 });
 
 /**
+ * spec 078 (US1, FR-001–FR-006; research.md D1; A-71 punto 2): el `totalLabel`
+ * de la tarjeta de un pedido de Domicilio pasa a mostrar el total **real a
+ * cobrar** = subtotal de productos post-descuento + `delivery_fee`, el mismo
+ * importe que `GET /orders/{id}/checkout-preview`. Para mesa / "Para llevar" el
+ * `totalLabel` no cambia. Todo se compone en memoria — sin ninguna petición.
+ */
+describe('PosTerminalStore.ordersByType — total de la tarjeta de Domicilio (spec 078, US1)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  function delivery(id: string, items: Partial<DiningOrderItem>[], extra: Partial<DiningOrder> = {}): DiningOrder {
+    return {
+      ...order(id, 'abierta', []),
+      channel: 'POS',
+      order_type: 'DELIVERY',
+      items: items.map((it, i) => ({
+        id: `${id}-i${i}`,
+        product_variant_id: 'v1',
+        quantity: 1,
+        unit_price: '0',
+        estado_cocina: 'pendiente',
+        ...it,
+      })) as DiningOrderItem[],
+      ...extra,
+    } as DiningOrder;
+  }
+
+  /** Fórmula de `CheckoutPreview.total` reproducida en el test para la
+   *  reconciliación tarjeta ↔ panel (FR-003): `max(0, subtotal − descuento + domicilio)`. */
+  const previewTotal = (subtotalPostDescuento: number, deliveryFee: number) =>
+    Math.max(0, subtotalPostDescuento + deliveryFee);
+
+  it('DELIVERY con subtotal $25.000 + delivery_fee $6.000 → totalLabel = fmt(31000) (FR-001, SC-001)', () => {
+    store.orders.set([delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 })]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(card.totalLabel).toBe(store.fmt(31000));
+    expect(card.totalLabel).toBe(store.fmt(previewTotal(25000, 6000)));
+  });
+
+  it('DELIVERY con delivery_fee 0 o null → totalLabel = fmt(subtotal), sin error (FR-006)', () => {
+    store.orders.set([
+      delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 0 }),
+      delivery('o2', [{ unit_price: '25000' }], { delivery_fee: null }),
+    ]);
+
+    const cards = store.ordersByType('domicilios');
+    expect(cards[0].totalLabel).toBe(store.fmt(25000));
+    expect(cards[1].totalLabel).toBe(store.fmt(25000));
+  });
+
+  it('DELIVERY con promoción aplicada (descuento congelado en discounted_unit_price) → fmt(subtotal_post_descuento + delivery_fee) (FR-002, FR-003)', () => {
+    // 1 línea: precio $10.000, descuento por promo → $8.000 la unidad.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '10000', discounted_unit_price: '8000' }], { delivery_fee: 6000 }),
+    ]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(card.totalLabel).toBe(store.fmt(14000));
+    expect(card.totalLabel).toBe(store.fmt(previewTotal(8000, 6000)));
+  });
+
+  it('DELIVERY: promoción pausada/eliminada tras confirmar — la tarjeta mantiene el discounted_unit_price congelado; el panel (recompute en vivo) es la autoridad (FR-003, Edge Cases)', () => {
+    // `activePromotions: () => []` simula que la promo ya no está vigente:
+    // la tarjeta sigue usando el número congelado en la línea, no lo recalcula.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '10000', discounted_unit_price: '8000' }], { delivery_fee: 0 }),
+    ]);
+
+    expect(store.ordersByType('domicilios')[0].totalLabel).toBe(store.fmt(8000));
+  });
+
+  it('DELIVERY: línea con descuento y quantity > 1 usa discounted_line_total, sin perder céntimos (research.md D1 riesgo 3)', () => {
+    store.orders.set([
+      delivery(
+        'o1',
+        [{ unit_price: '1000', discounted_unit_price: '333.33', discounted_line_total: '1000.00', quantity: 3 }],
+        { delivery_fee: 0 },
+      ),
+    ]);
+
+    // 333.33 * 3 = 999.99 perdería un céntimo; discounted_line_total = 1000.00 es la cifra autoritativa.
+    expect(store.ordersByType('domicilios')[0].totalLabel).toBe(store.fmt(1000));
+  });
+
+  it('TAKEAWAY / pedido de mesa: totalLabel idéntico al de hoy — delivery_fee nulo, no se suma nada (FR-005)', () => {
+    store.orders.set([
+      { ...order('t1', 'abierta', []), channel: 'POS', order_type: 'TAKEAWAY', items: [{ id: 't1-i0', product_variant_id: 'v1', quantity: 1, unit_price: '25000', estado_cocina: 'pendiente' }] as DiningOrderItem[] } as DiningOrder,
+    ]);
+
+    expect(store.ordersByType('para-llevar')[0].totalLabel).toBe(store.fmt(25000));
+  });
+
+  it('la tarjeta muestra un único string de total, sin desglose productos/domicilio (FR-004)', () => {
+    store.orders.set([delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 })]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(typeof card.totalLabel).toBe('string');
+    expect(card.totalLabel).toBe(store.fmt(31000));
+  });
+
+  it('abrir "Domicilios" no dispara ninguna petición checkout-preview por tarjeta (Assumption spec.md)', () => {
+    store.orders.set([
+      delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 }),
+      delivery('o2', [{ unit_price: '12000' }], { delivery_fee: 3000 }),
+    ]);
+
+    store.ordersByType('domicilios');
+
+    http.expectNone((r) => r.url.includes('/checkout-preview'));
+  });
+});
+
+/**
  * spec 073 (FR-001/FR-007a): `loadCheckoutPreview()` consume
  * `GET /orders/{id}/checkout-preview` con el mismo molde señal-loading-stale
  * que `loadSessionBill()`. El desglose autoritativo lo calcula el backend.
