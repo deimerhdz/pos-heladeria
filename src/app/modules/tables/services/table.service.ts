@@ -1,8 +1,9 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ApiErrorBody } from '../../../core/auth/auth.models';
+import { Page } from '../../../core/interfaces/page.interface';
 import {
   GroupBill,
   Table,
@@ -23,6 +24,56 @@ export class TableService {
   readonly loading = signal(false);
   readonly isSubmitting = signal(false);
   readonly error = signal<string | null>(null);
+
+  // ── Carril paginado (spec 079, US3) ──────────────────────────────────────
+  // Aditivo: `loadTables()` / `tables()` / las mutaciones NO cambian — Terminal,
+  // Dashboard, `order-detail` y la hoja de QR las siguen consumiendo completas
+  // (FR-025). Solo `tables-page.component.ts` usa este carril. Se resuelve con
+  // signals + HTTP manual (mismo estilo que `loadTables()`), sin añadir ninguna
+  // dependencia nueva de construcción al singleton — los demás consumidores no
+  // se enteran.
+  readonly tablesPage = signal(1);
+  readonly tablesSize = signal(20);
+  readonly pagedTables = signal<Table[]>([]);
+  readonly tablesTotal = signal(0);
+  readonly tablesTotalPages = signal(0);
+  readonly tablesLoading = signal(false);
+  private tablesLaneReady = false;
+
+  /** Carga (y fija como página actual) una página del listado de mesas. El
+   *  backend hace clamp si la página queda fuera de rango y devuelve la última
+   *  válida en `res.page` (FR-005). Cambiar el tamaño se llama con `page = 1`. */
+  async loadTablesPage(
+    page: number = this.tablesPage(),
+    size: number = this.tablesSize(),
+  ): Promise<void> {
+    this.tablesLaneReady = true;
+    this.tablesPage.set(page);
+    this.tablesSize.set(size);
+    this.tablesLoading.set(true);
+    this.error.set(null);
+    try {
+      const params = new HttpParams().set('page', page).set('size', size);
+      const res = await firstValueFrom(
+        this.http.get<Page<Table>>(this.baseUrl, { params }),
+      );
+      this.pagedTables.set(res.items);
+      this.tablesTotal.set(res.total);
+      this.tablesTotalPages.set(res.pages);
+      this.tablesPage.set(res.page);
+    } catch (err) {
+      this.error.set(this.extractError(err));
+    } finally {
+      this.tablesLoading.set(false);
+    }
+  }
+
+  /** Re-carga la página actual del carril paginado — se llama tras una mutación
+   *  disparada desde `tables-page.component.ts` para que la lista quede
+   *  coherente (FR-022). No hace nada si el carril nunca se inicializó. */
+  refreshTablesPage(): void {
+    if (this.tablesLaneReady) void this.loadTablesPage(this.tablesPage(), this.tablesSize());
+  }
 
   async loadTables(): Promise<void> {
     this.loading.set(true);
