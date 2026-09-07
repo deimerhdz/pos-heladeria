@@ -1121,6 +1121,13 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
    * Además marca este `:token` como acceso cerrado (Bug 1, FR-001/FR-002): sin
    * esa marca, un reload/"Atrás"/"Adelante" en la misma pestaña volvería a
    * ofrecer el flujo de nombre como si fuera un primer acceso.
+   *
+   * Spec 077 (corrección post-implementación): también limpia el token de
+   * sesión (`tokenStore.clear()`) — ahora que `DinerShellComponent` es quien
+   * abre/cierra la conexión SSE reaccionando a ese signal, es la única forma
+   * de que "Salir" siga cerrando el stream de inmediato (antes lo cerraba
+   * `disconnectRealtime()` directamente). Mismo criterio que ya usa
+   * `expireSession()`.
    */
   async exit(): Promise<void> {
     this.stopPolling();
@@ -1131,6 +1138,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       /* best-effort: el barrido cierra la sesión de todos modos */
     } finally {
       this.tokenStore.markExited(this.token);
+      this.tokenStore.clear();
     }
     this.cart.clear();
     this.cart.clearDiner();
@@ -1218,7 +1226,17 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   // ── Tiempo real ───────────────────────────────────────────────────────────
 
   /**
-   * Conecta el stream y refresca ante cualquier evento de sus pedidos.
+   * Se suscribe a los eventos del stream y refresca ante cualquier evento de
+   * sus pedidos.
+   *
+   * Spec 077 (corrección post-implementación): la conexión SSE en sí
+   * (`connectDiner()`/`disconnect()`) ya no la abre ni la cierra este
+   * componente — vive en `DinerShellComponent` (el padre sin path que
+   * envuelve tanto esta página como el asistente de checkout), para que
+   * sobreviva a la navegación entre el menú y el checkout. Antes, salir a
+   * pagar destruía este componente (`ngOnDestroy` → `disconnectRealtime()`)
+   * y con él la única conexión del comensal, perdiendo cualquier evento
+   * (incluida la confirmación de pago) mientras estaba en el asistente.
    *
    * **No se parchea `myOrders` localmente.** Es una lista completa que ya viene
    * resuelta del backend; un merge por ítem sería lógica nueva con sus propios
@@ -1248,7 +1266,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       // pagando todavía), así que solo muestra el banner, no navega.
       this.realtime.on('payment.completed', () => this.showPaymentConfirmed()),
     );
-    this.realtime.connectDiner(token);
   }
 
   private showPaymentConfirmed(): void {
@@ -1260,7 +1277,6 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   private disconnectRealtime(): void {
     for (const off of this.rtOff) off();
     this.rtOff = [];
-    this.realtime.disconnect();
     if (this.refreshHandle !== null) {
       clearTimeout(this.refreshHandle);
       this.refreshHandle = null;

@@ -155,4 +155,8 @@ export const KNOWN_EVENT_TYPES = [
   'payment.completed',
   'session.closed',
   'table.status_changed',
+  // Spec 077: sin esto el frame llega pero el navegador nunca dispara ningún
+  // callback para él (se descarta en silencio) — sigue el mismo patrón que
+  // el resto de esta lista.
+  'notification.created',
 ] as const;

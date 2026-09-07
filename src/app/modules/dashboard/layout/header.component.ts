@@ -7,6 +7,7 @@ import { LayoutService } from './layout.service';
 import { NotificationCenterService } from '../../../core/notifications/notification-center.service';
 import { summarize } from '../../../core/notifications/notification.model';
 import { PushRegistrationService } from '../../../core/notifications/push-registration.service';
+import { ToastService } from '../../../shared/feedback/toast.service';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: 'Administrador',
@@ -230,6 +231,7 @@ export class HeaderComponent {
   readonly layoutService = inject(LayoutService);
   readonly notificationCenter = inject(NotificationCenterService);
   private readonly pushRegistration = inject(PushRegistrationService);
+  private readonly toast = inject(ToastService);
   readonly summarize = summarize;
 
   currentUser = this.authService.currentUser;
@@ -266,15 +268,23 @@ export class HeaderComponent {
   }
 
   async enablePush(): Promise<void> {
-    try {
-      await this.pushRegistration.register();
-    } catch (err) {
-      console.error('[notifications] no se pudo activar el push', err);
-    } finally {
-      // El navegador ya decidió (concedido o denegado): no se vuelve a
-      // ofrecer el botón, sea cual sea el resultado.
-      this.pushOffered.set(false);
+    const result = await this.pushRegistration.register();
+    if (!result.ok) {
+      // Corrección post-implementación (spec 077): antes esto se ocultaba en
+      // silencio (`catch` + `finally` incondicional) — el "colgado" de la
+      // primera visita (Service Worker instalado pero todavía sin controlar
+      // esta página) daba la falsa impresión de que ya se había activado.
+      if (result.reason === 'needs-reload') {
+        this.toast.info('Recarga la página para poder activar los avisos push.');
+      } else if (result.reason === 'error') {
+        this.toast.error('No se pudo activar el push. Intenta de nuevo.');
+      }
     }
+    // El navegador ya decidió (concedido o denegado) o hace falta recargar:
+    // en ambos casos no se vuelve a ofrecer el botón desde aquí — tras
+    // recargar, `pushOffered` se reevalúa desde cero contra `Notification.
+    // permission`, que sigue en `default` si nunca se llegó a pedir permiso.
+    this.pushOffered.set(false);
   }
 
   async logout(): Promise<void> {
