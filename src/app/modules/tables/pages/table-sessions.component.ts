@@ -119,13 +119,17 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
         @if (store.error()) {
           <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">{{ store.error() }}</div>
         }
-        <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <!-- spec 078 (US3, FR-018; research.md D4): sin overflow-y-auto de
+             página en ningún ancho — el scroll vive DENTRO de cada columna. El
+             min-w-0 en las dos columnas evita que un hijo flex con contenido
+             ancho imponga su ancho mínimo y fuerce scroll horizontal de página. -->
+        <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-hidden">
           <!-- Tarjeta de mesas: visible siempre desde lg; por debajo se oculta
                en cuanto hay algo seleccionado (la tarjeta de detalle pasa a
                ocupar toda la pantalla). -->
           <div
             data-testid="mesas-column"
-            class="flex-col min-h-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
+            class="flex-col min-h-0 min-w-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
             [class]="showingDetail() ? 'hidden lg:flex' : 'flex'"
           >
             <app-pos-tables-panel />
@@ -140,104 +144,107 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                flex-1) ocupa todo el ancho. -->
           <div
             data-testid="detail-column"
-            class="flex-col min-h-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
+            class="flex-col min-h-0 min-w-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
             [class]="showingDetail() ? 'flex flex-1 lg:flex-1' : 'hidden'"
           >
             @if (showingDetail()) {
-              <!-- A pedido del usuario: "Pedido de la mesa" y "Cuenta de la
-                   mesa" siempre se apilan en una sola columna (antes iban
-                   lado a lado desde lg) -- aplica igual a mesas, para llevar
-                   y domicilio, ya que los tres pasan por este mismo bloque. -->
-              <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
-                <div class="flex flex-col bg-white flex-1 min-h-0 lg:flex-1 lg:min-h-0">
-                  <!-- Único botón de volver en móvil/tablet para los 3 estados
-                       del panel central -- el de app-pos-order-panel queda
-                       oculto por debajo de lg para no duplicarlo. -->
-                  <div class="lg:hidden shrink-0 px-4 pt-3">
-                    <button
-                      data-testid="page-back-button"
-                      (click)="store.cancelSelection()"
-                      class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
-                    >
-                      ← Volver a mesas
-                    </button>
-                  </div>
-                  <!--
-                    Sin pestañas propias (feature 028): la columna central se
-                    decide sola según store.centralState() -- salvo que la mesa
-                    tenga a la vez un pago pendiente y un pedido pagado/activo
-                    (spec 048), caso en el que sí aparecen dos pestañas para que
-                    el cajero pueda alternar entre ambos sin perder ninguno. El
-                    botón de silenciar la campana vive aquí porque tiene que
-                    verse pase lo que pase en el centro.
-                  -->
-                  <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0">
-                    <span class="text-[13px] font-semibold text-[#4b5563]">
-                      @if (store.hasPendingAndActiveOrders()) {
-                        <div class="flex items-center gap-1">
-                          <button
-                            type="button"
-                            (click)="store.centralPanelTab.set('validar-pago')"
-                            class="px-2 py-1 rounded-[6px] transition-colors"
-                            [class]="
-                              store.centralPanelTab() === 'validar-pago'
-                                ? 'bg-[#4f46e5] text-white'
-                                : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                            "
-                          >
-                            🔔 Pagos por confirmar
-                          </button>
-                          <button
-                            type="button"
-                            (click)="store.centralPanelTab.set('pedido')"
-                            class="px-2 py-1 rounded-[6px] transition-colors"
-                            [class]="
-                              store.centralPanelTab() === 'pedido'
-                                ? 'bg-[#4f46e5] text-white'
-                                : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                            "
-                          >
-                            Pedido de la mesa
-                          </button>
-                        </div>
-                      } @else {
-                        @switch (store.centralState()) {
-                          @case ('validar-pago') { 🔔 Pagos por confirmar }
-                          @default { Pedido de la mesa }
-                        }
-                      }
-                    </span>
-                    <button
-                      (click)="store.sound.toggleMute()"
-                      [title]="
-                        store.sound.muted()
-                          ? 'Activar el sonido de pedido nuevo'
-                          : 'Silenciar el sonido de pedido nuevo'
-                      "
-                      class="px-2 py-1 rounded-[6px] text-base hover:bg-[#f3f4f6] transition-colors"
-                    >
-                      {{ store.sound.muted() ? '🔕' : '🔔' }}
-                    </button>
-                  </div>
-
-                  @switch (store.effectiveCentralView()) {
-                    @case ('validar-pago') {
-                      <div class="flex-1 overflow-y-auto p-4">
-                        <app-payment-validation-block
-                          [orders]="store.pendingOfSelectedTable()"
-                          [categories]="store.categories()"
-                          [cashShiftId]="store.cashShiftId()"
-                          (refresh)="store.reload()"
-                        />
-                      </div>
-                    }
-                    @default {
-                      <app-pos-order-panel />
+              <!-- spec 078 (US3, FR-016 a FR-021; research.md D4): la columna de
+                   detalle es UNA sola columna flex vertical acotada. Se
+                   eliminaron el scroll externo (overflow-y-auto) y el div
+                   redundante que hoy scrolleaban el panel central + el de cobro
+                   juntos (doble contenedor de scroll = contenido recortado +
+                   scroll horizontal de página en tablet/móvil). Ahora: secciones
+                   fijas shrink-0, una única región flex-1 min-h-0 que scrollea, y
+                   app-pos-checkout-panel shrink-0 (su host ya lo lleva). -->
+              <!-- Único botón de volver en móvil/tablet para los 3 estados del
+                   panel central -- el de app-pos-order-panel queda oculto por
+                   debajo de lg para no duplicarlo. -->
+              <div class="lg:hidden shrink-0 px-4 pt-3">
+                <button
+                  data-testid="page-back-button"
+                  (click)="store.cancelSelection()"
+                  class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
+                >
+                  ← Volver a mesas
+                </button>
+              </div>
+              <!--
+                Sin pestañas propias (feature 028): la columna central se
+                decide sola según store.centralState() -- salvo que la mesa
+                tenga a la vez un pago pendiente y un pedido pagado/activo
+                (spec 048), caso en el que sí aparecen dos pestañas para que
+                el cajero pueda alternar entre ambos sin perder ninguno. El
+                botón de silenciar la campana vive aquí porque tiene que
+                verse pase lo que pase en el centro.
+              -->
+              <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0">
+                <span class="text-[13px] font-semibold text-[#4b5563]">
+                  @if (store.hasPendingAndActiveOrders()) {
+                    <div class="flex items-center gap-1">
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('validar-pago')"
+                        class="px-2 py-1 rounded-[6px] transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'validar-pago'
+                            ? 'bg-[#4f46e5] text-white'
+                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
+                        "
+                      >
+                        🔔 Pagos por confirmar
+                      </button>
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('pedido')"
+                        class="px-2 py-1 rounded-[6px] transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'pedido'
+                            ? 'bg-[#4f46e5] text-white'
+                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
+                        "
+                      >
+                        Pedido de la mesa
+                      </button>
+                    </div>
+                  } @else {
+                    @switch (store.centralState()) {
+                      @case ('validar-pago') { 🔔 Pagos por confirmar }
+                      @default { Pedido de la mesa }
                     }
                   }
-                </div>
-                <app-pos-checkout-panel />
+                </span>
+                <button
+                  (click)="store.sound.toggleMute()"
+                  [title]="
+                    store.sound.muted()
+                      ? 'Activar el sonido de pedido nuevo'
+                      : 'Silenciar el sonido de pedido nuevo'
+                  "
+                  class="px-2 py-1 rounded-[6px] text-base hover:bg-[#f3f4f6] transition-colors"
+                >
+                  {{ store.sound.muted() ? '🔕' : '🔔' }}
+                </button>
               </div>
+
+              <!-- Única región que absorbe el alto libre y scrollea internamente. -->
+              <div class="flex-1 flex flex-col min-h-0">
+                @switch (store.effectiveCentralView()) {
+                  @case ('validar-pago') {
+                    <div class="flex-1 min-h-0 overflow-y-auto p-4">
+                      <app-payment-validation-block
+                        [orders]="store.pendingOfSelectedTable()"
+                        [categories]="store.categories()"
+                        [cashShiftId]="store.cashShiftId()"
+                        (refresh)="store.reload()"
+                      />
+                    </div>
+                  }
+                  @default {
+                    <app-pos-order-panel />
+                  }
+                }
+              </div>
+              <app-pos-checkout-panel />
             }
           </div>
         </div>
