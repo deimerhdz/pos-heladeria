@@ -1,4 +1,4 @@
-import { displayOrderStatus } from './order-status.util';
+import { displayOrderStatus, orderTypeLabel } from './order-status.util';
 
 /**
  * Panel de Control → Órdenes reportó "Abierta" para un pedido QR ya cobrado
@@ -22,5 +22,21 @@ describe('displayOrderStatus', () => {
 
   it('el camino legado bloqueada→pagada (pay_order) sigue viéndose pagada', () => {
     expect(displayOrderStatus({ status: 'pagada', paid: true })).toBe('pagada');
+  });
+});
+
+/** spec 079, FR-017/FR-018 (data-model.md §5): la etiqueta de tipo de orden que
+ *  la pantalla "Órdenes" pinta por fila. */
+describe('orderTypeLabel', () => {
+  it('mapea los 3 tipos concretos', () => {
+    expect(orderTypeLabel('DINE_IN')).toBe('En mesa');
+    expect(orderTypeLabel('TAKEAWAY')).toBe('Para llevar');
+    expect(orderTypeLabel('DELIVERY')).toBe('Domicilio');
+  });
+
+  it('una orden sin tipo (null / undefined / vacío) se muestra "Sin especificar"', () => {
+    expect(orderTypeLabel(null)).toBe('Sin especificar');
+    expect(orderTypeLabel(undefined)).toBe('Sin especificar');
+    expect(orderTypeLabel('')).toBe('Sin especificar');
   });
 });

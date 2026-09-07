@@ -49,6 +49,30 @@ export function displayOrderStatus(
   return order.paid ? 'pagada' : order.status;
 }
 
+// ── Tipo de orden (cómo se atiende) ───────────────────────────────────────
+
+/**
+ * Cómo se atiende el pedido (spec 055, `order_type`). Análogo a `ORDER_STATUS`.
+ * Una orden histórica sin clasificar (`order_type` NULL) se muestra como
+ * "Sin especificar" y queda fuera al filtrar por un tipo concreto (spec 079,
+ * FR-017/FR-018, data-model.md §5) — nunca se rellena.
+ */
+const ORDER_TYPE: Record<'DINE_IN' | 'TAKEAWAY' | 'DELIVERY', { label: string; classes: string }> = {
+  DINE_IN: { label: 'En mesa', classes: 'bg-sky-100 text-sky-700' },
+  TAKEAWAY: { label: 'Para llevar', classes: 'bg-teal-100 text-teal-700' },
+  DELIVERY: { label: 'Domicilio', classes: 'bg-fuchsia-100 text-fuchsia-700' },
+};
+
+export function orderTypeLabel(orderType: string | null | undefined): string {
+  if (!orderType) return 'Sin especificar';
+  return ORDER_TYPE[orderType as keyof typeof ORDER_TYPE]?.label ?? orderType;
+}
+
+export function orderTypeClass(orderType: string | null | undefined): string {
+  if (!orderType) return 'bg-gray-100 text-gray-500';
+  return ORDER_TYPE[orderType as keyof typeof ORDER_TYPE]?.classes ?? 'bg-gray-100 text-gray-500';
+}
+
 /** Estados en los que el pedido ya no admite cambios. */
 export const TERMINAL_ORDER_STATUSES: readonly DiningOrderStatus[] = ['pagada', 'cancelada'];
 
