@@ -7,6 +7,7 @@ import { TokenStorageService } from '../auth/token-storage.service';
 import { decodeClaims, isExpired } from '../auth/jwt.util';
 import { BackendUser } from '../auth/auth.models';
 import { displayNameFromEmail, mapBackendRole, User, UserRole } from '../interfaces/user.interface';
+import { PushRegistrationService } from '../notifications/push-registration.service';
 
 /**
  * Session state machine backed by the own backend (`{apiBaseUrl}/auth/*`).
@@ -18,6 +19,7 @@ export class AuthService {
   private readonly authApi = inject(AuthApiService);
   private readonly tokenStorage = inject(TokenStorageService);
   private readonly router = inject(Router);
+  private readonly pushRegistration = inject(PushRegistrationService);
   private readonly _authReady = new ReplaySubject<void>(1);
 
   readonly currentUser = signal<User | null>(null);
@@ -121,6 +123,13 @@ export class AuthService {
         await firstValueFrom(this.authApi.logout(access));
       } catch {
         // Best-effort: clear the local session regardless of network outcome.
+      }
+      try {
+        // Spec 077 (T032): antes de limpiar la sesión — el `DELETE` necesita
+        // el Bearer todavía vigente (lo agrega `authTokenInterceptor`).
+        await this.pushRegistration.unregister();
+      } catch {
+        // Best-effort: un push huérfano en el navegador no bloquea el logout.
       }
     }
     this.clearSession();

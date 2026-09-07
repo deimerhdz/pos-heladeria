@@ -90,6 +90,22 @@ export interface TableStatusChangedEvent extends RealtimeBase {
   readonly status: string;
 }
 
+/**
+ * Spec 077: el centro de notificaciones se suscribe **solo** a este tipo
+ * genérico, no a `order.created`/`payment.completed` directamente — esos
+ * siguen siendo consumidos como hoy por quien ya los usa (p. ej.
+ * `pos-terminal.store.ts`). `summary` ya viene formateado para el toast/campanita
+ * (contracts/realtime-events.md).
+ */
+export interface NotificationCreatedEvent extends RealtimeBase {
+  readonly type: 'notification.created';
+  readonly notification_id: string;
+  readonly event_type: string;
+  readonly related_entity_type: string;
+  readonly related_entity_id: string;
+  readonly summary: string;
+}
+
 export type RealtimeEvent =
   | OrderCreatedEvent
   | OrderConfirmedEvent
@@ -99,7 +115,8 @@ export type RealtimeEvent =
   | BillChangedEvent
   | PaymentCompletedEvent
   | SessionClosedEvent
-  | TableStatusChangedEvent;
+  | TableStatusChangedEvent
+  | NotificationCreatedEvent;
 
 export type RealtimeEventType = RealtimeEvent['type'];
 

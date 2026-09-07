@@ -1144,7 +1144,13 @@ export class PosTerminalStore {
   // ── Tiempo real ───────────────────────────────────────────────────────────
 
   /**
-   * Conecta el stream del staff.
+   * Se suscribe a los eventos del stream del staff.
+   *
+   * Spec 077: la conexión SSE en sí (`connectStaff()`/`disconnect()`) ya no la
+   * abre ni la cierra este store — vive en `DashboardLayoutComponent` (el
+   * shell), para que sobreviva a la navegación entre secciones del POS. Este
+   * store solo se suscribe/desuscribe a los tipos de evento que le importan,
+   * usando la conexión que el shell ya mantiene abierta.
    *
    * **Los eventos nunca tocan la campana directamente**: `order.created` dispara
    * una recarga, y es `reloadOrders()` → `announcePending()` quien decide si
@@ -1152,7 +1158,7 @@ export class PosTerminalStore {
    * evento haría que el replay tras reconectar volviera a sonar por pedidos que
    * el cajero ya vio.
    *
-   * Por eso `init()` conecta **después** de la primera carga REST: así
+   * Por eso `init()` se suscribe **después** de la primera carga REST: así
    * `pendingSeeded` ya es `true` y la primera ráfaga no suena.
    */
   private connectRealtime(): void {
@@ -1183,13 +1189,11 @@ export class PosTerminalStore {
         }
       }),
     );
-    this.realtime.connectStaff();
   }
 
   private disconnectRealtime(): void {
     for (const off of this.rtOff) off();
     this.rtOff = [];
-    this.realtime.disconnect();
     if (this.reloadHandle !== null) {
       clearTimeout(this.reloadHandle);
       this.reloadHandle = null;
