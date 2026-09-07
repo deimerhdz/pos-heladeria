@@ -102,14 +102,23 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
 
           <!-- Spec 059, Historia 3 (FR-012): datos propios de un pedido de
                Domicilio, capturados al crearlo (spec 056) — solo aplica sin
-               mesa y con order_type DELIVERY. -->
+               mesa y con order_type DELIVERY.
+               spec 078 (US5, FR-026–FR-030; research.md D6): fila compacta
+               (flex flex-wrap) contigua a la insignia de estado, no un bloque
+               vertical extenso. La dirección se muestra completa, envolviendo
+               (break-words, sin truncate ni line-clamp). El valor del domicilio
+               es el mismo delivery_fee que suma el total de la tarjeta (US1).
+               shrink-0: parte del reparto de alto de US4. -->
           @if (!store.selectedTable() && store.selectedOrder()?.order_type === 'DELIVERY') {
-            <div class="text-[12px] flex gap-2 text-[#6b7280] space-y-0.5">
-              <p>📍 {{ store.selectedOrder()?.delivery_address }}</p>
+            <div
+              data-testid="delivery-info-row"
+              class="text-[12px] text-[#6b7280] flex flex-wrap items-start gap-x-3 gap-y-1 shrink-0"
+            >
+              <span class="min-w-0 break-words">📍 {{ store.selectedOrder()?.delivery_address }}</span>
               @if (store.selectedOrder()?.delivery_phone; as phone) {
-                <p>📞 {{ phone }}</p>
+                <span class="whitespace-nowrap">📞 {{ phone }}</span>
               }
-              <p>🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</p>
+              <span class="whitespace-nowrap">🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</span>
             </div>
           }
 

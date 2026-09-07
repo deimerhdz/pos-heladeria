@@ -784,4 +784,71 @@ describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', ()
 
     expect((fixture.nativeElement.textContent as string)).not.toContain('📞');
   });
+
+  // ── spec 078 (US5): fila compacta del domicilio junto al estado ──────────
+
+  const deliveryRow = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="delivery-info-row"]');
+
+  function seleccionarDomicilio(extra: Partial<DiningOrder> = {}): void {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Carrera 45 # 10-20 apto 302, barrio Los Almendros, cerca al parque principal',
+        delivery_phone: '3001234567',
+        delivery_fee: 6000,
+        ...extra,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  }
+
+  it('dirección + teléfono + valor van en UNA fila compacta flex flex-wrap, no un bloque vertical con space-y (FR-026)', () => {
+    seleccionarDomicilio();
+    const row = deliveryRow();
+    expect(row).toBeTruthy();
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('flex-wrap');
+    expect(row.className).not.toMatch(/\bspace-y-/);
+    // Un contenedor, no tres <p> apilados.
+    expect(row.querySelectorAll('p')).toHaveLength(0);
+    expect(row.querySelectorAll('span').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('la dirección va en un <span> con break-words y sin truncate ni line-clamp (FR-028)', () => {
+    seleccionarDomicilio();
+    const addr = Array.from(deliveryRow().querySelectorAll('span')).find((s) =>
+      s.textContent?.includes('Carrera 45'),
+    ) as HTMLElement;
+    expect(addr.className).toContain('break-words');
+    expect(addr.className).not.toContain('truncate');
+    expect(addr.className).not.toMatch(/line-clamp/);
+  });
+
+  it('el valor del 🛵 es store.fmt(selectedOrder().delivery_fee) — el mismo número del total de la tarjeta (FR-029)', () => {
+    seleccionarDomicilio({ delivery_fee: 6000 });
+    const value = Array.from(deliveryRow().querySelectorAll('span')).find((s) =>
+      s.textContent?.includes('🛵'),
+    ) as HTMLElement;
+    expect(value.textContent).toContain(store.fmt(6000));
+  });
+
+  it('los tres datos siguen presentes y legibles (FR-027)', () => {
+    seleccionarDomicilio();
+    const text = deliveryRow().textContent as string;
+    expect(text).toContain('Carrera 45 # 10-20');
+    expect(text).toContain('3001234567');
+    expect(text).toContain(store.fmt(6000));
+  });
+
+  it('con order_type distinto de DELIVERY la fila no se renderiza (FR-030)', () => {
+    store.orders.set([standaloneOrder('TAKEAWAY')]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    store.customerName.set('María G.');
+    fixture.detectChanges();
+
+    expect(deliveryRow()).toBeNull();
+  });
 });
