@@ -92,6 +92,18 @@ interface CartLinePromo {
   savings: number;
 }
 
+/**
+ * Una opción elegida de una línea de carrito, ya resuelta a texto para
+ * mostrar. `groupLabel` es el nombre del grupo dueño de la opción (p. ej.
+ * "Toppings", "Sabores") para que el detalle del pedido pueda agruparlas
+ * visualmente por su nombre real -- `null` cuando no aplica (componentes de
+ * un combo, o una opción de un menú ya cambiado que no se puede resolver).
+ */
+export interface CartOptionLine {
+  groupLabel: string | null;
+  text: string;
+}
+
 /** Estado de mesa derivado para la vista. */
 type TableDisplayStatus =
   | 'libre'
@@ -643,6 +655,22 @@ export class PosTerminalStore {
   );
 
   /**
+   * A pedido del usuario: el pedido seleccionado es uno de los pagos QR por
+   * confirmar (mismo criterio que `pendingOrders` -- `recibida` + canal
+   * `QR_MENU`) -- todavía no se envió a cocina ni tiene un pago resuelto, así
+   * que `app-pos-order-panel` lo muestra de sólo lectura (sin "+ Agregar
+   * producto" ni "Marcar pedido listo") y `app-pos-checkout-panel` no ofrece
+   * ningún cobro para él -- su único camino es la tarjeta de
+   * `app-payment-attempt-review-panel`, que ya se ve siempre que la mesa
+   * tenga algún pago pendiente, sin importar cuál pestaña "Pedido N" esté
+   * activa.
+   */
+  readonly selectedOrderPending = computed(() => {
+    const o = this.selectedOrder();
+    return !!o && o.status === 'recibida' && o.channel === 'QR_MENU';
+  });
+
+  /**
    * Spec 059, Historia 3: reemplaza a `hasActiveOrder` (que solo miraba
    * `selectedTableId()`) — un pedido de Domicilio/Para llevar seleccionado
    * vía `selectStandaloneOrder()` no tiene mesa, pero sí debe mostrar su
@@ -669,16 +697,42 @@ export class PosTerminalStore {
   );
 
   /**
-   * Pestañas de pedido (cuando la mesa tiene >1 orden activa). Rotuladas
+   * Pestañas de pedido (cuando la mesa tiene >1 orden viva). Rotuladas
    * "Pedido N" por posición (spec 049, FR-009) — el nombre del cliente ya se
    * muestra una sola vez en la cabecera, no repetido por pestaña.
+   *
+   * A pedido del usuario: fuente `tableOrders()` (incluye los pagos QR por
+   * confirmar), no `ordersOfTable()` (los excluye a propósito, ver su
+   * docstring) — antes un pago pendiente no tenía pestaña propia, así que su
+   * detalle de ítems solo se veía mezclado en el bloque aparte "Cuenta de la
+   * mesa" en vez del carrito normal. Ahora es una pestaña más, marcada
+   * `pending` para la insignia "Por confirmar" — clic y se ve como cualquier
+   * otro pedido (de sólo lectura, ver `selectedOrderPending`).
    */
   readonly orderTabs = computed(() => {
     const t = this.selectedTableId();
     if (!t) return [];
-    const list = this.ordersOfTable(t);
-    return list.length > 1 ? list.map((o, i) => ({ id: o.id, label: `Pedido ${i + 1}` })) : [];
+    const list = this.tableOrders(t);
+    return list.length > 1
+      ? list.map((o, i) => ({
+          id: o.id,
+          label: `Pedido ${i + 1}`,
+          pending: o.status === 'recibida' && o.channel === 'QR_MENU',
+        }))
+      : [];
   });
+
+  /**
+   * A pedido del usuario: el total del pedido enfocado por su propia pestaña
+   * "Pedido N" -- lo consume "Cuenta de la mesa" (session-bill-panel) para
+   * acompañar al desglose de TODA la mesa que ya mostraba, sin pista de
+   * cuánto sumaba el pedido que el cajero tenía enfocado a la izquierda.
+   * Mismo `subtotal()` que ya usa el carrito (`cartView()` del pedido
+   * seleccionado, con el descuento por ítem ya aplicado si lo hay) — `null`
+   * con un único pedido en la mesa (sin pestañas, sería el mismo número que
+   * el del resto del panel).
+   */
+  readonly selectedOrderTotal = computed(() => (this.orderTabs().length > 0 ? this.subtotal() : null));
 
   /**
    * Vista "Todos los pedidos" activa (spec 049, FR-009/FR-011): por defecto
@@ -896,10 +950,13 @@ export class PosTerminalStore {
         comboId: undefined as string | undefined,
         qty: i.quantity,
         name: lk.variantLabel(i.product_variant_id),
-        bullets: [
-          ...(i.options ?? []).map((o) => lk.optionLabelWithQuantity(o.option_id, o.quantity ?? 1)).filter(Boolean),
-          ...(i.notes ? [i.notes] : []),
-        ],
+        options: (i.options ?? [])
+          .map((o): CartOptionLine => ({
+            groupLabel: lk.optionGroupLabel(o.option_id),
+            text: lk.optionLabelWithQuantity(o.option_id, o.quantity ?? 1),
+          }))
+          .filter((o) => o.text),
+        notes: i.notes || null,
         unitPrice,
         subtotal: unitPrice * i.quantity,
         ready: !KITCHEN_NOT_READY.includes(i.estado_cocina),
@@ -922,7 +979,15 @@ export class PosTerminalStore {
         comboId,
         qty: units > 0 ? units : 1,
         name: `🎁 ${promo?.name ?? 'Combo'}`,
-        bullets: its.map((it) => `${it.quantity}x ${lk.variantLabel(it.product_variant_id)}`),
+        // Los componentes de un combo no pertenecen a un grupo de opciones
+        // -- son productos completos, no selecciones dentro de un grupo.
+        options: its.map(
+          (it): CartOptionLine => ({
+            groupLabel: null,
+            text: `${it.quantity}x ${lk.variantLabel(it.product_variant_id)}`,
+          }),
+        ),
+        notes: null as string | null,
         unitPrice: units > 0 ? subtotal / units : subtotal,
         subtotal,
         ready: its.every((it) => !KITCHEN_NOT_READY.includes(it.estado_cocina)),
@@ -937,13 +1002,29 @@ export class PosTerminalStore {
     return [...persistedPlain, ...persistedCombos];
   }
 
-  /** Líneas del carrito: ítems persistidos de la orden + draft nuevo. */
+  /**
+   * Líneas del carrito: ítems persistidos de la orden + draft nuevo.
+   *
+   * A pedido del usuario: un pago QR seleccionado por su pestaña "Pedido N"
+   * (`selectedOrderPending()`) marca sus ítems `kind: 'pending-review'` en
+   * vez de `'persisted'` -- mismo criterio que antes solo aplicaba
+   * `pendingOrderCartView()` (retirado) para el caso especial de "nada
+   * seleccionado, cae al primer pago pendiente". Ahora es el mismo
+   * `cartView()` de siempre el que lo resuelve, porque un pago pendiente ya
+   * es una selección real (`selectedOrderId` apunta a él). `app-pos-order-
+   * panel` usa ese `kind` para no ofrecer "Marcar listo"/"Anular" -- el
+   * pedido todavía no se envió a cocina, eso pasa recién al confirmar el
+   * pago.
+   */
   readonly cartView = computed(() => {
     const lk = this.lookup();
     const syncedNow = currentNow(this.promotionService);
     const now = syncedNow ?? new Date(0);
     const promos = syncedNow === null ? [] : this.promotionService.activePromotions();
-    const persisted = this.persistedItemsView(this.selectedOrder());
+    const persistedRaw = this.persistedItemsView(this.selectedOrder());
+    const persisted = this.selectedOrderPending()
+      ? persistedRaw.map((it) => ({ ...it, kind: 'pending-review' as const }))
+      : persistedRaw;
 
     const draft = this.draftLines().map((l) => {
       if (l.kind === 'combo') {
@@ -953,7 +1034,8 @@ export class PosTerminalStore {
           comboId: l.comboId,
           qty: l.quantity,
           name: `🎁 ${l.comboName}`,
-          bullets: this.comboBullets(l.comboId),
+          options: this.comboBullets(l.comboId).map((text): CartOptionLine => ({ groupLabel: null, text })),
+          notes: null as string | null,
           unitPrice: l.unitPrice,
           subtotal: l.unitPrice * l.quantity,
           ready: true,
@@ -976,10 +1058,13 @@ export class PosTerminalStore {
         comboId: undefined as string | undefined,
         qty: l.quantity,
         name: l.product.name,
-        bullets: [
-          ...l.options.map((c) => (c.quantity > 1 ? `${c.quantity}x ${c.option.name}` : c.option.name)),
-          ...(l.notes ? [l.notes] : []),
-        ],
+        options: l.options.map(
+          (c): CartOptionLine => ({
+            groupLabel: c.groupName,
+            text: c.quantity > 1 ? `${c.quantity}x ${c.option.name}` : c.option.name,
+          }),
+        ),
+        notes: l.notes || null,
         unitPrice,
         subtotal: unitPrice * l.quantity,
         ready: true,
@@ -1271,20 +1356,22 @@ export class PosTerminalStore {
 
   /**
    * Spec 044: tras un `reload()`, si la mesa seleccionada sigue teniendo
-   * pedidos activos pero el pedido seleccionado ya no es válido, vuelve a
-   * elegir uno (mismo criterio que `selectTable()`). Cubre el caso de
-   * confirmar/aprobar un pago QR pendiente: mientras el pedido era
-   * `recibida`+`qr` quedaba excluido de `activeOrders()`, así que
-   * `selectedOrderId` se había quedado en `null` desde que se seleccionó la
-   * mesa — sin esto, el panel mostraba "Pedido nuevo sin guardar" vacío hasta
-   * que el cajero volvía a tocar la tarjeta. Si la selección actual sigue
-   * vigente (p. ej. el cajero ya eligió una pestaña concreta entre varios
-   * pedidos activos), no se toca.
+   * pedidos vivos pero el pedido seleccionado ya no es válido, vuelve a
+   * elegir uno (mismo criterio que `selectTable()`). Cubre el caso de que un
+   * pedido se cancele/rechace mientras el cajero lo tenía seleccionado. Si la
+   * selección actual sigue vigente (p. ej. el cajero ya eligió una pestaña
+   * concreta entre varios pedidos, incluido un pago QR pendiente), no se
+   * toca — así aprobar/rechazar un pago sin cambiar de pestaña no lo saca de
+   * donde estaba mirando.
+   *
+   * Fuente `tableOrders()` (incluye los pagos QR por confirmar), igual que
+   * `orderTabs()` y `selectTable()` — a pedido del usuario, un pago pendiente
+   * ya es una pestaña "Pedido N" más, seleccionable como cualquier otra.
    */
   private resyncSelectedOrder(): void {
     const tableId = this.selectedTableId();
     if (!tableId) return;
-    const list = this.ordersOfTable(tableId);
+    const list = this.tableOrders(tableId);
     const current = this.selectedOrderId();
     if (current !== null && list.some((o) => o.id === current)) return;
     const next = list[0] ?? null;
@@ -1314,7 +1401,12 @@ export class PosTerminalStore {
 
   // ─── Selección de mesa / pedido ───────────────────────────────────────────────
   selectTable(tableId: string): void {
-    const list = this.ordersOfTable(tableId);
+    // Fuente `tableOrders()` (incluye los pagos QR por confirmar) -- a pedido
+    // del usuario, una mesa con un único pago pendiente y nada más ya
+    // arranca con ese pedido seleccionado (mismo pipeline de carrito que
+    // cualquier otro, de sólo lectura vía `selectedOrderPending()`), en vez
+    // de quedar sin selección hasta que el cajero tocara la tarjeta de nuevo.
+    const list = this.tableOrders(tableId);
     this.selectedTableId.set(tableId);
     void this.loadSessionBill(tableId);
     this.prefetchPaidOrderSales(tableId);

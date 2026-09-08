@@ -15,6 +15,15 @@ export interface MenuLookup {
    * elegidas, para que el formato nunca diverja entre ellas.
    */
   optionLabelWithQuantity(optionId: string, quantity: number): string;
+  /**
+   * Nombre del grupo de opciones dueño de esta opción (p. ej. "Toppings",
+   * "Sabores") -- para que el detalle del pedido pueda mostrar la selección
+   * agrupada bajo el mismo nombre que el comensal/mesero vio al elegirla, en
+   * vez de una lista plana sin distinguir de qué grupo viene cada una.
+   * `null` si la opción no se encuentra (ítem histórico de un menú ya
+   * cambiado).
+   */
+  optionGroupLabel(optionId: string): string | null;
   variantPrice(variantId: string): number;
   optionPrice(optionId: string): number;
   /** Producto dueño de la variante — para resolver a qué aplica una promoción. */
@@ -26,6 +35,7 @@ export interface MenuLookup {
 interface MenuLookupMaps {
   labels: Map<string, string>;
   optLabels: Map<string, string>;
+  optGroupLabels: Map<string, string>;
   prices: Map<string, number>;
   optPrices: Map<string, number>;
   productIds: Map<string, string>;
@@ -49,15 +59,32 @@ function indexOptions(product: MenuCategory['products'][number], maps: MenuLooku
   for (const group of product.option_groups) {
     for (const option of group.options) {
       maps.optLabels.set(option.id, option.name);
+      maps.optGroupLabels.set(option.id, group.name);
       maps.optPrices.set(option.id, option.extra_price);
     }
   }
+}
+
+/**
+ * Separa una etiqueta de `variantLabel()` en producto + variante (p. ej.
+ * "Canasta · Pequeña" → `{ product: 'Canasta', variant: 'Pequeña' }`) para
+ * mostrar la variante como una pastilla aparte -- `" · "` es el mismo
+ * separador que `indexVariants()` usa arriba, nunca uno que un nombre de
+ * producto use por su cuenta. Sin ese separador (variante única), `variant`
+ * sale `null`.
+ */
+export function splitVariantLabel(name: string): { product: string; variant: string | null } {
+  const sep = ' · ';
+  const idx = name.indexOf(sep);
+  if (idx === -1) return { product: name, variant: null };
+  return { product: name.slice(0, idx), variant: name.slice(idx + sep.length) };
 }
 
 export function buildMenuLookup(categories: MenuCategory[]): MenuLookup {
   const maps: MenuLookupMaps = {
     labels: new Map(),
     optLabels: new Map(),
+    optGroupLabels: new Map(),
     prices: new Map(),
     optPrices: new Map(),
     productIds: new Map(),
@@ -80,6 +107,7 @@ export function buildMenuLookup(categories: MenuCategory[]): MenuLookup {
       const label = optionLabel(id);
       return quantity > 1 ? `${quantity}x ${label}` : label;
     },
+    optionGroupLabel: (id) => maps.optGroupLabels.get(id) ?? null,
     variantPrice: (id) => maps.prices.get(id) ?? 0,
     optionPrice: (id) => maps.optPrices.get(id) ?? 0,
     productId: (id) => maps.productIds.get(id),

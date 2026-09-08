@@ -167,7 +167,18 @@ describe('TableSessionsComponent — atajo F3 navega a la vista de armado de ped
  * pestañas para alternar entre ambos, en vez de mostrar solo el pago
  * pendiente (que dejaba el pedido pagado inalcanzable).
  */
-describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y pedido pagado (spec 048)', () => {
+/**
+ * Hotfix posterior (a pedido del usuario): ya no hay pestañas para alternar
+ * entre "Pagos por confirmar" y "Pedido de la mesa" -- ambos bloques
+ * (app-pos-order-panel + app-pos-checkout-panel) se ven siempre juntos, sin
+ * reemplazarse entre sí. Con un pago QR pendiente Y un pedido activo a la
+ * vez (spec 048), el pedido activo se ve como siempre (app-pos-order-panel
+ * cae a `selectedOrder()`, que sigue siendo ese) y el pago pendiente se ve
+ * ADEMÁS, apilado arriba del cobro normal dentro de app-pos-checkout-panel
+ * (`app-payment-attempt-review-panel`) -- ver el describe de más abajo para
+ * el caso de sólo un pago pendiente, sin ningún pedido activo.
+ */
+describe('TableSessionsComponent — pago pendiente y pedido pagado a la vez, sin pestañas (spec 048; hotfix posterior)', () => {
   let fixture: ComponentFixture<TableSessionsComponent>;
   let store: PosTerminalStore;
 
@@ -188,13 +199,6 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
     store = fixture.componentInstance.store;
     vi.spyOn(store, 'init').mockResolvedValue(undefined);
   });
-
-  const tabButtons = (): HTMLButtonElement[] =>
-    Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
-      ['🔔 Pagos por confirmar', 'Pedido de la mesa'].includes(
-        (b as HTMLButtonElement).textContent?.trim() ?? '',
-      ),
-    ) as HTMLButtonElement[];
 
   const pagadaOrder: DiningOrder = {
     id: 'o1',
@@ -219,49 +223,40 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
     items: [],
   } as DiningOrder;
 
-  it('con ambos tipos de pedido en la mesa, aparecen las dos pestañas y se puede alternar entre ambos bloques', () => {
+  it('con ambos tipos de pedido en la mesa, al seleccionar la pestaña del pago pendiente se ven los dos bloques juntos (sin pestañas de vista)', () => {
+    // A pedido del usuario: la tarjeta de confirmación ya no se ve siempre
+    // que la mesa tenga algún pago pendiente -- solo cuando ESE pedido es el
+    // seleccionado (su pestaña "Pedido N"), aquí simulada seteando
+    // `selectedOrderId` directo en vez de hacer clic en la pestaña de verdad.
     store.orders.set([pagadaOrder, pendienteOrder]);
     store.selectedTableId.set('t1');
-    fixture.detectChanges();
-
-    const botones = tabButtons();
-    expect(botones.map((b) => b.textContent?.trim())).toEqual([
-      '🔔 Pagos por confirmar',
-      'Pedido de la mesa',
-    ]);
-    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeFalsy();
-
-    botones.find((b) => b.textContent?.includes('Pedido de la mesa'))!.click();
+    store.selectedOrderId.set('o2');
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeFalsy();
-
-    tabButtons()
-      .find((b) => b.textContent?.includes('Pagos por confirmar'))!
-      .click();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-payment-attempt-review-panel')).toBeTruthy();
+    // Ningún botón de pestaña "Pagos por confirmar"/"Pedido de la mesa".
+    const botones = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(botones.some((b) => b.textContent?.includes('Pagos por confirmar'))).toBe(false);
   });
 
-  it('con solo un pago pendiente (sin pedido pagado), no aparecen pestañas', () => {
-    store.orders.set([pendienteOrder]);
+  it('con ambos tipos de pedido en la mesa, mientras el pedido pagado sigue seleccionado no se ve la tarjeta de confirmación del pago pendiente', () => {
+    store.orders.set([pagadaOrder, pendienteOrder]);
     store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
     fixture.detectChanges();
 
-    expect(tabButtons()).toHaveLength(0);
-    expect(fixture.nativeElement.querySelector('app-payment-validation-block')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-payment-attempt-review-panel')).toBeFalsy();
   });
 
-  it('con solo un pedido pagado (sin nada pendiente), no aparecen pestañas', () => {
+  it('con solo un pedido pagado (sin nada pendiente), no aparece el panel de confirmación', () => {
     store.orders.set([pagadaOrder]);
     store.selectedTableId.set('t1');
     fixture.detectChanges();
 
-    expect(tabButtons()).toHaveLength(0);
     expect(fixture.nativeElement.querySelector('app-pos-order-panel')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-payment-attempt-review-panel')).toBeFalsy();
   });
 });
 
@@ -304,14 +299,14 @@ describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el p
   // pero no es la clase de visibilidad que decide store.hasActiveSelection().
   const hasHiddenClass = (el: HTMLElement): boolean => el.classList.contains('hidden');
 
-  it('sin selección: la columna de mesas queda visible por debajo de lg y la de detalle oculta', () => {
+  it('sin selección: la columna de mesas queda visible y la de detalle oculta', () => {
     fixture.detectChanges();
 
     expect(hasHiddenClass(mesasColumn())).toBe(false);
     expect(hasHiddenClass(detailColumn())).toBe(true);
   });
 
-  it('con una mesa seleccionada (con pedido en curso): la columna de mesas se oculta por debajo de lg y la de detalle queda visible', () => {
+  it('con una mesa seleccionada (con pedido en curso): la columna de mesas se oculta EN CUALQUIER ANCHO (no solo por debajo de lg -- a pedido del usuario, la de detalle pasa a ocupar todo el espacio también en tablet/desktop) y la de detalle queda visible', () => {
     // t1 sin pedidos caería en el estado "mesa-libre", que ya no muestra la
     // tarjeta de detalle en absoluto (ver el describe de más abajo) -- para
     // probar el colapso genérico hace falta una mesa con contenido real.
@@ -332,6 +327,33 @@ describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el p
 
     expect(hasHiddenClass(mesasColumn())).toBe(true);
     expect(hasHiddenClass(detailColumn())).toBe(false);
+    // Ninguna clase con prefijo lg: -- la ocultación/el ancho completo ya no
+    // dependen del breakpoint (antes `hidden lg:flex` / `flex-1 lg:flex-1`
+    // dejaba las dos tarjetas a medias desde lg).
+    expect(mesasColumn().className).not.toMatch(/\blg:/);
+    expect(detailColumn().className).not.toMatch(/\blg:/);
+  });
+
+  it('el botón de volver de página se ve en cualquier ancho, no solo por debajo de lg (la tarjeta de mesas se oculta a la vez en todos los anchos)', () => {
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'recibida',
+        version: 1,
+        dining_table_id: 't1',
+        customer_name: null,
+        created_at: '2026-08-28T10:00:00',
+        items: [],
+      } as DiningOrder,
+    ]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const backButton = fixture.nativeElement.querySelector('[data-testid="page-back-button"]');
+    expect(backButton).not.toBeNull();
+    const wrapper = backButton!.parentElement as HTMLElement;
+    expect(wrapper.className).not.toMatch(/\blg:hidden\b/);
   });
 
   it('bugfix: el CTA "+ Crear pedido nuevo" de la sub-barra sigue visible con una mesa/pedido seleccionado', () => {
@@ -401,7 +423,8 @@ describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el p
  * spec 078 (US3, FR-016–FR-021, FR-021a; research.md D4): la columna de detalle
  * pasa a una sola columna flex vertical acotada — se elimina el doble contenedor
  * de scroll anidado, no queda `overflow-y-auto` de página, y las secciones fijas
- * van `shrink-0` con una única región `flex-1 min-h-0` que scrollea internamente.
+ * van `shrink-0` con una única región `flex-auto` (con un piso `min-h-[…]`,
+ * hotfix posterior — ver comentario en el componente) que scrollea internamente.
  */
 describe('TableSessionsComponent — columna de detalle: una sola columna flex acotada (spec 078, US3)', () => {
   let fixture: ComponentFixture<TableSessionsComponent>;
@@ -448,7 +471,7 @@ describe('TableSessionsComponent — columna de detalle: una sola columna flex a
     expect(content.className).not.toContain('overflow-y-auto');
   });
 
-  it('la tarjeta de detalle es una única columna flex min-h-0 min-w-0 overflow-hidden, sin scroll envolvente interno (FR-016, FR-019)', () => {
+  it('la tarjeta de detalle es una única columna flex min-h-0 min-w-0 overflow-hidden, con un único scroll envolvente para pedido + cuenta (hotfix posterior a FR-016, FR-019)', () => {
     store.orders.set([conPedido()]);
     store.selectedTableId.set('t1');
     fixture.detectChanges();
@@ -457,13 +480,14 @@ describe('TableSessionsComponent — columna de detalle: una sola columna flex a
     expect(col.className).toContain('min-h-0');
     expect(col.className).toContain('min-w-0');
     expect(col.className).toContain('overflow-hidden');
-    // Ya no existe el <div class="flex-1 ... overflow-y-auto"> que envolvía
-    // el panel central + el de cobro juntos: ningún hijo directo de la
-    // tarjeta scrollea el conjunto.
+    // A pedido del usuario: app-pos-order-panel y app-pos-checkout-panel ya
+    // no tienen cada uno su propia caja con scroll -- ahora comparten un
+    // único <div overflow-y-auto> que scrollea el bloque completo de una
+    // sola vez si no alcanza, en vez de recortar cada sección por separado.
     const scrollWrappers = Array.from(col.children).filter((c) =>
       (c as HTMLElement).className.includes('overflow-y-auto'),
     );
-    expect(scrollWrappers).toHaveLength(0);
+    expect(scrollWrappers).toHaveLength(1);
   });
 
   it('el botón de volver y la barra de pestañas/campana siguen shrink-0', () => {
@@ -476,22 +500,35 @@ describe('TableSessionsComponent — columna de detalle: una sola columna flex a
     expect(back.className).toContain('shrink-0');
   });
 
-  it('el @switch del panel central vive en una región flex-1 min-h-0 y app-pos-checkout-panel va shrink-0', () => {
+  it('el @switch del panel central y app-pos-checkout-panel viven juntos en una única región flex-1 min-h-0 overflow-y-auto (hotfix posterior)', () => {
     store.orders.set([conPedido()]);
     store.selectedTableId.set('t1');
     fixture.detectChanges();
 
     const col = detailColumn();
-    const flexRegion = Array.from(col.querySelectorAll('div')).find(
-      (d) => d.className.includes('flex-1') && d.className.includes('min-h-0') && d.querySelector('app-pos-order-panel'),
+    // Antes eran dos hermanos negociando el alto disponible entre sí (uno
+    // flex-auto con un piso mínimo, el otro flex-initial con techo y piso) --
+    // cada uno con su propio scroll interno, recortando su contenido por
+    // separado. Ahora ambos viven DENTRO de la misma región overflow-y-auto,
+    // a su alto natural, con un único scroll para los dos juntos.
+    const scrollRegion = Array.from(col.querySelectorAll('div')).find(
+      (d) =>
+        d.className.includes('flex-1') &&
+        d.className.includes('min-h-0') &&
+        d.className.includes('overflow-y-auto') &&
+        d.querySelector('app-pos-order-panel'),
     );
-    expect(flexRegion).toBeTruthy();
-
-    expect(col.querySelector('app-pos-checkout-panel')).not.toBeNull();
+    expect(scrollRegion).toBeTruthy();
+    expect(scrollRegion?.querySelector('app-pos-checkout-panel')).not.toBeNull();
   });
 
-  it('la rama "validar-pago" queda acotada con scroll solo interno — "Pagos por confirmar" no se recorta (FR-017, FR-021a)', () => {
-    // Mesa con un pago QR pendiente → effectiveCentralView() === 'validar-pago'.
+  it('una mesa con solo un pago QR pendiente muestra el pedido (de sólo lectura) y su confirmación juntos, en el mismo scroll único de la columna (FR-017, FR-021a; hotfix posterior)', () => {
+    // Mesa con un pago QR pendiente y nada más -- a pedido del usuario, ya
+    // es un pedido "seleccionado" como cualquier otro (`selectTable()` lo
+    // auto-selecciona desde `tableOrders()`, que sí lo incluye, a diferencia
+    // de `ordersOfTable()`). Este test setea `selectedOrderId` directo (en
+    // vez de llamar `selectTable()` de verdad) para no mockear
+    // `GET /table-sessions` -- mismo motivo que el resto del archivo.
     store.orders.set([
       {
         ...conPedido(),
@@ -502,15 +539,27 @@ describe('TableSessionsComponent — columna de detalle: una sola columna flex a
       } as DiningOrder,
     ]);
     store.selectedTableId.set('t1');
+    store.selectedOrderId.set('oq');
     fixture.detectChanges();
 
-    if (store.effectiveCentralView() === 'validar-pago') {
-      const block = fixture.nativeElement.querySelector('app-payment-validation-block')
-        ?.parentElement as HTMLElement;
-      expect(block.className).toContain('overflow-y-auto');
-      expect(block.className).toContain('min-h-0');
-      expect(block.className).toContain('flex-1');
-    }
+    expect(store.selectedOrder()?.id).toBe('oq');
+    expect(store.selectedOrderPending()).toBe(true);
+
+    // A pedido del usuario: ya no hay una vista aparte "Pagos por
+    // confirmar" que reemplace todo por app-payment-validation-block -- se
+    // ve integrado en la vista normal, app-pos-order-panel (con los ítems
+    // de sólo lectura) + app-pos-checkout-panel (con la confirmación),
+    // ambos dentro del mismo ancestro con scroll único.
+    const orderPanel = fixture.nativeElement.querySelector('app-pos-order-panel') as HTMLElement;
+    const reviewPanel = fixture.nativeElement.querySelector(
+      'app-payment-attempt-review-panel',
+    ) as HTMLElement;
+    expect(orderPanel).toBeTruthy();
+    expect(reviewPanel).toBeTruthy();
+
+    const scrollAncestor = reviewPanel.closest('.overflow-y-auto') as HTMLElement | null;
+    expect(scrollAncestor).toBeTruthy();
+    expect(scrollAncestor?.contains(orderPanel)).toBe(true);
   });
 });
 

@@ -733,6 +733,37 @@ describe('ManualOrderPageComponent', () => {
     expect(store.selectedTableId()).toBe('t2');
   });
 
+  it('bugfix: entrar a "orden-manual" con una mesa ya ocupada (única a la que puede caer "Crear pedido nuevo" sin ninguna mesa libre) arranca con el pedido nuevo vacío, sin precargar los ítems del pedido ya existente', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 1, status: 'ocupada' })]);
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'abierta',
+        dining_table_id: 't1',
+        created_at: '2026-08-21T10:00:00',
+        items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '4000', estado_cocina: 'pendiente' }],
+      } as unknown as ReturnType<PosTerminalStore['orders']>[number],
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    // `selectTable()` de la terminal auto-selecciona el pedido existente
+    // ('o1') -- esta pantalla lo limpia de inmediato porque nunca edita un
+    // pedido persistido, solo arma uno nuevo (`draftLines()`).
+    expect(store.selectedOrderId()).toBeNull();
+    expect(store.cartView().length).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Ítems: 0');
+
+    // Con la mesa ocupada seleccionada, `selectTable()` también dispara
+    // `ensureCheckoutDataLoaded()` (mismo pipeline de cobro que la terminal
+    // de mesas) — ajeno a lo que prueba este test, solo se drena.
+    for (const req of http.match(() => true)) req.flush([]);
+  });
+
   it('el listado de mesas ya no es una rejilla de botones, sino un select buscable (spec 053, US1, FR-001)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);

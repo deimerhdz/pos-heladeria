@@ -42,7 +42,7 @@ import { BillSummaryComponent } from './bill-summary.component';
     @if (loading()) {
       <p class="text-sm text-gray-400">Cargando pago…</p>
     } @else if (current(); as attempt) {
-      <div class="border border-amber-200 bg-amber-50/60 rounded-lg p-2.5 space-y-2">
+      <div class="border border-gray-200 bg-gray-50 rounded-lg p-2.5 space-y-2">
         <div class="flex items-center justify-between gap-2">
           <span class="text-base font-semibold text-amber-800">
             💳 {{ attempt.payment_method_name }}
@@ -59,7 +59,7 @@ import { BillSummaryComponent } from './bill-summary.component';
           y el chequeo del "monto recibido" salen de este mismo Total.
         -->
         @if (checkoutPreview(); as p) {
-          <div class="rounded-lg border border-amber-100 bg-white/70 px-3 py-2 space-y-1">
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2 space-y-1">
             <app-bill-summary
               [subtotal]="+p.subtotal"
               [discount]="+p.discount"
@@ -107,44 +107,62 @@ import { BillSummaryComponent } from './bill-summary.component';
 
         @if (attempt.is_cash) {
           <!-- Efectivo: el cajero registra el monto, el backend calcula el cambio. -->
-          <div class="flex items-center gap-2 flex-wrap">
+          <div class="space-y-2">
             <app-money-input
-              class="w-full sm:w-36"
+              class="block w-full"
               [(ngModel)]="amountReceived"
               placeholder="Monto recibido"
-              sizeClass="w-full min-h-11 px-2 py-1 text-base rounded-lg"
+              sizeClass="w-full min-h-11 px-3 py-2 text-base rounded-lg"
+              [autofocus]="true"
             />
-            <button
-              (click)="confirmCash(attempt)"
-              [disabled]="busy() || !amountReceived || amountReceived <= 0 || !cashShiftId || actionsBlocked()"
-              class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
-            >
-              {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
-            </button>
-            <button
-              (click)="showRejectOrder.set(!showRejectOrder())"
-              [disabled]="busy()"
-              class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
-            >
-              Rechazar pedido
-            </button>
+            @let cambio = cashChangePreview();
+            @if (cambio !== null) {
+              <!--
+                Vista previa mientras el cajero escribe, antes de confirmar
+                (feature 028): antes solo se veía el cambio DESPUÉS de
+                confirmar (bloque lastResolved() más abajo), a diferencia del
+                cobro de mostrador (payment-input.component.ts), que ya lo
+                muestra en vivo. Ahora se muestra también en negativo (rojo)
+                cuando el monto no alcanza, para que el cajero vea de una vez
+                cuánto falta — antes ese caso no mostraba nada.
+              -->
+              <div
+                class="flex items-center justify-between rounded-lg px-3 py-2"
+                [class]="cambio < 0 ? 'bg-red-50' : 'bg-emerald-50'"
+              >
+                <span
+                  class="text-sm font-medium"
+                  [class]="cambio < 0 ? 'text-red-800' : 'text-emerald-800'"
+                >
+                  Cambio
+                </span>
+                <span
+                  class="text-lg font-bold"
+                  [class]="cambio < 0 ? 'text-red-700' : 'text-emerald-700'"
+                >
+                  {{ money(cambio) }}
+                </span>
+              </div>
+            }
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                (click)="confirmCash(attempt)"
+                [disabled]="busy() || cambio === null || cambio < 0 || !cashShiftId || actionsBlocked()"
+                class="min-h-11 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors"
+              >
+                {{ busy() ? 'Confirmando…' : 'Confirmar efectivo' }}
+              </button>
+              <button
+                (click)="showRejectOrder.set(!showRejectOrder())"
+                [disabled]="busy()"
+                class="min-h-11 px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40 transition-colors"
+              >
+                Rechazar pedido
+              </button>
+            </div>
           </div>
           @if (!cashShiftId) {
             <p class="text-sm text-red-600">Abre un turno de caja para poder confirmar el pago.</p>
-          }
-          @if (cashChangePreview(); as cambio) {
-            <!--
-              Vista previa mientras el cajero escribe, antes de confirmar
-              (feature 028): antes solo se veía el cambio DESPUÉS de
-              confirmar (bloque lastResolved() más abajo), a diferencia del
-              cobro de mostrador (payment-input.component.ts), que ya lo
-              muestra en vivo — mismo criterio de visibilidad (> 0) para
-              ser consistentes.
-            -->
-            <div class="flex items-center justify-between bg-emerald-50 rounded-lg px-3 py-2">
-              <span class="text-sm font-medium text-emerald-800">Cambio</span>
-              <span class="text-lg font-bold text-emerald-700">{{ money(cambio) }}</span>
-            </div>
           }
         } @else if (attempt.receipt_file_url) {
           <!-- Transferencia con comprobante ya subido: aprobar o rechazar. -->
@@ -404,13 +422,15 @@ export class PaymentAttemptReviewPanelComponent implements OnChanges {
 
   /** Vista previa del cambio mientras el cajero escribe el monto recibido,
    *  antes de confirmar (feature 028; spec 026 FR-004 reutilizado). `null`
-   *  si todavía no hay un total autoritativo o un monto válido que lo alcance
-   *  — nada que mostrar aún. El vuelto se calcula sobre el `Total` real con
-   *  descuento y domicilio (FR-022), nunca sobre el subtotal bruto. */
+   *  si todavía no hay un total autoritativo o un monto — nada que mostrar
+   *  aún. Puede ser negativo (el monto no alcanza): se muestra igual, en rojo
+   *  desde el template, para que el cajero vea cuánto falta sin calcularlo a
+   *  mano. El vuelto se calcula sobre el `Total` real con descuento y
+   *  domicilio (FR-022), nunca sobre el subtotal bruto. */
   cashChangePreview(): number | null {
     const amount = this.amountReceived;
     const total = this.orderTotal();
-    if (total == null || !amount || amount < total) return null;
+    if (total == null || amount == null) return null;
     return amount - total;
   }
 
