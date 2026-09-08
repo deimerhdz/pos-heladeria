@@ -183,6 +183,31 @@ const REFRESH_DEBOUNCE_MS = 250;
             </div>
           </div>
 
+          <!-- spec 040 (FR-021), reubicado a pedido del usuario: promociones
+               vigentes de toda la carta, no de una presentación puntual
+               (hasPromotion()/itemPromo() siguen aparte, esas sí son por
+               producto). Antes vivía dentro de la grilla de productos, debajo
+               de las pestañas de categoría — daba la impresión de que aplicaba
+               solo a la categoría activa, cuando en realidad es el mismo listado
+               sin importar cuál esté seleccionada. Aquí, bajo el logo/nombre de
+               mesa y fuera de las pestañas, queda claro que es general. Oculto en
+               "Mis pedidos" (no es la carta) -- se sigue viendo en cualquier
+               categoría y en resultados de búsqueda. -->
+          @if (section() !== 'pedidos' && promotionAnnouncements().length > 0) {
+            <div class="max-w-5xl mx-auto px-4 pb-3 space-y-2">
+              @for (promo of promotionAnnouncements(); track promo.promotion_id) {
+                <div class="rounded-xl bg-teal-50 border border-teal-100 px-4 py-3">
+                  <p class="text-sm font-semibold text-teal-900">🎉 {{ promo.promotion_name }}</p>
+                  <ul class="mt-1 text-xs text-teal-700 space-y-0.5">
+                    @for (rule of promo.rules; track $index) {
+                      <li>{{ rule.text }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+            </div>
+          }
+
           <!-- Segunda fila: lupa + pestañas de categoría. Va dentro de la cabecera
                para compartir su sticky top-0 en vez de calcular un desplazamiento.
                Las pestañas son de la carta; en "Mis pedidos" van el título de sección. -->
@@ -419,21 +444,6 @@ const REFRESH_DEBOUNCE_MS = 250;
                 </p>
               </div>
             } @else {
-              <!-- spec 040 (FR-021): promociones de precio por presentación vigentes -->
-              @if (promotionAnnouncements().length > 0) {
-                <div class="mb-4 space-y-2">
-                  @for (promo of promotionAnnouncements(); track promo.promotion_id) {
-                    <div class="rounded-xl bg-teal-50 border border-teal-100 px-4 py-3">
-                      <p class="text-sm font-semibold text-teal-900">🎉 {{ promo.promotion_name }}</p>
-                      <ul class="mt-1 text-xs text-teal-700 space-y-0.5">
-                        @for (rule of promo.rules; track $index) {
-                          <li>{{ rule.text }}</li>
-                        }
-                      </ul>
-                    </div>
-                  }
-                </div>
-              }
               @if (searchOpen() && search()) {
                 <p class="text-sm text-gray-400 mb-3">
                   {{ visibleProducts().length }} resultado(s) en toda la carta
