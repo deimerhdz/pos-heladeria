@@ -180,6 +180,96 @@ describe('PosOrderPanelComponent — sin resumen de totales (spec 049)', () => {
   });
 });
 
+/**
+ * spec 078 (US4, FR-022–FR-024; research.md D5): con la columna de detalle ya
+ * acotada (US3), las secciones fijas del panel de pedido van `shrink-0` y la
+ * lista de productos queda como la ÚNICA región `flex-1 min-h-0 overflow-y-auto`
+ * — recibe todo el alto libre.
+ */
+describe('PosOrderPanelComponent — reparto de alto: lista de productos flex-1 (spec 078, US4)', () => {
+  let fixture: ComponentFixture<PosOrderPanelComponent>;
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PosOrderPanelComponent],
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(PosOrderPanelComponent);
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  function seleccionarPedido(nItems: number): void {
+    store.orders.set([
+      {
+        ...orderConItemListo(false),
+        items: Array.from({ length: nItems }, (_, i) => ({
+          id: `i${i}`,
+          product_variant_id: 'v1',
+          quantity: 1,
+          unit_price: '5000',
+          estado_cocina: 'pendiente' as const,
+        })),
+      },
+    ]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  }
+
+  it('el encabezado del panel va shrink-0', () => {
+    seleccionarPedido(6);
+    const header = fixture.nativeElement.querySelector('.border-b.shrink-0') as HTMLElement;
+    expect(header).toBeTruthy();
+    expect(header.className).toContain('shrink-0');
+  });
+
+  const divs = (): HTMLElement[] =>
+    Array.from(fixture.nativeElement.querySelectorAll('div')) as HTMLElement[];
+
+  it('la lista de productos es la única región flex-1 min-h-0 overflow-y-auto', () => {
+    seleccionarPedido(6);
+    const scrollRegions = divs().filter(
+      (d) =>
+        d.className.includes('overflow-y-auto') &&
+        d.className.includes('flex-1') &&
+        d.className.includes('min-h-0'),
+    );
+    expect(scrollRegions).toHaveLength(1);
+  });
+
+  it('la barra de acciones ("Guardar pedido" / "Marcar listo") va shrink-0, fuera de la lista scrolleable (FR-023)', () => {
+    seleccionarPedido(6);
+    const marcar = (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
+      (b) => b.textContent?.includes('Marcar pedido listo'),
+    );
+    expect(marcar).toBeTruthy();
+    const bar = marcar!.parentElement as HTMLElement;
+    expect(bar.className).toContain('shrink-0');
+    expect(bar.className).not.toContain('overflow-y-auto');
+  });
+
+  it('un pedido de 1–2 productos no fuerza alto artificial (la lista es flex-1, sin min-height fijo) (FR-024)', () => {
+    seleccionarPedido(2);
+    const list = divs().find(
+      (d) => d.className.includes('overflow-y-auto') && d.className.includes('flex-1'),
+    ) as HTMLElement;
+    expect(list.className).not.toMatch(/\bh-\[/);
+    expect(list.className).not.toMatch(/\bmin-h-\[/);
+  });
+});
+
 /** Spec 029, Historia 3 (FR-013): el encabezado del pedido distingue tres
  *  estados — "en preparación", "pago pendiente" y "listo para cobrar" —, ya
  *  no solo dos. */
@@ -693,5 +783,72 @@ describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', ()
     fixture.detectChanges();
 
     expect((fixture.nativeElement.textContent as string)).not.toContain('📞');
+  });
+
+  // ── spec 078 (US5): fila compacta del domicilio junto al estado ──────────
+
+  const deliveryRow = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="delivery-info-row"]');
+
+  function seleccionarDomicilio(extra: Partial<DiningOrder> = {}): void {
+    store.orders.set([
+      standaloneOrder('DELIVERY', {
+        delivery_address: 'Carrera 45 # 10-20 apto 302, barrio Los Almendros, cerca al parque principal',
+        delivery_phone: '3001234567',
+        delivery_fee: 6000,
+        ...extra,
+      }),
+    ]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    fixture.detectChanges();
+  }
+
+  it('dirección + teléfono + valor van en UNA fila compacta flex flex-wrap, no un bloque vertical con space-y (FR-026)', () => {
+    seleccionarDomicilio();
+    const row = deliveryRow();
+    expect(row).toBeTruthy();
+    expect(row.className).toContain('flex');
+    expect(row.className).toContain('flex-wrap');
+    expect(row.className).not.toMatch(/\bspace-y-/);
+    // Un contenedor, no tres <p> apilados.
+    expect(row.querySelectorAll('p')).toHaveLength(0);
+    expect(row.querySelectorAll('span').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('la dirección va en un <span> con break-words y sin truncate ni line-clamp (FR-028)', () => {
+    seleccionarDomicilio();
+    const addr = Array.from(deliveryRow().querySelectorAll('span')).find((s) =>
+      s.textContent?.includes('Carrera 45'),
+    ) as HTMLElement;
+    expect(addr.className).toContain('break-words');
+    expect(addr.className).not.toContain('truncate');
+    expect(addr.className).not.toMatch(/line-clamp/);
+  });
+
+  it('el valor del 🛵 es store.fmt(selectedOrder().delivery_fee) — el mismo número del total de la tarjeta (FR-029)', () => {
+    seleccionarDomicilio({ delivery_fee: 6000 });
+    const value = Array.from(deliveryRow().querySelectorAll('span')).find((s) =>
+      s.textContent?.includes('🛵'),
+    ) as HTMLElement;
+    expect(value.textContent).toContain(store.fmt(6000));
+  });
+
+  it('los tres datos siguen presentes y legibles (FR-027)', () => {
+    seleccionarDomicilio();
+    const text = deliveryRow().textContent as string;
+    expect(text).toContain('Carrera 45 # 10-20');
+    expect(text).toContain('3001234567');
+    expect(text).toContain(store.fmt(6000));
+  });
+
+  it('con order_type distinto de DELIVERY la fila no se renderiza (FR-030)', () => {
+    store.orders.set([standaloneOrder('TAKEAWAY')]);
+    store.selectedTableId.set(null);
+    store.selectedOrderId.set('o1');
+    store.customerName.set('María G.');
+    fixture.detectChanges();
+
+    expect(deliveryRow()).toBeNull();
   });
 });

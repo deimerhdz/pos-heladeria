@@ -84,30 +84,33 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
           </nav>
         </div>
 
-        @if (store.orderTypeTab() === 'mesas') {
-          <!-- A pedido del usuario: "+ Crear pedido nuevo" es un CTA fijo de
-               la sub-barra -- debe seguir visible sin importar si hay una
-               mesa/pedido seleccionado (antes se ocultaba con
-               showingDetail(), lo que lo hacía desaparecer justo cuando el
-               cajero quería crear otro pedido desde una mesa ya abierta). -->
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              (click)="goToNewOrder()"
-              [disabled]="!store.newOrderTableId()"
-              [title]="!store.newOrderTableId() ? 'No hay ninguna mesa libre disponible' : ''"
-              class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" x2="12" y1="8" y2="16"></line>
-                <line x1="8" x2="16" y1="12" y2="12"></line>
-              </svg>
-              <span class="hidden sm:inline">Crear pedido nuevo</span>
-              <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
-            </button>
-          </div>
-        }
+        <!-- spec 078 (US2, FR-007/FR-013/FR-015): el CTA "Crear pedido nuevo"
+             está fuera del guard de pestaña — visible y habilitado en las tres
+             pestañas y en los tres anchos, con etiqueta de texto siempre (nunca
+             solo el ícono +). Solo en "Mesas" exige una mesa libre; Domicilio y
+             Para llevar no exigen mesa y goToNewOrder() navega a la ruta sin
+             tableId con el query param tipo. -->
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            (click)="goToNewOrder()"
+            [disabled]="store.orderTypeTab() === 'mesas' && !store.newOrderTableId()"
+            [title]="
+              store.orderTypeTab() === 'mesas' && !store.newOrderTableId()
+                ? 'No hay ninguna mesa libre disponible'
+                : ''
+            "
+            class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" x2="12" y1="8" y2="16"></line>
+              <line x1="8" x2="16" y1="12" y2="12"></line>
+            </svg>
+            <span>Crear pedido nuevo</span>
+            <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
+          </button>
+        </div>
       </div>
 
       @if (store.loading()) {
@@ -116,13 +119,17 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
         @if (store.error()) {
           <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">{{ store.error() }}</div>
         }
-        <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <!-- spec 078 (US3, FR-018; research.md D4): sin overflow-y-auto de
+             página en ningún ancho — el scroll vive DENTRO de cada columna. El
+             min-w-0 en las dos columnas evita que un hijo flex con contenido
+             ancho imponga su ancho mínimo y fuerce scroll horizontal de página. -->
+        <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-hidden">
           <!-- Tarjeta de mesas: visible siempre desde lg; por debajo se oculta
                en cuanto hay algo seleccionado (la tarjeta de detalle pasa a
                ocupar toda la pantalla). -->
           <div
             data-testid="mesas-column"
-            class="flex-col min-h-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
+            class="flex-col min-h-0 min-w-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
             [class]="showingDetail() ? 'hidden lg:flex' : 'flex'"
           >
             <app-pos-tables-panel />
@@ -137,104 +144,107 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                flex-1) ocupa todo el ancho. -->
           <div
             data-testid="detail-column"
-            class="flex-col min-h-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
+            class="flex-col min-h-0 min-w-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
             [class]="showingDetail() ? 'flex flex-1 lg:flex-1' : 'hidden'"
           >
             @if (showingDetail()) {
-              <!-- A pedido del usuario: "Pedido de la mesa" y "Cuenta de la
-                   mesa" siempre se apilan en una sola columna (antes iban
-                   lado a lado desde lg) -- aplica igual a mesas, para llevar
-                   y domicilio, ya que los tres pasan por este mismo bloque. -->
-              <div class="flex-1 flex flex-col min-h-0 overflow-y-auto">
-                <div class="flex flex-col bg-white flex-1 min-h-0 lg:flex-1 lg:min-h-0">
-                  <!-- Único botón de volver en móvil/tablet para los 3 estados
-                       del panel central -- el de app-pos-order-panel queda
-                       oculto por debajo de lg para no duplicarlo. -->
-                  <div class="lg:hidden shrink-0 px-4 pt-3">
-                    <button
-                      data-testid="page-back-button"
-                      (click)="store.cancelSelection()"
-                      class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
-                    >
-                      ← Volver a mesas
-                    </button>
-                  </div>
-                  <!--
-                    Sin pestañas propias (feature 028): la columna central se
-                    decide sola según store.centralState() -- salvo que la mesa
-                    tenga a la vez un pago pendiente y un pedido pagado/activo
-                    (spec 048), caso en el que sí aparecen dos pestañas para que
-                    el cajero pueda alternar entre ambos sin perder ninguno. El
-                    botón de silenciar la campana vive aquí porque tiene que
-                    verse pase lo que pase en el centro.
-                  -->
-                  <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0">
-                    <span class="text-[13px] font-semibold text-[#4b5563]">
-                      @if (store.hasPendingAndActiveOrders()) {
-                        <div class="flex items-center gap-1">
-                          <button
-                            type="button"
-                            (click)="store.centralPanelTab.set('validar-pago')"
-                            class="px-2 py-1 rounded-[6px] transition-colors"
-                            [class]="
-                              store.centralPanelTab() === 'validar-pago'
-                                ? 'bg-[#4f46e5] text-white'
-                                : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                            "
-                          >
-                            🔔 Pagos por confirmar
-                          </button>
-                          <button
-                            type="button"
-                            (click)="store.centralPanelTab.set('pedido')"
-                            class="px-2 py-1 rounded-[6px] transition-colors"
-                            [class]="
-                              store.centralPanelTab() === 'pedido'
-                                ? 'bg-[#4f46e5] text-white'
-                                : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                            "
-                          >
-                            Pedido de la mesa
-                          </button>
-                        </div>
-                      } @else {
-                        @switch (store.centralState()) {
-                          @case ('validar-pago') { 🔔 Pagos por confirmar }
-                          @default { Pedido de la mesa }
-                        }
-                      }
-                    </span>
-                    <button
-                      (click)="store.sound.toggleMute()"
-                      [title]="
-                        store.sound.muted()
-                          ? 'Activar el sonido de pedido nuevo'
-                          : 'Silenciar el sonido de pedido nuevo'
-                      "
-                      class="px-2 py-1 rounded-[6px] text-base hover:bg-[#f3f4f6] transition-colors"
-                    >
-                      {{ store.sound.muted() ? '🔕' : '🔔' }}
-                    </button>
-                  </div>
-
-                  @switch (store.effectiveCentralView()) {
-                    @case ('validar-pago') {
-                      <div class="flex-1 overflow-y-auto p-4">
-                        <app-payment-validation-block
-                          [orders]="store.pendingOfSelectedTable()"
-                          [categories]="store.categories()"
-                          [cashShiftId]="store.cashShiftId()"
-                          (refresh)="store.reload()"
-                        />
-                      </div>
-                    }
-                    @default {
-                      <app-pos-order-panel />
+              <!-- spec 078 (US3, FR-016 a FR-021; research.md D4): la columna de
+                   detalle es UNA sola columna flex vertical acotada. Se
+                   eliminaron el scroll externo (overflow-y-auto) y el div
+                   redundante que hoy scrolleaban el panel central + el de cobro
+                   juntos (doble contenedor de scroll = contenido recortado +
+                   scroll horizontal de página en tablet/móvil). Ahora: secciones
+                   fijas shrink-0, una única región flex-1 min-h-0 que scrollea, y
+                   app-pos-checkout-panel shrink-0 (su host ya lo lleva). -->
+              <!-- Único botón de volver en móvil/tablet para los 3 estados del
+                   panel central -- el de app-pos-order-panel queda oculto por
+                   debajo de lg para no duplicarlo. -->
+              <div class="lg:hidden shrink-0 px-4 pt-3">
+                <button
+                  data-testid="page-back-button"
+                  (click)="store.cancelSelection()"
+                  class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
+                >
+                  ← Volver a mesas
+                </button>
+              </div>
+              <!--
+                Sin pestañas propias (feature 028): la columna central se
+                decide sola según store.centralState() -- salvo que la mesa
+                tenga a la vez un pago pendiente y un pedido pagado/activo
+                (spec 048), caso en el que sí aparecen dos pestañas para que
+                el cajero pueda alternar entre ambos sin perder ninguno. El
+                botón de silenciar la campana vive aquí porque tiene que
+                verse pase lo que pase en el centro.
+              -->
+              <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0">
+                <span class="text-[13px] font-semibold text-[#4b5563]">
+                  @if (store.hasPendingAndActiveOrders()) {
+                    <div class="flex items-center gap-1">
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('validar-pago')"
+                        class="px-2 py-1 rounded-[6px] transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'validar-pago'
+                            ? 'bg-[#4f46e5] text-white'
+                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
+                        "
+                      >
+                        🔔 Pagos por confirmar
+                      </button>
+                      <button
+                        type="button"
+                        (click)="store.centralPanelTab.set('pedido')"
+                        class="px-2 py-1 rounded-[6px] transition-colors"
+                        [class]="
+                          store.centralPanelTab() === 'pedido'
+                            ? 'bg-[#4f46e5] text-white'
+                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
+                        "
+                      >
+                        Pedido de la mesa
+                      </button>
+                    </div>
+                  } @else {
+                    @switch (store.centralState()) {
+                      @case ('validar-pago') { 🔔 Pagos por confirmar }
+                      @default { Pedido de la mesa }
                     }
                   }
-                </div>
-                <app-pos-checkout-panel />
+                </span>
+                <button
+                  (click)="store.sound.toggleMute()"
+                  [title]="
+                    store.sound.muted()
+                      ? 'Activar el sonido de pedido nuevo'
+                      : 'Silenciar el sonido de pedido nuevo'
+                  "
+                  class="px-2 py-1 rounded-[6px] text-base hover:bg-[#f3f4f6] transition-colors"
+                >
+                  {{ store.sound.muted() ? '🔕' : '🔔' }}
+                </button>
               </div>
+
+              <!-- Única región que absorbe el alto libre y scrollea internamente. -->
+              <div class="flex-1 flex flex-col min-h-0">
+                @switch (store.effectiveCentralView()) {
+                  @case ('validar-pago') {
+                    <div class="flex-1 min-h-0 overflow-y-auto p-4">
+                      <app-payment-validation-block
+                        [orders]="store.pendingOfSelectedTable()"
+                        [categories]="store.categories()"
+                        [cashShiftId]="store.cashShiftId()"
+                        (refresh)="store.reload()"
+                      />
+                    </div>
+                  }
+                  @default {
+                    <app-pos-order-panel />
+                  }
+                }
+              </div>
+              <app-pos-checkout-panel />
             }
           </div>
         </div>
@@ -323,10 +333,20 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     this.store.stop();
   }
 
-  /** Mismo CTA que el panel de cobro ofrece con una mesa libre ya
-   *  seleccionada (`store.newOrderTableId()`), aquí para el estado vacío sin
-   *  ninguna selección. */
+  /** CTA "Crear pedido nuevo" de la sub-barra (spec 078, US2, FR-008–FR-010).
+   *  El destino depende de la pestaña activa:
+   *  - "Domicilios" / "Para llevar" → ruta sin `:tableId` con `?tipo=` (no
+   *    exigen mesa; `createManualOrderFromDraft()` lo contempla).
+   *  - "Mesas" → comportamiento de siempre: navega con `newOrderTableId()` (la
+   *    mesa libre seleccionada), y el `[disabled]` del botón ya cubre el caso
+   *    de que no haya ninguna. */
   goToNewOrder(): void {
+    const tab = this.store.orderTypeTab();
+    if (tab === 'domicilios' || tab === 'para-llevar') {
+      const tipo = tab === 'domicilios' ? 'domicilio' : 'para-llevar';
+      this.router.navigate(['/dashboard/mesas-sesiones/orden-manual'], { queryParams: { tipo } });
+      return;
+    }
     const tableId = this.store.newOrderTableId();
     if (!tableId) return;
     this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
@@ -343,6 +363,21 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
     return this.store.hasActiveSelection() && this.store.effectiveCentralView() !== 'mesa-libre';
   }
 
+  /** Destino del atajo F3 (spec 078, US2, Edge Case "el cajero pulsa el
+   *  atajo…"): en "Domicilios" / "Para llevar" navega a la ruta sin `:tableId`
+   *  con el `?tipo=` correspondiente; en "Mesas" el comportamiento no cambia —
+   *  solo navega si hay una mesa seleccionada. */
+  private openNewOrderFromShortcut(): void {
+    const tab = this.store.orderTypeTab();
+    if (tab === 'domicilios' || tab === 'para-llevar') {
+      const tipo = tab === 'domicilios' ? 'domicilio' : 'para-llevar';
+      this.router.navigate(['/dashboard/mesas-sesiones/orden-manual'], { queryParams: { tipo } });
+      return;
+    }
+    const tableId = this.store.selectedTableId();
+    if (tableId) this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+  }
+
   @HostListener('window:keydown', ['$event'])
   onKey(e: KeyboardEvent): void {
     const tag = (document.activeElement?.tagName ?? '').toUpperCase();
@@ -352,12 +387,7 @@ export class TableSessionsComponent implements OnInit, OnDestroy {
       this.tablesPanel()?.focusSearch();
     } else if (e.key === 'F3') {
       e.preventDefault();
-      // Mismo gatillo que el CTA "+ Crear Orden Manual" (feature 028, T022;
-      // ajuste posterior de spec 036: ahora navega a la vista dedicada de
-      // armado de pedido en vez de abrir el catálogo embebido) — solo hace
-      // algo si hay una mesa seleccionada.
-      const tableId = this.store.selectedTableId();
-      if (tableId) this.router.navigate(['/dashboard/mesas-sesiones', tableId, 'orden-manual']);
+      this.openNewOrderFromShortcut();
     } else if (e.key === 'Escape') {
       if (this.store.catalogOpen()) this.store.closeCatalog();
       else this.store.cancelSelection();

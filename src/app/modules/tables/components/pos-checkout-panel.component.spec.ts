@@ -353,6 +353,38 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
     expect(button).toBeDefined();
   });
 
+  // ── spec 078 (US3/US4, FR-025; research.md D5) ──────────────────────────────
+
+  it('el panel apilado va shrink-0 y min-w-0, con un techo propio (no compite con el scroll de la columna)', () => {
+    const wrapper = fixture.nativeElement.firstElementChild as HTMLElement;
+    expect(wrapper.className).toContain('shrink-0');
+    expect(wrapper.className).toContain('min-w-0');
+    expect(wrapper.className).toMatch(/max-h-\[/);
+  });
+
+  it('la zona media es la única región flex-1 min-h-0 overflow-y-auto; los botones de acción quedan shrink-0', () => {
+    const wrapper = fixture.nativeElement.firstElementChild as HTMLElement;
+    const mid = wrapper.firstElementChild as HTMLElement;
+    expect(mid.className).toContain('flex-1');
+    expect(mid.className).toContain('min-h-0');
+    expect(mid.className).toContain('overflow-y-auto');
+
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [],
+    });
+    fixture.detectChanges();
+    const printBtn = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Imprimir Pre-cuenta'),
+    ) as HTMLButtonElement | undefined;
+    if (printBtn) {
+      expect((printBtn.parentElement as HTMLElement).className).toContain('shrink-0');
+    }
+  });
+
   it('spec 029 hotfix #4: "Rechazar pedido" pide confirmación y cancela sin venta ni movimiento de caja', async () => {
     const confirm = TestBed.inject(ConfirmService);
 

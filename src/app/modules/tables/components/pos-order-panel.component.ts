@@ -102,14 +102,23 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
 
           <!-- Spec 059, Historia 3 (FR-012): datos propios de un pedido de
                Domicilio, capturados al crearlo (spec 056) — solo aplica sin
-               mesa y con order_type DELIVERY. -->
+               mesa y con order_type DELIVERY.
+               spec 078 (US5, FR-026–FR-030; research.md D6): fila compacta
+               (flex flex-wrap) contigua a la insignia de estado, no un bloque
+               vertical extenso. La dirección se muestra completa, envolviendo
+               (break-words, sin truncate ni line-clamp). El valor del domicilio
+               es el mismo delivery_fee que suma el total de la tarjeta (US1).
+               shrink-0: parte del reparto de alto de US4. -->
           @if (!store.selectedTable() && store.selectedOrder()?.order_type === 'DELIVERY') {
-            <div class="text-[12px] flex gap-2 text-[#6b7280] space-y-0.5">
-              <p>📍 {{ store.selectedOrder()?.delivery_address }}</p>
+            <div
+              data-testid="delivery-info-row"
+              class="text-[12px] text-[#6b7280] flex flex-wrap items-start gap-x-3 gap-y-1 shrink-0"
+            >
+              <span class="min-w-0 break-words">📍 {{ store.selectedOrder()?.delivery_address }}</span>
               @if (store.selectedOrder()?.delivery_phone; as phone) {
-                <p>📞 {{ phone }}</p>
+                <span class="whitespace-nowrap">📞 {{ phone }}</span>
               }
-              <p>🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</p>
+              <span class="whitespace-nowrap">🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</span>
             </div>
           }
 
@@ -148,8 +157,11 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                perder lo ya agregado (store.closeCatalog()). -->
           <app-pos-catalog-drawer />
         } @else {
-          <!-- Cart -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-3">
+          <!-- Cart: spec 078 (US4, FR-022–FR-024; research.md D5) — única región
+               flex-1 min-h-0 que absorbe el alto libre del panel. El encabezado
+               (arriba, shrink-0) y la barra de acciones (abajo, shrink-0)
+               quedan siempre visibles; solo esta lista scrollea. -->
+          <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
             @for (it of store.cartView(); track it.key) {
               <div class="bg-white rounded-[6px] border border-[#e5e7eb] p-3 space-y-1.5">
                 <div class="flex items-start justify-between gap-2">
@@ -263,12 +275,16 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                 ＋ Agregar producto
               </button>
             }
+          </div>
 
-            <!-- Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró
+          <!-- Spec 049, FR-002: el resumen Subtotal/Descuento/Total se retiró
                de este panel — vive ahora en session-bill-panel.component.ts
                ("Cuenta de la mesa"). Estas dos acciones no son de cobro, así
-               que se quedan aquí, solo sin el contenedor de totales alrededor. -->
-            <div class="flex gap-2 pt-1">
+               que se quedan aquí, solo sin el contenedor de totales alrededor.
+               spec 078 (US4, FR-023): fuera de la lista scrolleable, shrink-0 —
+               "Guardar pedido" / "Marcar listo" quedan siempre alcanzables. -->
+          @if (store.hasDraft() || (store.selectedOrder() && !store.kitchenReady())) {
+            <div class="flex gap-2 p-4 pt-3 border-t border-[#e5e7eb] shrink-0">
               @if (store.hasDraft()) {
                 <button
                   (click)="store.saveOrder()"
@@ -288,7 +304,7 @@ import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
                 </button>
               }
             </div>
-          </div>
+          }
         }
       </div>
     }

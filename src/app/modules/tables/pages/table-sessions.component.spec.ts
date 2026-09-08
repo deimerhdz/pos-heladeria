@@ -2,11 +2,18 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
+import { SwPush } from '@angular/service-worker';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { TableSessionsComponent } from './table-sessions.component';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PromotionService } from '../../promotions/services/promotion.service';
 import { DiningOrder } from '../interfaces/dining.interface';
+
+/** spec 077 introdujo `AuthService → PushRegistrationService → SwPush` en el
+ *  árbol de inyección de esta página; los TestBeds de este archivo no proveían
+ *  `SwPush` y quedaron en `NG0201`. Ningún test de aquí ejercita push — basta
+ *  con que el token resuelva (spec 078, decisión de implementación: stub local). */
+const swPushStub = { provide: SwPush, useValue: { isEnabled: false } };
 
 /** Spec 029, Historia 2: el atajo F4 (descuento manual) se retiró por
  *  completo — presionarlo ya no dispara ninguna acción. No se llama
@@ -23,6 +30,7 @@ describe('TableSessionsComponent — atajo F4 retirado (spec 029)', () => {
       providers: [
         PosTerminalStore,
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -63,6 +71,7 @@ describe('TableSessionsComponent — diálogo de éxito sin botón duplicado (sp
       imports: [TableSessionsComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -121,6 +130,7 @@ describe('TableSessionsComponent — atajo F3 navega a la vista de armado de ped
       providers: [
         PosTerminalStore,
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -167,6 +177,7 @@ describe('TableSessionsComponent — pestañas cuando coexisten pago pendiente y
       imports: [TableSessionsComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -271,6 +282,7 @@ describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el p
       imports: [TableSessionsComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -386,6 +398,123 @@ describe('TableSessionsComponent — colapso móvil de la grilla de mesas y el p
 });
 
 /**
+ * spec 078 (US3, FR-016–FR-021, FR-021a; research.md D4): la columna de detalle
+ * pasa a una sola columna flex vertical acotada — se elimina el doble contenedor
+ * de scroll anidado, no queda `overflow-y-auto` de página, y las secciones fijas
+ * van `shrink-0` con una única región `flex-1 min-h-0` que scrollea internamente.
+ */
+describe('TableSessionsComponent — columna de detalle: una sola columna flex acotada (spec 078, US3)', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+
+  const conPedido = (): DiningOrder =>
+    ({
+      id: 'o1',
+      channel: 'POS',
+      status: 'recibida',
+      version: 1,
+      dining_table_id: 't1',
+      customer_name: null,
+      created_at: '2026-08-28T10:00:00',
+      items: [],
+    }) as DiningOrder;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        swPushStub,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  const detailColumn = (): HTMLElement =>
+    fixture.nativeElement.querySelector('[data-testid="detail-column"]');
+
+  it('el contenedor de la zona de contenido ya no lleva overflow-y-auto (scroll solo interno) (FR-018)', () => {
+    fixture.detectChanges();
+
+    const content = detailColumn().parentElement as HTMLElement; // el flex-row/col contenedor
+    expect(content.className).toContain('overflow-hidden');
+    expect(content.className).not.toContain('overflow-y-auto');
+  });
+
+  it('la tarjeta de detalle es una única columna flex min-h-0 min-w-0 overflow-hidden, sin scroll envolvente interno (FR-016, FR-019)', () => {
+    store.orders.set([conPedido()]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const col = detailColumn();
+    expect(col.className).toContain('min-h-0');
+    expect(col.className).toContain('min-w-0');
+    expect(col.className).toContain('overflow-hidden');
+    // Ya no existe el <div class="flex-1 ... overflow-y-auto"> que envolvía
+    // el panel central + el de cobro juntos: ningún hijo directo de la
+    // tarjeta scrollea el conjunto.
+    const scrollWrappers = Array.from(col.children).filter((c) =>
+      (c as HTMLElement).className.includes('overflow-y-auto'),
+    );
+    expect(scrollWrappers).toHaveLength(0);
+  });
+
+  it('el botón de volver y la barra de pestañas/campana siguen shrink-0', () => {
+    store.orders.set([conPedido()]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const back = fixture.nativeElement.querySelector('[data-testid="page-back-button"]')
+      ?.parentElement as HTMLElement;
+    expect(back.className).toContain('shrink-0');
+  });
+
+  it('el @switch del panel central vive en una región flex-1 min-h-0 y app-pos-checkout-panel va shrink-0', () => {
+    store.orders.set([conPedido()]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    const col = detailColumn();
+    const flexRegion = Array.from(col.querySelectorAll('div')).find(
+      (d) => d.className.includes('flex-1') && d.className.includes('min-h-0') && d.querySelector('app-pos-order-panel'),
+    );
+    expect(flexRegion).toBeTruthy();
+
+    expect(col.querySelector('app-pos-checkout-panel')).not.toBeNull();
+  });
+
+  it('la rama "validar-pago" queda acotada con scroll solo interno — "Pagos por confirmar" no se recorta (FR-017, FR-021a)', () => {
+    // Mesa con un pago QR pendiente → effectiveCentralView() === 'validar-pago'.
+    store.orders.set([
+      {
+        ...conPedido(),
+        id: 'oq',
+        channel: 'QR_MENU',
+        status: 'recibida',
+        payment_status: 'pendiente_validacion',
+      } as DiningOrder,
+    ]);
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    if (store.effectiveCentralView() === 'validar-pago') {
+      const block = fixture.nativeElement.querySelector('app-payment-validation-block')
+        ?.parentElement as HTMLElement;
+      expect(block.className).toContain('overflow-y-auto');
+      expect(block.className).toContain('min-h-0');
+      expect(block.className).toContain('flex-1');
+    }
+  });
+});
+
+/**
  * Bugfix reportado sobre el rediseño: al seleccionar una mesa libre (sin
  * ningún pedido), el panel central informativo ("Mesa N está libre...") y el
  * "Pedido de mostrador" + botón del panel de cobro aparecían lado a lado
@@ -404,6 +533,7 @@ describe('TableSessionsComponent — mesa libre seleccionada: un único panel, n
       imports: [TableSessionsComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -461,6 +591,7 @@ describe('TableSessionsComponent — sin selección: sin panel de detalle vacío
       imports: [TableSessionsComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
@@ -510,5 +641,112 @@ describe('TableSessionsComponent — sin selección: sin panel de detalle vacío
     fixture.detectChanges();
     expect(detailColumn().contains(findCta())).toBe(false);
     expect(detailColumn().classList.contains('hidden')).toBe(true);
+  });
+});
+
+/**
+ * spec 078 (US2, FR-007–FR-015): el CTA "Crear pedido nuevo" está fuera del
+ * guard de pestaña — visible y habilitado en las tres pestañas y en los tres
+ * anchos, con etiqueta de texto siempre. Desde "Domicilios" / "Para llevar"
+ * navega a la ruta sin `:tableId` con `?tipo=`.
+ */
+describe('TableSessionsComponent — CTA "Crear pedido nuevo" en las 3 pestañas (spec 078, US2)', () => {
+  let fixture: ComponentFixture<TableSessionsComponent>;
+  let store: PosTerminalStore;
+  let router: Router;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TableSessionsComponent],
+      providers: [
+        provideRouter([]),
+        swPushStub,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+      ],
+    });
+    fixture = TestBed.createComponent(TableSessionsComponent);
+    store = fixture.componentInstance.store;
+    router = TestBed.inject(Router);
+    vi.spyOn(store, 'init').mockResolvedValue(undefined);
+  });
+
+  const cta = (): HTMLButtonElement =>
+    Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Crear pedido nuevo'),
+    ) as HTMLButtonElement;
+
+  for (const tab of ['mesas', 'domicilios', 'para-llevar'] as const) {
+    it(`el CTA se renderiza con la pestaña en '${tab}' (sin tarjeta seleccionada) (FR-007)`, () => {
+      store.setOrderTypeTab(tab);
+      fixture.detectChanges();
+
+      expect(cta()).toBeTruthy();
+    });
+  }
+
+  it('la etiqueta "Crear pedido nuevo" es visible en los tres anchos — el <span> ya no lleva hidden sm:inline (FR-013, FR-015)', () => {
+    fixture.detectChanges();
+
+    const label = Array.from(cta().querySelectorAll('span')).find(
+      (s) => s.textContent?.trim() === 'Crear pedido nuevo',
+    ) as HTMLSpanElement;
+    expect(label).toBeTruthy();
+    expect(label.className).not.toContain('hidden');
+    expect(label.className).not.toContain('sm:inline');
+  });
+
+  it("pulsarlo con la pestaña en 'domicilios' navega a la ruta sin :tableId con tipo=domicilio", () => {
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    store.setOrderTypeTab('domicilios');
+    fixture.detectChanges();
+
+    cta().click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(
+      ['/dashboard/mesas-sesiones/orden-manual'],
+      { queryParams: { tipo: 'domicilio' } },
+    );
+  });
+
+  it("pulsarlo con la pestaña en 'para-llevar' navega con tipo=para-llevar", () => {
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    store.setOrderTypeTab('para-llevar');
+    fixture.detectChanges();
+
+    cta().click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(
+      ['/dashboard/mesas-sesiones/orden-manual'],
+      { queryParams: { tipo: 'para-llevar' } },
+    );
+  });
+
+  it("pulsarlo con la pestaña en 'mesas' y una mesa libre seleccionada navega con :tableId, sin tipo (FR-010)", () => {
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    store.setOrderTypeTab('mesas');
+    store.selectedTableId.set('t1');
+    fixture.detectChanges();
+
+    cta().click();
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard/mesas-sesiones', 't1', 'orden-manual']);
+  });
+
+  it("el CTA solo se deshabilita por falta de mesa libre en la pestaña 'mesas' (FR-007, FR-012)", () => {
+    store.setOrderTypeTab('mesas');
+    fixture.detectChanges();
+    expect(cta().disabled).toBe(true); // sin mesa libre seleccionada
+
+    store.setOrderTypeTab('domicilios');
+    fixture.detectChanges();
+    expect(cta().disabled).toBe(false); // Domicilio no exige mesa
+
+    store.setOrderTypeTab('para-llevar');
+    fixture.detectChanges();
+    expect(cta().disabled).toBe(false);
   });
 });
