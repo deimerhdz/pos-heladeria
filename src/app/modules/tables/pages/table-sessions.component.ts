@@ -12,7 +12,6 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { PosTablesPanelComponent } from '../components/pos-tables-panel.component';
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
-import { PaymentValidationBlockComponent } from '../components/payment-validation-block.component';
 import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.component';
 
 /**
@@ -29,16 +28,27 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
  * Feature 028 ("terminal híbrida por origen"): la columna central ya no tiene
  * pestañas — antes duplicaban la misma información ("Pedido de la mesa" /
  * "Pagos por confirmar") y el cajero tenía que acordarse de ir a mirar la
- * segunda. Ahora se decide sola según lo que tiene la mesa
- * (`store.centralState()`, ver `pos-terminal.store.ts`):
+ * segunda.
  *
- * - un pedido QR esperando validación de pago → `app-payment-validation-block`
+ * Hotfix posterior (a pedido del usuario): tampoco hay ya una vista aparte
+ * para "Pagos por confirmar" que reemplazara `app-pos-order-panel` +
+ * `app-pos-checkout-panel` por `app-payment-validation-block` -- ese cambio
+ * dejaba `app-pos-checkout-panel` sin ningún pedido "seleccionado" (un pago
+ * QR pendiente nunca entra en `selectedOrderId`, ver `pos-terminal.store.ts`)
+ * y terminaba mostrando el CTA de "Pedido de mostrador", sin sentido en una
+ * mesa ocupada. Ahora un pago QR pendiente se ve integrado en la MISMA vista
+ * de siempre: `app-pos-order-panel` cae a `store.firstPendingOrder()` para
+ * mostrar sus ítems (de sólo lectura) cuando no hay nada seleccionado de
+ * verdad, y `app-pos-checkout-panel` muestra ahí mismo el comprobante y las
+ * acciones de confirmar/rechazar en vez de la cuenta.
+ *
  * - una mesa libre sin pedido en curso → bloque informativo en línea (spec
  *   045: ya no abre ningún armado de pedido embebido — para crear uno nuevo,
  *   el cajero usa el botón fijo de "Pedido de mostrador" o F3, que navegan a
  *   `manual-order-page.component.ts`)
- * - cualquier otro caso (armando un pedido, o uno ya en cocina) →
- *   `app-pos-order-panel`, sin cambios de contenido.
+ * - cualquier otro caso (mesa con algo real que mostrar: armando un pedido,
+ *   uno ya en cocina, o un pago QR pendiente) → siempre
+ *   `app-pos-order-panel` + `app-pos-checkout-panel`.
  *
  * A pedido del usuario, sin ninguna mesa ni pedido seleccionado la tarjeta de
  * detalle ya no se muestra en absoluto (antes tenía su propio estado vacío
@@ -55,19 +65,22 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
     PosTablesPanelComponent,
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
-    PaymentValidationBlockComponent,
     PosTerminalHeaderComponent,
   ],
   template: `
-    <div class="flex flex-col -m-4 md:-m-6 bg-[#f9fafb] h-[calc(100dvh-57px)]">
+    <div class="flex flex-col -m-4 md:-m-6 bg-[#f9fafb] ">
       <!-- Encabezado: estado de terminal, turno, reloj y acciones de sesión
            (extraído a un componente compartido con manual-order-page.component.ts). -->
       <app-pos-terminal-header />
 
       <!-- Sub-barra: pestañas de tipo de orden + resumen de salón. -->
-      <div class="bg-white border-b border-[#e5e7eb] px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
+      <div
+        class="bg-white border-b border-[#e5e7eb] px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0"
+      >
         <div class="flex items-center gap-3">
-          <nav class="flex items-center gap-1 bg-[#f3f4f6] p-1 rounded-[6px] overflow-x-auto sm:overflow-visible">
+          <nav
+            class="flex items-center gap-1 bg-[#f3f4f6] p-1 rounded-[6px] overflow-x-auto sm:overflow-visible"
+          >
             @for (t of orderTypeTabs; track t.key) {
               <button
                 (click)="store.setOrderTypeTab(t.key)"
@@ -102,50 +115,70 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
             "
             class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+            <svg
+              class="w-4 h-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+            >
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" x2="12" y1="8" y2="16"></line>
               <line x1="8" x2="16" y1="12" y2="12"></line>
             </svg>
             <span>Crear pedido nuevo</span>
-            <span class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider">[F3]</span>
+            <span
+              class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider"
+              >[F3]</span
+            >
           </button>
         </div>
       </div>
 
       @if (store.loading()) {
-        <div class="flex-1 flex items-center justify-center text-sm text-gray-400">Cargando terminal…</div>
+        <div class="flex-1 flex items-center justify-center text-sm text-gray-400">
+          Cargando terminal…
+        </div>
       } @else {
         @if (store.error()) {
-          <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">{{ store.error() }}</div>
+          <div class="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700">
+            {{ store.error() }}
+          </div>
         }
         <!-- spec 078 (US3, FR-018; research.md D4): sin overflow-y-auto de
              página en ningún ancho — el scroll vive DENTRO de cada columna. El
              min-w-0 en las dos columnas evita que un hijo flex con contenido
              ancho imponga su ancho mínimo y fuerce scroll horizontal de página. -->
         <div class="flex-1 flex flex-col lg:flex-row p-3 gap-3 min-h-0 overflow-hidden">
-          <!-- Tarjeta de mesas: visible siempre desde lg; por debajo se oculta
-               en cuanto hay algo seleccionado (la tarjeta de detalle pasa a
-               ocupar toda la pantalla). -->
+          <!-- Tarjeta de mesas: ocupa todo el ancho sin selección; en cuanto
+               hay algo que mostrar se oculta EN TODOS los anchos (antes solo
+               por debajo de lg -- desde lg quedaban las dos a medias, mesas
+               y detalle repartiéndose el ancho al 50%, aunque el detalle
+               necesitara más espacio) para que la tarjeta de detalle pase a
+               ocupar toda la pantalla también en tablet/desktop. -->
           <div
             data-testid="mesas-column"
-            class="flex-col min-h-0 min-w-0 flex-1 lg:flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
-            [class]="showingDetail() ? 'hidden lg:flex' : 'flex'"
+            class="flex-col min-h-0 min-w-0 flex-1 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
+            [class]="showingDetail() ? 'hidden' : 'flex'"
           >
             <app-pos-tables-panel />
           </div>
 
           <!-- Tarjeta de detalle: mesa/pedido seleccionado + cobro siempre
-               apilados en una sola columna (un único scroll), a pedido del
-               usuario -- antes iban lado a lado desde lg. Sin nada real que
-               mostrar -- ni selección, ni una mesa libre sin pedidos -- esta
-               tarjeta no se muestra en absoluto (antes tenía un estado vacío
-               propio en cada uno de esos dos casos) -- la de mesas (ya
+               apilados en una sola columna (un único scroll). Ocupa todo el
+               ancho disponible en cualquier tamaño de pantalla (la de mesas,
+               arriba, se oculta a la vez) -- a pedido del usuario, ya no se
+               reparte el ancho al 50% con la de mesas desde lg. Sin nada real
+               que mostrar -- ni selección, ni una mesa libre sin pedidos --
+               esta tarjeta no se muestra en absoluto (antes tenía un estado
+               vacío propio en cada uno de esos dos casos) -- la de mesas (ya
                flex-1) ocupa todo el ancho. -->
           <div
             data-testid="detail-column"
             class="flex-col min-h-0 min-w-0 bg-white rounded-[6px] border border-[#e5e7eb] overflow-hidden"
-            [class]="showingDetail() ? 'flex flex-1 lg:flex-1' : 'hidden'"
+            [class]="showingDetail() ? 'flex flex-1' : 'hidden'"
           >
             @if (showingDetail()) {
               <!-- spec 078 (US3, FR-016 a FR-021; research.md D4): la columna de
@@ -156,63 +189,44 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                    scroll horizontal de página en tablet/móvil). Ahora: secciones
                    fijas shrink-0, una única región flex-1 min-h-0 que scrollea, y
                    app-pos-checkout-panel shrink-0 (su host ya lo lleva). -->
-              <!-- Único botón de volver en móvil/tablet para los 3 estados del
-                   panel central -- el de app-pos-order-panel queda oculto por
-                   debajo de lg para no duplicarlo. -->
-              <div class="lg:hidden shrink-0 px-4 pt-3">
+              <!-- Único botón de volver para los 3 estados del panel central,
+                   en cualquier ancho -- la tarjeta de mesas se oculta a la vez
+                   que aparece esta (ver mesas-column/detail-column arriba),
+                   así que hace falta en tablet/desktop igual que en móvil.
+                   El botón "Cerrar" (X) que tenía app-pos-order-panel para
+                   lg+ se retiró: hubiera quedado duplicado con este. -->
+              <!-- Acción primaria en outline (borde/texto en el color primario,
+                   fondo blanco -- no rellena, a pedido del usuario): es la
+                   única forma de salir de la tarjeta de detalle ahora que
+                   ocupa toda la pantalla (mesas-column se oculta a la vez) en
+                   cualquier ancho, pero como es una acción de "salir/volver"
+                   y no la acción principal de la pantalla (esa es "Cobrar" /
+                   "Marcar pedido listo"), lleva el peso visual de una
+                   secundaria -- outline en vez de relleno sólido. -->
+              <div class="shrink-0 px-4 pt-3">
                 <button
                   data-testid="page-back-button"
                   (click)="store.cancelSelection()"
-                  class="px-3 py-1.5 text-[13px] border border-[#e5e7eb] rounded-[6px] text-[#4b5563] hover:bg-[#f3f4f6]"
+                  class="px-3 py-1.5 text-[13px] font-medium rounded-[6px] border border-[#4f46e5] text-[#4f46e5] bg-white hover:bg-[#eef2ff] transition-colors"
                 >
                   ← Volver a mesas
                 </button>
               </div>
               <!--
-                Sin pestañas propias (feature 028): la columna central se
-                decide sola según store.centralState() -- salvo que la mesa
-                tenga a la vez un pago pendiente y un pedido pagado/activo
-                (spec 048), caso en el que sí aparecen dos pestañas para que
-                el cajero pueda alternar entre ambos sin perder ninguno. El
-                botón de silenciar la campana vive aquí porque tiene que
-                verse pase lo que pase en el centro.
+                A pedido del usuario: ya no hay una vista separada
+                "Pagos por confirmar" (con su propio título y sin la lista de
+                ítems al lado) -- un pago QR pendiente de confirmar se ve
+                integrado en esta misma vista de "Pedido de la mesa", junto a
+                la lista de ítems y el resto del cobro (ver
+                app-pos-checkout-panel). El título ya no cambia según el
+                estado ni hace falta alternar entre pestañas. El botón de
+                silenciar la campana vive aquí porque tiene que verse pase lo
+                que pase en el centro.
               -->
-              <div class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0">
-                <span class="text-[13px] font-semibold text-[#4b5563]">
-                  @if (store.hasPendingAndActiveOrders()) {
-                    <div class="flex items-center gap-1">
-                      <button
-                        type="button"
-                        (click)="store.centralPanelTab.set('validar-pago')"
-                        class="px-2 py-1 rounded-[6px] transition-colors"
-                        [class]="
-                          store.centralPanelTab() === 'validar-pago'
-                            ? 'bg-[#4f46e5] text-white'
-                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                        "
-                      >
-                        🔔 Pagos por confirmar
-                      </button>
-                      <button
-                        type="button"
-                        (click)="store.centralPanelTab.set('pedido')"
-                        class="px-2 py-1 rounded-[6px] transition-colors"
-                        [class]="
-                          store.centralPanelTab() === 'pedido'
-                            ? 'bg-[#4f46e5] text-white'
-                            : 'text-[#4b5563] hover:bg-[#f3f4f6]'
-                        "
-                      >
-                        Pedido de la mesa
-                      </button>
-                    </div>
-                  } @else {
-                    @switch (store.centralState()) {
-                      @case ('validar-pago') { 🔔 Pagos por confirmar }
-                      @default { Pedido de la mesa }
-                    }
-                  }
-                </span>
+              <div
+                class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0"
+              >
+                <span class="text-[13px] font-semibold text-[#4b5563]">Pedido de la mesa</span>
                 <button
                   (click)="store.sound.toggleMute()"
                   [title]="
@@ -226,25 +240,44 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                 </button>
               </div>
 
-              <!-- Única región que absorbe el alto libre y scrollea internamente. -->
-              <div class="flex-1 flex flex-col min-h-0">
-                @switch (store.effectiveCentralView()) {
-                  @case ('validar-pago') {
-                    <div class="flex-1 min-h-0 overflow-y-auto p-4">
-                      <app-payment-validation-block
-                        [orders]="store.pendingOfSelectedTable()"
-                        [categories]="store.categories()"
-                        [cashShiftId]="store.cashShiftId()"
-                        (refresh)="store.reload()"
-                      />
-                    </div>
-                  }
-                  @default {
-                    <app-pos-order-panel />
-                  }
-                }
+              <!-- Por debajo de lg: una única región de scroll para toda la
+                   columna de detalle (antes el carrito, el desglose de
+                   app-pos-checkout-panel y el bloque de validar-pago tenían
+                   CADA UNO su propio overflow-y-auto -- varias cajas internas
+                   scrolleando por separado, cada una recortando su contenido
+                   a una porción minúscula sin dejar ver todo de una). Se
+                   apilan en una sola columna, cada sección a su alto natural.
+
+                   Desde lg: dos columnas lado a lado en vez de apiladas (a
+                   pedido del usuario, hay ancho de sobra en desktop) --
+                   pedido a la izquierda (60%) y cobro a la derecha (40%),
+                   cada una con su propio scroll independiente
+                   (lg:overflow-hidden aquí para no scrollear dos veces lo
+                   mismo).
+
+                   Siempre pedido + cobro, en cualquier estado: a pedido del
+                   usuario, ya no hay una vista aparte "Pagos por confirmar"
+                   que reemplazara las dos columnas por el bloque de
+                   confirmación solo. Un pago QR pendiente ya no depende de
+                   selectedOrderId para verse: app-pos-order-panel cae a
+                   store.firstPendingOrder() cuando no hay nada seleccionado
+                   de verdad (de sólo lectura -- sin acciones de cocina, que
+                   no aplican antes de confirmar el pago) y
+                   app-pos-checkout-panel muestra ahí mismo el
+                   comprobante/confirmación en vez de cobro. -->
+              <div
+                class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden"
+              >
+                <!-- Columna izquierda (pedido), 60% desde lg. -->
+                <div class="flex flex-col lg:w-[60%] lg:shrink-0 lg:min-h-0 lg:overflow-y-auto">
+                  <app-pos-order-panel />
+                </div>
+                <!-- Columna derecha (cobro), 40% desde lg -- el borde pasa de
+                     arriba (apilado, por debajo de lg) a la izquierda (al
+                     lado, desde lg) vía las clases lg: propias de
+                     app-pos-checkout-panel. -->
+                <app-pos-checkout-panel />
               </div>
-              <app-pos-checkout-panel />
             }
           </div>
         </div>
@@ -264,8 +297,8 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                   Cuenta dividida en {{ store.lastReceipts().length }} pagos ·
                   {{ store.fmt(s.total) }}. El inventario se actualizó.
                 } @else {
-                  Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario
-                  se actualizó.
+                  Venta de {{ store.fmt(s.total) }} ({{ s.customer }}) registrada. El inventario se
+                  actualizó.
                 }
               </p>
             }
@@ -307,7 +340,12 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                 🧾 Imprimir todos
               </button>
             }
-            <button (click)="store.closeSuccess()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">Cerrar</button>
+            <button
+              (click)="store.closeSuccess()"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       </div>

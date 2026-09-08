@@ -186,7 +186,7 @@ describe('PosOrderPanelComponent — sin resumen de totales (spec 049)', () => {
  * lista de productos queda como la ÚNICA región `flex-1 min-h-0 overflow-y-auto`
  * — recibe todo el alto libre.
  */
-describe('PosOrderPanelComponent — reparto de alto: lista de productos flex-1 (spec 078, US4)', () => {
+describe('PosOrderPanelComponent — reparto de alto: lista de productos sin scroll propio (spec 078, US4; hotfix posterior)', () => {
   let fixture: ComponentFixture<PosOrderPanelComponent>;
   let store: PosTerminalStore;
   let http: HttpTestingController;
@@ -238,18 +238,16 @@ describe('PosOrderPanelComponent — reparto de alto: lista de productos flex-1 
   const divs = (): HTMLElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('div')) as HTMLElement[];
 
-  it('la lista de productos es la única región flex-1 min-h-0 overflow-y-auto', () => {
+  it('la lista de productos ya no tiene scroll propio (a pedido del usuario: un solo scroll para toda la columna, en table-sessions.component.ts)', () => {
     seleccionarPedido(6);
-    const scrollRegions = divs().filter(
-      (d) =>
-        d.className.includes('overflow-y-auto') &&
-        d.className.includes('flex-1') &&
-        d.className.includes('min-h-0'),
-    );
-    expect(scrollRegions).toHaveLength(1);
+    const scrollRegions = divs().filter((d) => d.className.includes('overflow-y-auto'));
+    expect(scrollRegions).toHaveLength(0);
   });
 
-  it('la barra de acciones ("Guardar pedido" / "Marcar listo") va shrink-0, fuera de la lista scrolleable (FR-023)', () => {
+  it('"Marcar pedido listo" (en la cabecera, a pedido del usuario) queda shrink-0, fuera de la lista scrolleable (FR-023)', () => {
+    // Se subió de una fila propia a todo el ancho debajo de la lista, a la
+    // cabecera (a la derecha de "Mesa N", junto a las pestañas/insignias) --
+    // en ambos casos su contenedor es shrink-0 y ajeno al scroll de la lista.
     seleccionarPedido(6);
     const marcar = (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]).find(
       (b) => b.textContent?.includes('Marcar pedido listo'),
@@ -260,11 +258,12 @@ describe('PosOrderPanelComponent — reparto de alto: lista de productos flex-1 
     expect(bar.className).not.toContain('overflow-y-auto');
   });
 
-  it('un pedido de 1–2 productos no fuerza alto artificial (la lista es flex-1, sin min-height fijo) (FR-024)', () => {
+  it('un pedido de 1–2 productos no fuerza alto artificial (la lista crece a su alto natural, sin min-height fijo) (FR-024)', () => {
     seleccionarPedido(2);
-    const list = divs().find(
-      (d) => d.className.includes('overflow-y-auto') && d.className.includes('flex-1'),
-    ) as HTMLElement;
+    // Rediseño de ítems (sin tarjetas por ítem): la lista es el contenedor
+    // divide-y que envuelve el @for de líneas de carrito.
+    const list = divs().find((d) => d.className.includes('divide-y')) as HTMLElement;
+    expect(list).toBeTruthy();
     expect(list.className).not.toMatch(/\bh-\[/);
     expect(list.className).not.toMatch(/\bmin-h-\[/);
   });
@@ -314,22 +313,28 @@ describe('PosOrderPanelComponent — encabezado de tres estados (spec 029)', () 
 
   afterEach(() => http.verify());
 
+  // El texto "Pedido · <estado>" que mostraba estos tres valores se retiró de
+  // la cabecera (dejaba de caber junto a las pestañas "Pedido N", movidas al
+  // lado del botón de cerrar) -- headerStatusText() sigue existiendo y
+  // decidiendo la insignia "Cobro pendiente", así que estas pruebas verifican
+  // el método directamente en vez de buscar el texto en el DOM.
   it('cocina en curso → "en preparación", sin importar el pago', () => {
     store.orders.set([orderCon('pendiente', false)]);
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('en preparación');
+    expect(fixture.componentInstance.headerStatusText()).toBe('en preparación');
   });
 
-  it('cocina lista pero sin pagar → "pago pendiente"', () => {
+  it('cocina lista pero sin pagar → "pago pendiente" (insignia "Cobro pendiente" visible)', () => {
     store.orders.set([orderCon('listo', false)]);
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('pago pendiente');
+    expect(fixture.componentInstance.headerStatusText()).toBe('pago pendiente');
+    expect(fixture.nativeElement.textContent).toContain('Cobro pendiente');
   });
 
   it('cocina lista y pagado → "listo para cobrar"', () => {
     store.orders.set([orderCon('listo', true)]);
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('listo para cobrar');
+    expect(fixture.componentInstance.headerStatusText()).toBe('listo para cobrar');
   });
 });
 

@@ -277,7 +277,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     expect(texto).toContain('Cambio: $ 0');
   });
 
-  it('Scenario 4: $5.000 → "faltan $3.000" sobre $8.000 y "Confirmar efectivo" deshabilitado', async () => {
+  it('Scenario 4: $5.000 → cambio negativo "$ -3.000" sobre $8.000 y "Confirmar efectivo" deshabilitado', async () => {
     await renderWith(
       [attempt({ status: 'pendiente' })],
       order('o1', [promoItem()]),
@@ -287,8 +287,15 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     panel.amountReceived = 5000;
     fixture.detectChanges();
 
-    // No hay vista previa de cambio (el monto no alcanza el total real).
-    expect(fixture.nativeElement.textContent as string).not.toContain('Cambio');
+    // El monto no alcanza el total real: la vista previa de cambio se
+    // muestra igual, en negativo, para que el cajero vea cuánto falta.
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).toContain('Cambio');
+    expect(texto).toContain('$ -3.000');
+    const confirmBtn = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Confirmar efectivo'),
+    ) as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
 
     // Intentar confirmar no dispara ninguna llamada de cobro: el backend
     // (chequeo previo D13) rechazaría, pero el frontend no llega a pedirlo
@@ -429,12 +436,14 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     expect(texto).toContain('Pendiente de revisión');
   });
 
-  it('no muestra vista previa de cambio mientras el monto todavía no alcanza el total', async () => {
+  it('muestra la vista previa de cambio en negativo mientras el monto todavía no alcanza el total', async () => {
     await renderWith([attempt({ status: 'pendiente' })], order('o1', [item('8000', 1)]), preview({ total: '8000' }));
 
     panel.amountReceived = 5000;
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent as string).not.toContain('Cambio');
+    const texto = fixture.nativeElement.textContent as string;
+    expect(texto).toContain('Cambio');
+    expect(texto).toContain('$ -3.000');
   });
 
   it('muestra el cambio como "$ 0" explícitamente cuando el monto es exacto, no lo omite', async () => {

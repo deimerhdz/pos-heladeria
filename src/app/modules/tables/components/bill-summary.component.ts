@@ -50,7 +50,7 @@ import { formatMoney } from '../../../shared/money';
     }
     <div
       class="flex justify-between items-baseline"
-      [class]="subtotal !== undefined || discount > 0 || deliveryFee > 0 ? 'border-t border-[#e5e7eb] mt-0.5 pt-1.5' : ''"
+      [class]="totalBorder && (subtotal !== undefined || discount > 0 || deliveryFee > 0) ? 'border-t border-[#e5e7eb] mt-0.5 pt-1.5' : ''"
     >
       <span
         class="font-bold tracking-tight text-[#111827]"
@@ -75,6 +75,7 @@ export class BillSummaryComponent {
   @Input({ required: true }) total!: number;
   @Input() totalLabel = 'Total';
   @Input() size: 'sm' | 'md' | 'lg' = 'sm';
+  @Input() totalBorder = true;
 
   money(n: number): string {
     return formatMoney(n);
