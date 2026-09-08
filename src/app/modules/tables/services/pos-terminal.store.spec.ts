@@ -613,7 +613,7 @@ describe('PosTerminalStore.selectTable', () => {
     expect(store.selectedOrder()?.id).toBe('o1');
   });
 
-  it('un pedido QR "recibida" (por confirmar) NO se auto-selecciona', () => {
+  it('un pedido QR "recibida" (por confirmar) SÍ se auto-selecciona (a pedido del usuario: una pestaña más, de sólo lectura)', () => {
     store.orders.set([
       { ...order('o1', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
     ]);
@@ -621,7 +621,8 @@ describe('PosTerminalStore.selectTable', () => {
     store.selectTable('t1');
     http.expectOne(`${API}/table-sessions`).flush([]);
 
-    expect(store.selectedOrder()).toBeNull();
+    expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(true);
   });
 
   it('una mesa sin pedidos no selecciona ninguno', () => {
@@ -791,13 +792,17 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
    *  `product.service.spec.ts`/`product-form.component.spec.ts`). */
   const tick = () => new Promise((r) => setTimeout(r, 0));
 
-  it('mesa con un único pedido QR pendiente: al confirmarse el pago, reload() selecciona ese pedido sin que el cajero vuelva a tocar la tarjeta', async () => {
+  it('mesa con un único pedido QR pendiente: sigue seleccionado sin interrupciones al confirmarse el pago (reload())', async () => {
     store.orders.set([
       { ...order('o1', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
     ]);
     store.selectTable('t1');
     http.expectOne(`${API}/table-sessions`).flush([]);
-    expect(store.selectedOrder()).toBeNull(); // línea base: excluido mientras está pendiente
+    // A pedido del usuario: `selectTable()` ya lo selecciona desde el
+    // arranque (`tableOrders()` incluye los pagos QR por confirmar) -- de
+    // sólo lectura mientras `selectedOrderPending()` sea `true`.
+    expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(true);
 
     const promise = store.reload();
     http.expectOne(`${API}/orders/tables`).flush([]);
@@ -808,7 +813,10 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
     http.expectOne(`${API}/table-sessions`).flush([]);
     await promise;
 
+    // Tras confirmarse el pago (status ya no es 'recibida'), sigue siendo el
+    // mismo pedido seleccionado -- ya no de sólo lectura.
     expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(false);
   });
 
   it('mesa con dos pedidos activos y uno ya elegido a mano: reload() no cambia la selección mientras siga vigente', async () => {
@@ -1498,9 +1506,44 @@ describe('PosTerminalStore — cabecera y pestañas del panel de pedido (spec 04
     store.selectedTableId.set('t1');
 
     expect(store.orderTabs()).toEqual([
-      { id: 'o1', label: 'Pedido 1' },
-      { id: 'o2', label: 'Pedido 2' },
+      { id: 'o1', label: 'Pedido 1', pending: false },
+      { id: 'o2', label: 'Pedido 2', pending: false },
     ]);
+  });
+
+  it('orderTabs() marca `pending: true` un pago QR por confirmar, incluido entre las pestañas (a pedido del usuario)', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' },
+      { ...order('o2', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    expect(store.orderTabs()).toEqual([
+      { id: 'o1', label: 'Pedido 1', pending: false },
+      { id: 'o2', label: 'Pedido 2', pending: true },
+    ]);
+  });
+
+  it('selectedOrderTotal() es null con un único pedido en la mesa (sin pestañas que navegar)', () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' }]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    expect(store.selectedOrderTotal()).toBeNull();
+  });
+
+  it('selectedOrderTotal() acompaña al pedido enfocado por su pestaña, no al total de toda la mesa', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente', 'pendiente']), channel: 'POS', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    store.selectedOrderId.set('o1');
+    expect(store.selectedOrderTotal()).toBe(4000);
+
+    store.selectedOrderId.set('o2');
+    expect(store.selectedOrderTotal()).toBe(8000);
   });
 
   it('ordersView() devuelve una tarjeta por pedido, con sus ítems y si le falta algo por preparar', () => {
@@ -2016,6 +2059,24 @@ describe('PosTerminalStore.ordersByType — total de la tarjeta de Domicilio (sp
     const cards = store.ordersByType('domicilios');
     expect(cards[0].totalLabel).toBe(store.fmt(25000));
     expect(cards[1].totalLabel).toBe(store.fmt(25000));
+  });
+
+  it('bugfix: `delivery_fee` llega como string (Decimal serializado por el backend, igual que `unit_price`) — no se concatena con el subtotal', () => {
+    // El tipo `DiningOrder.delivery_fee` dice `number | null`, pero en
+    // producción el backend lo serializa como string (mismo Decimal que
+    // `unit_price`/`discounted_line_total`, siempre tratados con `Number()`
+    // en el resto del store) -- `as unknown as number` reproduce ese shape
+    // real para que el test no oculte el bug detrás del tipo optimista.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '15000', quantity: 3 }, { unit_price: '0', quantity: 4 }], {
+        delivery_fee: '5000' as unknown as number,
+      }),
+    ]);
+
+    const card = store.ordersByType('domicilios')[0];
+    // Antes del fix: `45000 + '5000.00'` concatenaba a "450005000" en vez de
+    // sumar 50000 -- la tarjeta mostraba $450.005.000 en vez de $50.000.
+    expect(card.totalLabel).toBe(store.fmt(50000));
   });
 
   it('DELIVERY con promoción aplicada (descuento congelado en discounted_unit_price) → fmt(subtotal_post_descuento + delivery_fee) (FR-002, FR-003)', () => {

@@ -1,4 +1,15 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  Output,
+  ViewChild,
+  inject,
+  signal,
+} from '@angular/core';
 import { NgClass } from '@angular/common';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 
@@ -26,6 +37,7 @@ const SIGNIFICANT_RE = /[\d,]/;
   imports: [NgClass],
   template: `
     <input
+      #inputEl
       [id]="id"
       type="text"
       inputmode="decimal"
@@ -39,7 +51,7 @@ const SIGNIFICANT_RE = /[\d,]/;
     />
   `,
 })
-export class MoneyInputComponent implements ControlValueAccessor {
+export class MoneyInputComponent implements ControlValueAccessor, AfterViewInit {
   @Input() placeholder = '0';
   @Input() id?: string;
   @Input() invalid = false;
@@ -49,6 +61,11 @@ export class MoneyInputComponent implements ControlValueAccessor {
   /** `false` cuando un contenedor padre ya pone el borde (ej. una caja con el
    *  `$` como prefijo fuera del propio `<input>`) — evita un doble borde. */
   @Input() bordered = true;
+  /** Enfoca el campo (con el cursor adentro) apenas se crea — útil cuando es
+   *  el primer paso esperado de un flujo, como el monto recibido en efectivo. */
+  @Input() autofocus = false;
+
+  @ViewChild('inputEl') private readonly inputEl?: ElementRef<HTMLInputElement>;
 
   /** Se emite en el `blur` del `<input>` interno — el DOM no burbujea `blur`
    *  hasta el host de un componente, así que un `(blur)` puesto directamente
@@ -74,6 +91,14 @@ export class MoneyInputComponent implements ControlValueAccessor {
     // que shared/password-input/password-input.component.ts.
     const ngControl = inject(NgControl, { self: true, optional: true });
     if (ngControl) ngControl.valueAccessor = this;
+  }
+
+  ngAfterViewInit(): void {
+    // `autofocus` como atributo HTML solo enfoca en el parseo inicial del
+    // documento -- este input se crea después, dentro de un `@if` que ya
+    // insertó el nodo en el DOM, así que el atributo llega tarde y el
+    // navegador lo ignora. `.focus()` explícito sí funciona en ese caso.
+    if (this.autofocus) this.inputEl?.nativeElement.focus();
   }
 
   onInput(event: Event): void {

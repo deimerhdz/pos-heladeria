@@ -24,6 +24,10 @@ import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/ser
 export interface ChosenMenuOption {
   option: MenuOption;
   quantity: number;
+  /** Nombre del grupo dueño de la opción (p. ej. "Toppings", "Sabores") --
+   *  para que el detalle del pedido pueda mostrar la selección agrupada por
+   *  su nombre real en vez de una lista plana sin distinguir el grupo. */
+  groupName: string;
 }
 
 /** Emitted when the diner confirms their selection for a product. */
@@ -451,7 +455,7 @@ export class ProductSelectComponent implements OnInit {
       const entry = map[group.id] ?? {};
       for (const opt of group.options) {
         const quantity = entry[opt.id] ?? 0;
-        if (quantity > 0) chosen.push({ option: opt, quantity });
+        if (quantity > 0) chosen.push({ option: opt, quantity, groupName: group.name });
       }
     }
     return chosen;
