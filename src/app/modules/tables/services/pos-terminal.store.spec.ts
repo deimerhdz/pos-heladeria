@@ -2061,6 +2061,24 @@ describe('PosTerminalStore.ordersByType — total de la tarjeta de Domicilio (sp
     expect(cards[1].totalLabel).toBe(store.fmt(25000));
   });
 
+  it('bugfix: `delivery_fee` llega como string (Decimal serializado por el backend, igual que `unit_price`) — no se concatena con el subtotal', () => {
+    // El tipo `DiningOrder.delivery_fee` dice `number | null`, pero en
+    // producción el backend lo serializa como string (mismo Decimal que
+    // `unit_price`/`discounted_line_total`, siempre tratados con `Number()`
+    // en el resto del store) -- `as unknown as number` reproduce ese shape
+    // real para que el test no oculte el bug detrás del tipo optimista.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '15000', quantity: 3 }, { unit_price: '0', quantity: 4 }], {
+        delivery_fee: '5000' as unknown as number,
+      }),
+    ]);
+
+    const card = store.ordersByType('domicilios')[0];
+    // Antes del fix: `45000 + '5000.00'` concatenaba a "450005000" en vez de
+    // sumar 50000 -- la tarjeta mostraba $450.005.000 en vez de $50.000.
+    expect(card.totalLabel).toBe(store.fmt(50000));
+  });
+
   it('DELIVERY con promoción aplicada (descuento congelado en discounted_unit_price) → fmt(subtotal_post_descuento + delivery_fee) (FR-002, FR-003)', () => {
     // 1 línea: precio $10.000, descuento por promo → $8.000 la unidad.
     store.orders.set([

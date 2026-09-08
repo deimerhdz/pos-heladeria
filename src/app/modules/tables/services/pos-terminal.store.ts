@@ -918,7 +918,13 @@ export class PosTerminalStore {
       // igual que el cobro. **Revierte** la fila `totalLabel` de
       // `specs/059-terminal-mesas-carga-y-pedidos/data-model.md` (tarjeta = solo
       // productos), de forma trazable.
-      totalLabel: this.fmt(this.orderSubtotal(o) + (o.delivery_fee ?? 0)),
+      // Bugfix: `delivery_fee` llega del backend como string (Decimal
+      // serializado, igual que `unit_price`/`discounted_line_total`) pese al
+      // tipo `number | null` de `DiningOrder` -- sin `Number()`, el `+` de
+      // abajo concatenaba en vez de sumar ("45000" + "5000.00" =
+      // "450005000.00"), inflando la tarjeta a $450.005.000 en vez de los
+      // $50.000 reales.
+      totalLabel: this.fmt(this.orderSubtotal(o) + Number(o.delivery_fee ?? 0)),
     };
   }
 
