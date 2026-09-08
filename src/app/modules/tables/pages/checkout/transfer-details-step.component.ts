@@ -362,10 +362,19 @@ export class TransferDetailsStepComponent implements OnInit, OnDestroy {
    *  requerir captura de pantalla (spec 060, FR-004/FR-006, research.md D2-D3).
    *  Trae el archivo con `fetch` + `Blob` en vez de un `<a href>` directo
    *  porque la imagen es una URL remota de otro origen (Cloudflare R2), no
-   *  una data URL local. */
+   *  una data URL local.
+   *
+   *  `cache: 'no-store'` es obligatorio, no cosmético: este mismo QR ya se pintó
+   *  arriba con `<img [src]>` sin `crossorigin`, es decir como petición no-CORS,
+   *  y Cloudflare la deja cacheada ~4 h (`Cache-Control: max-age=14400`) sin
+   *  cabeceras CORS. Revalidar esa entrada para un `fetch` `mode: 'cors'` hace
+   *  que Cloudflare devuelva un `504` vacío que el navegador reporta como error
+   *  de CORS. `no-store` salta esa entrada envenenada y va directo a la red
+   *  (el CORS de lectura del bucket R2 sí está habilitado — research.md D2,
+   *  Resolución post-implementación). */
   async downloadImage(url: string, filename: string): Promise<void> {
     try {
-      const response = await fetch(url, { mode: 'cors' });
+      const response = await fetch(url, { mode: 'cors', cache: 'no-store' });
       if (!response.ok) throw new Error('Respuesta no exitosa');
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
