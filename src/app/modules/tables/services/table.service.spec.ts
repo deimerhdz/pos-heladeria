@@ -97,4 +97,44 @@ describe('TableService', () => {
     await promise;
     expect(service.error()).toBe('Boom');
   });
+
+  // ── Carril paginado (spec 079, US3 — aditivo) ────────────────────────────
+
+  it('loadTablesPage(1, 20) pide GET /orders/tables?page=1&size=20 y mapea el Page', async () => {
+    const promise = service.loadTablesPage(1, 20);
+    const req = http.expectOne((r) => r.url === base);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('page')).toBe('1');
+    expect(req.request.params.get('size')).toBe('20');
+    req.flush({
+      items: [table({ id: 'a', number: 1 }), table({ id: 'b', number: 2 })],
+      total: 64,
+      page: 1,
+      size: 20,
+      pages: 4,
+    });
+    await promise;
+
+    expect(service.pagedTables().map((t) => t.id)).toEqual(['a', 'b']);
+    expect(service.tablesTotal()).toBe(64);
+    expect(service.tablesTotalPages()).toBe(4);
+    expect(service.tablesPage()).toBe(1);
+  });
+
+  it('loadTablesPage(2, 20) pide page=2 y adopta el page que devuelve el backend (clamp)', async () => {
+    const promise = service.loadTablesPage(2, 20);
+    const req = http.expectOne((r) => r.url === base);
+    expect(req.request.params.get('page')).toBe('2');
+    req.flush({ items: [], total: 15, page: 1, size: 20, pages: 1 });
+    await promise;
+    expect(service.tablesPage()).toBe(1); // el backend hizo clamp
+  });
+
+  it('el carril paginado NO toca tables() ni loading() (los usan Terminal/Dashboard)', async () => {
+    const promise = service.loadTablesPage(1, 20);
+    http.expectOne((r) => r.url === base).flush({ items: [table({})], total: 1, page: 1, size: 20, pages: 1 });
+    await promise;
+    expect(service.tables()).toEqual([]); // intacto
+    expect(service.loading()).toBe(false);
+  });
 });
