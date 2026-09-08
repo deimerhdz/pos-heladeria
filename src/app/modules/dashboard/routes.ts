@@ -167,6 +167,19 @@ export const dashboardRoutes: Routes = [
         canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
       },
       {
+        // spec 078 (US2, research.md D2): ruta hermana sin `:tableId` para
+        // crear un pedido de Domicilio / "Para llevar" desde su pestaña — esos
+        // tipos no exigen mesa (`createManualOrderFromDraft()`), así que forzar
+        // un `:tableId` "de relleno" (primera mesa libre) es lo que hoy
+        // deshabilita el CTA cuando no hay mesas libres. El tipo preseleccionado
+        // llega como query param `?tipo=domicilio|para-llevar` (valor inicial
+        // editable, FR-011). Mismos guards que la ruta con parámetro.
+        path: 'mesas-sesiones/orden-manual',
+        loadComponent: () =>
+          import('../tables/pages/manual-order-page.component').then((m) => m.ManualOrderPageComponent),
+        canActivate: [roleGuard([UserRole.ADMIN, UserRole.CASHIER, UserRole.MESERO])],
+      },
+      {
         path: 'orders',
         loadComponent: () =>
           import('../orders/pages/orders-page.component').then((m) => m.OrdersPageComponent),

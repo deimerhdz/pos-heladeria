@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
+import { SwPush } from '@angular/service-worker';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
 import { environment } from '../../../../environments/environment';
 import { ManualOrderPageComponent } from './manual-order-page.component';
@@ -16,6 +17,12 @@ import { CheckoutPreview, DiningOrder } from '../interfaces/dining.interface';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 
 const API = environment.apiBaseUrl;
+
+/** spec 077 sumó `AuthService → PushRegistrationService → SwPush` al árbol de
+ *  inyección de esta página; los TestBeds de este archivo no proveían `SwPush`
+ *  y quedaron en `NG0201`. Ningún test de aquí ejercita push (spec 078, stub
+ *  local). */
+const swPushStub = { provide: SwPush, useValue: { isEnabled: false } };
 
 function table(partial: Partial<Table>): Table {
   return { id: 't1', number: 1, name: null, qr_token: 'tok', active: true, status: 'libre', ...partial };
@@ -52,19 +59,26 @@ describe('ManualOrderPageComponent', () => {
   let router: Router;
   let http: HttpTestingController;
 
-  function createComponent(tableId: string | null): void {
+  function createComponent(tableId: string | null, tipo?: string): void {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [ManualOrderPageComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: convertToParamMap(tableId ? { tableId } : {}) } },
+          useValue: {
+            snapshot: {
+              paramMap: convertToParamMap(tableId ? { tableId } : {}),
+              // spec 078 (US2): `ngOnInit` lee `?tipo=` de aquí.
+              queryParamMap: convertToParamMap(tipo ? { tipo } : {}),
+            },
+          },
         },
       ],
     });
@@ -165,6 +179,55 @@ describe('ManualOrderPageComponent', () => {
 
     expect(botonTipoOrden('Para llevar').disabled).toBe(false);
     expect(botonTipoOrden('Domicilio').disabled).toBe(false);
+  });
+
+  // ── spec 078 (US2): tipo preseleccionado desde `?tipo=` ──────────────────
+
+  it('ngOnInit con ?tipo=domicilio preselecciona "domicilios" una sola vez (FR-008)', async () => {
+    createComponent(null, 'domicilio');
+    const spy = vi.spyOn(fixture.componentInstance, 'setOrderTypeTab');
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.orderTypeTab()).toBe('domicilios');
+    expect(spy.mock.calls.filter((c) => c[0] === 'domicilios')).toHaveLength(1);
+  });
+
+  it('ngOnInit con ?tipo=para-llevar preselecciona "para-llevar" (FR-009)', async () => {
+    createComponent(null, 'para-llevar');
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.orderTypeTab()).toBe('para-llevar');
+  });
+
+  for (const tipo of [undefined, 'mesas', 'cualquier-cosa']) {
+    it(`ngOnInit con ?tipo=${tipo ?? '(ausente)'} no toca el tipo — queda en "mesas" como hoy (FR-010)`, async () => {
+      createComponent(null, tipo);
+      const spy = vi.spyOn(fixture.componentInstance, 'setOrderTypeTab');
+      fixture.detectChanges();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.orderTypeTab()).toBe('mesas');
+      expect(spy).not.toHaveBeenCalled();
+    });
+  }
+
+  it('tras la preselección, el tipo sigue siendo editable dentro del formulario (FR-011)', async () => {
+    createComponent(null, 'domicilio');
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(store.orderTypeTab()).toBe('domicilios');
+
+    botonTipoOrden('Para llevar').click();
+    fixture.detectChanges();
+
+    expect(store.orderTypeTab()).toBe('para-llevar');
   });
 
   it('al seleccionar "Para Llevar", el bloque "Mesas" desaparece (FR-009)', async () => {
@@ -668,6 +731,37 @@ describe('ManualOrderPageComponent', () => {
     opcionM3!.click();
     fixture.detectChanges();
     expect(store.selectedTableId()).toBe('t2');
+  });
+
+  it('bugfix: entrar a "orden-manual" con una mesa ya ocupada (única a la que puede caer "Crear pedido nuevo" sin ninguna mesa libre) arranca con el pedido nuevo vacío, sin precargar los ítems del pedido ya existente', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 1, status: 'ocupada' })]);
+    store.orders.set([
+      {
+        id: 'o1',
+        channel: 'POS',
+        status: 'abierta',
+        dining_table_id: 't1',
+        created_at: '2026-08-21T10:00:00',
+        items: [{ id: 'i1', product_variant_id: 'v1', quantity: 1, unit_price: '4000', estado_cocina: 'pendiente' }],
+      } as unknown as ReturnType<PosTerminalStore['orders']>[number],
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    // `selectTable()` de la terminal auto-selecciona el pedido existente
+    // ('o1') -- esta pantalla lo limpia de inmediato porque nunca edita un
+    // pedido persistido, solo arma uno nuevo (`draftLines()`).
+    expect(store.selectedOrderId()).toBeNull();
+    expect(store.cartView().length).toBe(0);
+    expect(fixture.nativeElement.textContent).toContain('Ítems: 0');
+
+    // Con la mesa ocupada seleccionada, `selectTable()` también dispara
+    // `ensureCheckoutDataLoaded()` (mismo pipeline de cobro que la terminal
+    // de mesas) — ajeno a lo que prueba este test, solo se drena.
+    for (const req of http.match(() => true)) req.flush([]);
   });
 
   it('el listado de mesas ya no es una rejilla de botones, sino un select buscable (spec 053, US1, FR-001)', async () => {
@@ -1194,11 +1288,15 @@ describe('ManualOrderPageComponent — desglose del borrador (spec 073, US5)', (
       imports: [ManualOrderPageComponent],
       providers: [
         provideRouter([]),
+        swPushStub,
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(new QueryClient()),
         { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({}) } } },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap({}), queryParamMap: convertToParamMap({}) } },
+        },
       ],
     });
     fixture = TestBed.createComponent(ManualOrderPageComponent);

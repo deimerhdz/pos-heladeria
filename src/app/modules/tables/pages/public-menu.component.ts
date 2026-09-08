@@ -9,7 +9,9 @@ import {
 } from '../services/diner.service';
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
-import { buildMenuLookup } from '../services/menu-lookup';
+import { buildMenuLookup, splitVariantLabel } from '../services/menu-lookup';
+import { CartItemOptionsComponent } from '../components/cart-item-options.component';
+import { CartOptionLine } from '../services/pos-terminal.store';
 import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { DinerPaymentAttempt, DinerPaymentMethod } from '../interfaces/diner.interface';
@@ -55,7 +57,7 @@ const REFRESH_DEBOUNCE_MS = 250;
   // spec 066: `MoneyPipe` sale de aquí porque su único uso en esta plantilla era la
   // insignia por tipo (`🏷️ -{{ disc.amountOff | money }}`) que A-67 reemplaza por la
   // genérica. Los precios de la tarjeta usan `priceWithPrefix`/`priceLabel`.
-  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe],
+  imports: [CartComponent, ProductSelectComponent, IconComponent, MoneyPipe, CartItemOptionsComponent],
   template: `
     <div class="min-h-screen bg-gray-50">
 
@@ -255,33 +257,68 @@ const REFRESH_DEBOUNCE_MS = 250;
                       </p>
                     }
 
-                    <ul class="space-y-1.5">
+                    <ul class="space-y-3">
                       @for (item of order.items ?? []; track item.id) {
-                        <li class="text-sm text-gray-700">
-                          <div class="flex items-start justify-between gap-2">
-                            <span>
-                              <span class="font-medium">{{ item.quantity }}×</span> {{ variantLabel(item.product_variant_id) }}
-                            </span>
-                            <span class="text-right shrink-0">
-                              @if (itemHasDiscount(item)) {
-                                <span class="block text-[11px] text-gray-400 line-through">{{ itemOriginalLineTotal(item) | money }}</span>
-                                <span class="block font-semibold text-indigo-600">{{ itemLineTotal(item) | money }}</span>
-                              } @else {
-                                <span class="font-medium">{{ itemLineTotal(item) | money }}</span>
-                              }
-                            </span>
+                        <!-- Misma fila que la terminal del mesero
+                             (pos-order-panel.component.ts): insignia de
+                             cantidad + nombre/variante en pastillas + precio
+                             unitario debajo del nombre + "qty × unitario"
+                             debajo del importe + insignia de promo -- para
+                             que el comensal vea exactamente lo mismo que
+                             cocina/caja, en vez de una línea plana propia de
+                             esta pantalla. -->
+                        @let parts = splitVariantLabel(variantLabel(item.product_variant_id));
+                        @let promo = itemPromo(item);
+                        <li class="flex items-start gap-3">
+                          <div
+                            class="shrink-0 w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-[13px] font-bold"
+                          >
+                            {{ item.quantity }}x
                           </div>
-                          @if (optionLabels(item)) {
-                            <span class="block text-xs text-gray-400 pl-5">{{ optionLabels(item) }}</span>
-                          }
-                          @if (item.notes) {
-                            <span class="block text-xs text-gray-400 pl-5">📝 {{ item.notes }}</span>
-                          }
-                          @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
-                            <span class="block text-xs pl-5" [class]="kitchenClass(item)">
-                              {{ kitchenLabel(item) }}
-                            </span>
-                          }
+                          <div class="flex-1 min-w-0 space-y-1.5">
+                            <div class="flex items-start justify-between gap-2">
+                              <div class="min-w-0">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                  <span class="font-bold text-gray-900 text-sm">{{ parts.product }}</span>
+                                  @if (parts.variant) {
+                                    <span class="bg-gray-100 text-gray-600 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                                      {{ parts.variant }}
+                                    </span>
+                                  }
+                                  @if (promo) {
+                                    <span class="bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                      {{ promo.badge }} Promoción
+                                    </span>
+                                  }
+                                </div>
+                                <div class="text-xs text-gray-400">{{ item.unit_price | money }} c/u</div>
+                              </div>
+                              <div class="text-right shrink-0">
+                                @if (promo) {
+                                  <div class="font-bold text-red-600 text-sm">{{ itemLineTotal(item) | money }}</div>
+                                } @else {
+                                  <div class="font-medium text-gray-900 text-sm">{{ itemLineTotal(item) | money }}</div>
+                                }
+                                <div class="text-xs text-gray-400">{{ item.quantity }} × {{ item.unit_price | money }}</div>
+                              </div>
+                            </div>
+                            @if (promo) {
+                              <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="line-through text-xs text-gray-400">{{ itemOriginalLineTotal(item) | money }}</span>
+                                <span
+                                  class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold px-2 py-0.5 rounded-full"
+                                >
+                                  ✓ Ahorras {{ promo.savings | money }}
+                                </span>
+                              </div>
+                            }
+                            <app-cart-item-options [options]="itemOptionLines(item)" [notes]="item.notes ?? null" />
+                            @if (!esperaConfirmacion(order) && item.estado_cocina !== 'anulado') {
+                              <span class="inline-block px-2 py-0.5 rounded-full text-xs" [class]="kitchenClass(item)">
+                                {{ kitchenLabel(item) }}
+                              </span>
+                            }
+                          </div>
                         </li>
                       }
                     </ul>
@@ -1151,10 +1188,17 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
     return this.lookup().variantLabel(variantId);
   }
 
-  optionLabels(item: DiningOrderItem): string {
+  /** Separa el nombre del producto de su variante -- ver `splitVariantLabel()` en `menu-lookup.ts`. */
+  splitVariantLabel = splitVariantLabel;
+
+  itemOptionLines(item: DiningOrderItem): CartOptionLine[] {
+    const lk = this.lookup();
     return (item.options ?? [])
-      .map((o) => this.lookup().optionLabelWithQuantity(o.option_id, o.quantity ?? 1))
-      .filter(Boolean).join(', ');
+      .map((o): CartOptionLine => ({
+        groupLabel: lk.optionGroupLabel(o.option_id),
+        text: lk.optionLabelWithQuantity(o.option_id, o.quantity ?? 1),
+      }))
+      .filter((o) => o.text);
   }
 
   orderTime(order: DiningOrder): string {
@@ -1167,6 +1211,24 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       item.discounted_unit_price != null &&
       Number(item.discounted_unit_price) !== Number(item.unit_price)
     );
+  }
+
+  /**
+   * Insignia de promo de la línea (mismo patrón que
+   * `PosTerminalStore.persistedLinePromo()`): el backend ya resolvió y guardó
+   * `discounted_unit_price` al confirmar el pedido, así que el % sale de ese
+   * número -- los importes (`itemLineTotal`/`itemOriginalLineTotal`) siguen
+   * viniendo de `discounted_line_total` cuando existe, no recalculados aquí,
+   * para no divergir de lo que el backend ya facturó.
+   */
+  itemPromo(item: DiningOrderItem): { badge: string; savings: number } | null {
+    if (!this.itemHasDiscount(item)) return null;
+    const info = discountInfo(Number(item.unit_price), Number(item.discounted_unit_price));
+    if (!info) return null;
+    return {
+      badge: `-${info.percent}%`,
+      savings: this.itemOriginalLineTotal(item) - this.itemLineTotal(item),
+    };
   }
 
   /**

@@ -83,7 +83,7 @@ describe('ProductSelectComponent', () => {
     component.added.subscribe((sel) => (emitted = sel));
     component.confirm();
 
-    expect(emitted?.options).toEqual([{ option: bobombun, quantity: 1 }]);
+    expect(emitted?.options).toEqual([{ option: bobombun, quantity: 1, groupName: group.name }]);
   });
 
   // ── Grupo "cantidad" (spec 065, US2) ────────────────────────────────────────
@@ -480,7 +480,7 @@ describe('ProductSelectComponent — [initialSelection] (edición de una línea 
     create(product, {
       product,
       variant,
-      options: [{ option: topping, quantity: 1 }],
+      options: [{ option: topping, quantity: 1, groupName: group.name }],
       quantity: 1,
       notes: null,
     });

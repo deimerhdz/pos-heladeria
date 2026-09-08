@@ -613,7 +613,7 @@ describe('PosTerminalStore.selectTable', () => {
     expect(store.selectedOrder()?.id).toBe('o1');
   });
 
-  it('un pedido QR "recibida" (por confirmar) NO se auto-selecciona', () => {
+  it('un pedido QR "recibida" (por confirmar) SÍ se auto-selecciona (a pedido del usuario: una pestaña más, de sólo lectura)', () => {
     store.orders.set([
       { ...order('o1', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
     ]);
@@ -621,7 +621,8 @@ describe('PosTerminalStore.selectTable', () => {
     store.selectTable('t1');
     http.expectOne(`${API}/table-sessions`).flush([]);
 
-    expect(store.selectedOrder()).toBeNull();
+    expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(true);
   });
 
   it('una mesa sin pedidos no selecciona ninguno', () => {
@@ -791,13 +792,17 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
    *  `product.service.spec.ts`/`product-form.component.spec.ts`). */
   const tick = () => new Promise((r) => setTimeout(r, 0));
 
-  it('mesa con un único pedido QR pendiente: al confirmarse el pago, reload() selecciona ese pedido sin que el cajero vuelva a tocar la tarjeta', async () => {
+  it('mesa con un único pedido QR pendiente: sigue seleccionado sin interrupciones al confirmarse el pago (reload())', async () => {
     store.orders.set([
       { ...order('o1', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
     ]);
     store.selectTable('t1');
     http.expectOne(`${API}/table-sessions`).flush([]);
-    expect(store.selectedOrder()).toBeNull(); // línea base: excluido mientras está pendiente
+    // A pedido del usuario: `selectTable()` ya lo selecciona desde el
+    // arranque (`tableOrders()` incluye los pagos QR por confirmar) -- de
+    // sólo lectura mientras `selectedOrderPending()` sea `true`.
+    expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(true);
 
     const promise = store.reload();
     http.expectOne(`${API}/orders/tables`).flush([]);
@@ -808,7 +813,10 @@ describe('PosTerminalStore.reload — resincroniza la selección tras confirmar 
     http.expectOne(`${API}/table-sessions`).flush([]);
     await promise;
 
+    // Tras confirmarse el pago (status ya no es 'recibida'), sigue siendo el
+    // mismo pedido seleccionado -- ya no de sólo lectura.
     expect(store.selectedOrder()?.id).toBe('o1');
+    expect(store.selectedOrderPending()).toBe(false);
   });
 
   it('mesa con dos pedidos activos y uno ya elegido a mano: reload() no cambia la selección mientras siga vigente', async () => {
@@ -1498,9 +1506,44 @@ describe('PosTerminalStore — cabecera y pestañas del panel de pedido (spec 04
     store.selectedTableId.set('t1');
 
     expect(store.orderTabs()).toEqual([
-      { id: 'o1', label: 'Pedido 1' },
-      { id: 'o2', label: 'Pedido 2' },
+      { id: 'o1', label: 'Pedido 1', pending: false },
+      { id: 'o2', label: 'Pedido 2', pending: false },
     ]);
+  });
+
+  it('orderTabs() marca `pending: true` un pago QR por confirmar, incluido entre las pestañas (a pedido del usuario)', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' },
+      { ...order('o2', 'recibida', ['pendiente']), channel: 'QR_MENU', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    expect(store.orderTabs()).toEqual([
+      { id: 'o1', label: 'Pedido 1', pending: false },
+      { id: 'o2', label: 'Pedido 2', pending: true },
+    ]);
+  });
+
+  it('selectedOrderTotal() es null con un único pedido en la mesa (sin pestañas que navegar)', () => {
+    store.orders.set([{ ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' }]);
+    store.selectedTableId.set('t1');
+    store.selectedOrderId.set('o1');
+
+    expect(store.selectedOrderTotal()).toBeNull();
+  });
+
+  it('selectedOrderTotal() acompaña al pedido enfocado por su pestaña, no al total de toda la mesa', () => {
+    store.orders.set([
+      { ...order('o1', 'abierta', ['pendiente']), channel: 'POS', dining_table_id: 't1' },
+      { ...order('o2', 'abierta', ['pendiente', 'pendiente']), channel: 'POS', dining_table_id: 't1' },
+    ]);
+    store.selectedTableId.set('t1');
+
+    store.selectedOrderId.set('o1');
+    expect(store.selectedOrderTotal()).toBe(4000);
+
+    store.selectedOrderId.set('o2');
+    expect(store.selectedOrderTotal()).toBe(8000);
   });
 
   it('ordersView() devuelve una tarjeta por pedido, con sus ítems y si le falta algo por preparar', () => {
@@ -1945,6 +1988,156 @@ describe('PosTerminalStore.ordersByType (spec 059, Historia 2)', () => {
 
     expect(store.ordersByType('domicilios')).toEqual([]);
     expect(store.ordersByType('para-llevar')).toEqual([]);
+  });
+});
+
+/**
+ * spec 078 (US1, FR-001–FR-006; research.md D1; A-71 punto 2): el `totalLabel`
+ * de la tarjeta de un pedido de Domicilio pasa a mostrar el total **real a
+ * cobrar** = subtotal de productos post-descuento + `delivery_fee`, el mismo
+ * importe que `GET /orders/{id}/checkout-preview`. Para mesa / "Para llevar" el
+ * `totalLabel` no cambia. Todo se compone en memoria — sin ninguna petición.
+ */
+describe('PosTerminalStore.ordersByType — total de la tarjeta de Domicilio (spec 078, US1)', () => {
+  let store: PosTerminalStore;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        PosTerminalStore,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTanStackQuery(new QueryClient()),
+        { provide: PromotionService, useValue: { loadActive: () => {}, activePromotions: () => [], ready: () => false, now: () => new Date() } },
+        ...checkoutDataAlreadyLoadedProviders(),
+      ],
+    });
+    store = TestBed.inject(PosTerminalStore);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  function delivery(id: string, items: Partial<DiningOrderItem>[], extra: Partial<DiningOrder> = {}): DiningOrder {
+    return {
+      ...order(id, 'abierta', []),
+      channel: 'POS',
+      order_type: 'DELIVERY',
+      items: items.map((it, i) => ({
+        id: `${id}-i${i}`,
+        product_variant_id: 'v1',
+        quantity: 1,
+        unit_price: '0',
+        estado_cocina: 'pendiente',
+        ...it,
+      })) as DiningOrderItem[],
+      ...extra,
+    } as DiningOrder;
+  }
+
+  /** Fórmula de `CheckoutPreview.total` reproducida en el test para la
+   *  reconciliación tarjeta ↔ panel (FR-003): `max(0, subtotal − descuento + domicilio)`. */
+  const previewTotal = (subtotalPostDescuento: number, deliveryFee: number) =>
+    Math.max(0, subtotalPostDescuento + deliveryFee);
+
+  it('DELIVERY con subtotal $25.000 + delivery_fee $6.000 → totalLabel = fmt(31000) (FR-001, SC-001)', () => {
+    store.orders.set([delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 })]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(card.totalLabel).toBe(store.fmt(31000));
+    expect(card.totalLabel).toBe(store.fmt(previewTotal(25000, 6000)));
+  });
+
+  it('DELIVERY con delivery_fee 0 o null → totalLabel = fmt(subtotal), sin error (FR-006)', () => {
+    store.orders.set([
+      delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 0 }),
+      delivery('o2', [{ unit_price: '25000' }], { delivery_fee: null }),
+    ]);
+
+    const cards = store.ordersByType('domicilios');
+    expect(cards[0].totalLabel).toBe(store.fmt(25000));
+    expect(cards[1].totalLabel).toBe(store.fmt(25000));
+  });
+
+  it('bugfix: `delivery_fee` llega como string (Decimal serializado por el backend, igual que `unit_price`) — no se concatena con el subtotal', () => {
+    // El tipo `DiningOrder.delivery_fee` dice `number | null`, pero en
+    // producción el backend lo serializa como string (mismo Decimal que
+    // `unit_price`/`discounted_line_total`, siempre tratados con `Number()`
+    // en el resto del store) -- `as unknown as number` reproduce ese shape
+    // real para que el test no oculte el bug detrás del tipo optimista.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '15000', quantity: 3 }, { unit_price: '0', quantity: 4 }], {
+        delivery_fee: '5000' as unknown as number,
+      }),
+    ]);
+
+    const card = store.ordersByType('domicilios')[0];
+    // Antes del fix: `45000 + '5000.00'` concatenaba a "450005000" en vez de
+    // sumar 50000 -- la tarjeta mostraba $450.005.000 en vez de $50.000.
+    expect(card.totalLabel).toBe(store.fmt(50000));
+  });
+
+  it('DELIVERY con promoción aplicada (descuento congelado en discounted_unit_price) → fmt(subtotal_post_descuento + delivery_fee) (FR-002, FR-003)', () => {
+    // 1 línea: precio $10.000, descuento por promo → $8.000 la unidad.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '10000', discounted_unit_price: '8000' }], { delivery_fee: 6000 }),
+    ]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(card.totalLabel).toBe(store.fmt(14000));
+    expect(card.totalLabel).toBe(store.fmt(previewTotal(8000, 6000)));
+  });
+
+  it('DELIVERY: promoción pausada/eliminada tras confirmar — la tarjeta mantiene el discounted_unit_price congelado; el panel (recompute en vivo) es la autoridad (FR-003, Edge Cases)', () => {
+    // `activePromotions: () => []` simula que la promo ya no está vigente:
+    // la tarjeta sigue usando el número congelado en la línea, no lo recalcula.
+    store.orders.set([
+      delivery('o1', [{ unit_price: '10000', discounted_unit_price: '8000' }], { delivery_fee: 0 }),
+    ]);
+
+    expect(store.ordersByType('domicilios')[0].totalLabel).toBe(store.fmt(8000));
+  });
+
+  it('DELIVERY: línea con descuento y quantity > 1 usa discounted_line_total, sin perder céntimos (research.md D1 riesgo 3)', () => {
+    store.orders.set([
+      delivery(
+        'o1',
+        [{ unit_price: '1000', discounted_unit_price: '333.33', discounted_line_total: '1000.00', quantity: 3 }],
+        { delivery_fee: 0 },
+      ),
+    ]);
+
+    // 333.33 * 3 = 999.99 perdería un céntimo; discounted_line_total = 1000.00 es la cifra autoritativa.
+    expect(store.ordersByType('domicilios')[0].totalLabel).toBe(store.fmt(1000));
+  });
+
+  it('TAKEAWAY / pedido de mesa: totalLabel idéntico al de hoy — delivery_fee nulo, no se suma nada (FR-005)', () => {
+    store.orders.set([
+      { ...order('t1', 'abierta', []), channel: 'POS', order_type: 'TAKEAWAY', items: [{ id: 't1-i0', product_variant_id: 'v1', quantity: 1, unit_price: '25000', estado_cocina: 'pendiente' }] as DiningOrderItem[] } as DiningOrder,
+    ]);
+
+    expect(store.ordersByType('para-llevar')[0].totalLabel).toBe(store.fmt(25000));
+  });
+
+  it('la tarjeta muestra un único string de total, sin desglose productos/domicilio (FR-004)', () => {
+    store.orders.set([delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 })]);
+
+    const card = store.ordersByType('domicilios')[0];
+    expect(typeof card.totalLabel).toBe('string');
+    expect(card.totalLabel).toBe(store.fmt(31000));
+  });
+
+  it('abrir "Domicilios" no dispara ninguna petición checkout-preview por tarjeta (Assumption spec.md)', () => {
+    store.orders.set([
+      delivery('o1', [{ unit_price: '25000' }], { delivery_fee: 6000 }),
+      delivery('o2', [{ unit_price: '12000' }], { delivery_fee: 3000 }),
+    ]);
+
+    store.ordersByType('domicilios');
+
+    http.expectNone((r) => r.url.includes('/checkout-preview'));
   });
 });
 

@@ -298,6 +298,11 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       split: [],
     });
     // Pedido QR 'recibida' en la misma mesa: pone a centralState() en 'validar-pago'.
+    // 'o1' (el pedido propio de este panel, ya seleccionado en el beforeEach)
+    // sigue siendo el seleccionado -- 'o2' no lo está, así que su tarjeta de
+    // revisión no se renderiza aquí (solo se ve al entrar puntualmente a su
+    // pestaña), pero "Liberar Mesa" igual se oculta por el mismo
+    // `centralState() === 'validar-pago'`.
     store.orders.set([manualOrder(), { ...manualOrder(), id: 'o2', channel: 'QR_MENU', status: 'recibida' }]);
     fixture.detectChanges();
 
@@ -351,6 +356,46 @@ describe('PosCheckoutPanelComponent — modo terminal-pos', () => {
       (b as HTMLButtonElement).textContent?.includes('Imprimir Pre-cuenta'),
     );
     expect(button).toBeDefined();
+  });
+
+  // ── spec 078 (US3/US4, FR-025; research.md D5) ──────────────────────────────
+
+  it('el panel apilado va min-w-0, sin scroll ni techo propios por debajo de lg (a pedido del usuario: un solo scroll para toda la columna); desde lg es su propia columna al 40% con scroll propio', () => {
+    // Las clases viven en el HOST (`fixture.nativeElement` ES
+    // <app-pos-checkout-panel>), no en un <div> del template -- ver el
+    // comentario del `host: {}` en el componente sobre por qué un <div>
+    // interno nunca participa en el flex del padre.
+    const wrapper = fixture.nativeElement as HTMLElement;
+    expect(wrapper.className).toContain('min-w-0');
+    // Por debajo de lg no tiene scroll ni techo SIN prefijo -- antes tenía su
+    // propia zona con overflow-y-auto y un techo (max-h-[…]), otra caja
+    // interna recortando su contenido aparte del carrito. Ahora crece a su
+    // alto natural; el scroll único vive en la columna de detalle
+    // (table-sessions.component.ts).
+    const classes = wrapper.className.split(/\s+/);
+    expect(classes).not.toContain('overflow-y-auto');
+    expect(classes.some((c) => /^max-h-\[/.test(c))).toBe(false);
+    // Desde lg: columna aparte al 40% del ancho con su propio scroll (a
+    // pedido del usuario, layout de dos columnas en desktop).
+    expect(classes).toContain('lg:w-[40%]');
+    expect(classes).toContain('lg:overflow-y-auto');
+  });
+
+  it('los botones de acción post-cobro quedan shrink-0', () => {
+    store.sessionBill.set({
+      table_session_id: 'ts1',
+      dining_table_id: 't1',
+      total: '10000',
+      order_ids: ['o1'],
+      split: [],
+    });
+    fixture.detectChanges();
+    const printBtn = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
+      (b as HTMLButtonElement).textContent?.includes('Imprimir Pre-cuenta'),
+    ) as HTMLButtonElement | undefined;
+    if (printBtn) {
+      expect((printBtn.parentElement as HTMLElement).className).toContain('shrink-0');
+    }
   });
 
   it('spec 029 hotfix #4: "Rechazar pedido" pide confirmación y cancela sin venta ni movimiento de caja', async () => {
@@ -710,7 +755,7 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     fixture.detectChanges();
 
     const texto = fixture.nativeElement.textContent as string;
-    expect(texto).toContain('nada que cobrar aquí');
+    expect(texto).not.toContain('nada que cobrar aquí');
     expect(texto).not.toContain('Dividir la cuenta entre varias personas');
     expect(texto).not.toContain('Cuenta única');
     expect(texto).not.toContain('Método de pago');

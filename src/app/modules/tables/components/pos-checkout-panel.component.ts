@@ -14,6 +14,7 @@ import { getSidebarMode } from '../interfaces/dining.interface';
 import { SessionBillPanelComponent } from './session-bill-panel.component';
 import { PaymentInputComponent } from './payment-input.component';
 import { BillSummaryComponent } from './bill-summary.component';
+import { PaymentAttemptReviewPanelComponent } from './payment-attempt-review-panel.component';
 import {
   PaymentDraft,
   emptyPaymentDraft,
@@ -25,6 +26,15 @@ import {
  * Cuenta de la mesa y cobro -- se apila debajo de `app-pos-order-panel`
  * (siempre en una sola columna, a pedido del usuario; antes iba al lado en
  * pantallas anchas).
+ *
+ * A pedido del usuario: el comprobante/confirmación de un pago QR pendiente
+ * (`app-payment-attempt-review-panel`) solo se muestra cuando el pedido
+ * seleccionado ES ese pago pendiente (`store.selectedOrderPending()`, su
+ * propia pestaña "Pedido N" o la selección por defecto de `selectTable()`
+ * cuando es el único pedido de la mesa) -- antes se veía siempre que la mesa
+ * tuviera algún pago pendiente, sin importar cuál pestaña estuviera activa
+ * (hotfix retirado a pedido del usuario: quedaba visible aunque el cajero
+ * estuviera mirando otro pedido de la misma mesa).
  *
  * Feature 028 ("terminal híbrida por origen"): la barra lateral ya no muestra
  * siempre el mismo panel de cobro — se decide por el **origen** del pedido
@@ -50,13 +60,44 @@ import {
 @Component({
   selector: 'app-pos-checkout-panel',
   standalone: true,
-  imports: [SessionBillPanelComponent, PaymentInputComponent, BillSummaryComponent],
+  imports: [
+    SessionBillPanelComponent,
+    PaymentInputComponent,
+    BillSummaryComponent,
+    PaymentAttemptReviewPanelComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // spec 078 (US3/US4, research.md D4/D5): min-w-0 para que cliente/método
+  // largos no lo ensanchen.
+  //
+  // Estas clases viven en el HOST, no en un <div> dentro del template: en
+  // Angular, <app-pos-checkout-panel> (el host) es el hijo real dentro del
+  // flex row de table-sessions.component.ts -- un <div> del template es OTRO
+  // elemento, anidado DENTRO del host, que nunca participa en el flex del
+  // padre. Con las clases de ancho/scroll en ese div (como estaban antes),
+  // "lg:w-[40%]" se resolvía contra un host sin ancho definido (auto,
+  // encogido a su contenido) en vez de contra el 40% real de la fila -- el
+  // panel de cobro se veía angosto y con el texto amontonado en desktop, sin
+  // usar el ancho que sí tenía reservado.
+  //
+  // Por debajo de lg: apilado bajo el pedido, a su alto natural y sin scroll
+  // propio (a pedido del usuario, hotfix posterior) -- antes tenía su propia
+  // zona con overflow-y-auto y un techo (primero max-h-[55%], luego
+  // max-h-[38dvh]), una caja interna más además del carrito de
+  // app-pos-order-panel, cada una recortando su contenido por separado. Es
+  // la columna de detalle (table-sessions.component.ts) la que scrollea el
+  // bloque completo (pedido + esta cuenta) de una sola vez si no alcanza.
+  //
+  // Desde lg: columna aparte al lado del pedido (40% del ancho, en vez de
+  // apilada) -- border-l en vez de border-t, y scroll propio
+  // (lg:overflow-y-auto) porque ahora es una columna independiente con su
+  // propio alto completo, no un bloque más de un scroll compartido.
+  host: {
+    class:
+      'w-full flex flex-col border-t border-[#e5e7eb] min-w-0 bg-white lg:w-[40%] lg:shrink-0 lg:min-h-0 lg:overflow-y-auto lg:border-t-0 lg:border-l',
+  },
   template: `
-    <div
-      class="w-full shrink-0 flex flex-col border-t border-[#e5e7eb] min-h-0 bg-white"
-    >
-      <div class="flex-1 overflow-y-auto p-4">
+      <div class="p-4">
         <!--
           El aviso va AQUÍ y no dentro de <app-session-bill-panel> a propósito:
           ese componente resetea el método de pago y el efectivo recibido en su
@@ -79,7 +120,42 @@ import {
         }
         @if (store.billLoading()) {
           <p class="text-[12px] text-[#9ca3af] py-8 text-center">Cargando cuenta…</p>
-        } @else if (sidebarMode() === 'resumen') {
+        } @else {
+          @if (store.selectedOrderPending()) {
+            <!-- A pedido del usuario: el comprobante/confirmación de un pago
+                 QR pendiente (app-payment-attempt-review-panel) solo se
+                 muestra cuando el cajero entra puntualmente a esa pestaña
+                 "Pedido N" (a la izquierda) -- antes se veía siempre que la
+                 mesa tuviera algún pago pendiente, sin importar cuál pestaña
+                 estuviera activa, lo que lo hacía aparecer aunque el cajero
+                 estuviera mirando otro pedido de la misma mesa. -->
+            @if (store.selectedOrder(); as pending) {
+              <div class="mb-4">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                  <p class="text-[12px] text-[#6b7280]">
+                    Aprobar el comprobante o confirmar el pago registra el pedido como una venta en
+                    el sistema.
+                  </p>
+                  <button
+                    (click)="store.reload()"
+                    class="text-[12px] font-medium text-[#9ca3af] hover:text-[#4f46e5] transition-colors shrink-0"
+                  >
+                    Actualizar
+                  </button>
+                </div>
+                <app-payment-attempt-review-panel
+                  [order]="pending"
+                  [cashShiftId]="store.cashShiftId()"
+                  (resolved)="store.reload()"
+                />
+              </div>
+            }
+          } @else {
+          <!--
+            El pedido seleccionado no es un pago QR pendiente: cobro normal
+            según el origen (T004/T009).
+          -->
+          @if (store.selectedOrder() && sidebarMode() === 'resumen') {
           <!-- Origen QR: solo lectura (T004/T009). -->
           <app-session-bill-panel
             [bill]="store.sessionBill()"
@@ -88,9 +164,10 @@ import {
             [customerName]="store.customerName()"
             [orphan]="store.billOrphan()"
             [paidSummary]="store.selectedTablePaidSummary()"
+            [selectedOrderTotal]="store.selectedOrderTotal()"
             [readOnly]="true"
           />
-        } @else if (showSessionCharge()) {
+        } @else if (store.selectedOrder() && showSessionCharge()) {
           <!--
             Pedido de mesero ya enviado a cocina (status distinto de
             'recibida'): se cobra cerrando la sesión de mesa completa — el
@@ -110,6 +187,7 @@ import {
               [customerName]="store.customerName()"
               [orphan]="store.billOrphan()"
               [paidSummary]="store.selectedTablePaidSummary()"
+              [selectedOrderTotal]="store.selectedOrderTotal()"
               [beforeCharge]="store.ensureReadyToCharge"
               (charged)="store.onCharged($event)"
             />
@@ -126,7 +204,7 @@ import {
               Rechazar pedido
             </button>
           </div>
-        } @else {
+        } @else if (store.selectedOrder() || store.pendingOfSelectedTable().length === 0) {
           <!-- Origen mostrador (o mesa sin pedido todavía): cobro editable (T024). -->
           <div class="flex flex-col h-full">
             <h2 class="text-[15px] font-bold text-[#111827] mb-3">
@@ -240,6 +318,8 @@ import {
               </button>
             }
           </div>
+          }
+          }
         }
       </div>
 
@@ -260,14 +340,21 @@ import {
                 ni en qué pestaña (con lookup al backend — ver
                 PosTerminalStore.printOrderInvoice). Reemplaza el botón del
                 diálogo de éxito para el caso de un solo comprobante, que
-                duplicaba esta misma acción.
+                duplicaba esta misma acción. Sin ella para un pago QR todavía
+                sin confirmar (selectedOrderPending()) -- no hay ninguna
+                factura que reimprimir. Tampoco mientras la mesa tenga algún
+                otro pago QR pendiente de revisión (centralState() ===
+                'validar-pago') -- a pedido del usuario, para no ofrecer
+                "Imprimir Factura" junto al comprobante todavía sin aprobar.
               -->
+              @if (!store.selectedOrderPending() && store.centralState() !== 'validar-pago') {
               <button
                 (click)="store.printOrderInvoice(order.id)"
                 class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] transition-colors"
               >
                 🧾 Imprimir Factura
               </button>
+              }
             }
             @if (store.centralState() !== 'validar-pago') {
               <!--
@@ -289,7 +376,6 @@ import {
           </div>
         }
       }
-    </div>
   `,
 })
 export class PosCheckoutPanelComponent {

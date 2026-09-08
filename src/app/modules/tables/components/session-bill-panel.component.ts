@@ -20,7 +20,6 @@ import { PaymentMethodCheckoutOption } from '../../sales/interfaces/sales.interf
 import { TableSessionService } from '../services/table-session.service';
 import { PaymentInputComponent } from './payment-input.component';
 import { BillSummaryComponent } from './bill-summary.component';
-import { formatMoney } from '../../../shared/money';
 import {
   PaymentDraft,
   emptyPaymentDraft,
@@ -45,13 +44,22 @@ import { ToastService } from '../../../shared/feedback/toast.service';
     <div class="flex flex-col h-full">
       <h2 class="text-[15px] font-bold text-[#111827] mb-3">Cuenta de la mesa</h2>
 
+      @if (selectedOrderTotal !== null) {
+        <!-- A pedido del usuario: al navegar entre pestañas "Pedido N" (a la
+             izquierda), este total acompaña -- antes solo se veía el de toda
+             la mesa, sin pista de cuánto sumaba el pedido enfocado. -->
+        <div class="mb-3 pb-3 border-b border-[#e5e7eb]">
+          <app-bill-summary [total]="selectedOrderTotal" totalLabel="Total de este pedido" size="sm" />
+        </div>
+      }
+
       @if (paidSummary; as pagado) {
         <!-- Bugfix reportado sobre spec 049: la mesa puede tener pedidos ya
-             cobrados (p. ej. mostrador pagado por adelantado) que el
-             desglose de abajo no incluye a propósito (evita cobrar dos
-             veces) — este bloque muestra ese consumo ya pagado aparte, sin
-             mezclarlo con lo pendiente. -->
-        <div class="mb-3 pb-3 border-b border-[#e5e7eb] space-y-1">
+             cobrados (p. ej. mostrador pagado por adelantado) que el total
+             de abajo no incluye a propósito (evita cobrar dos veces) -- este
+             bloque se ve incluso sin bill (mesa ya toda pagada, nada
+             pendiente que desglosar). -->
+        <div class="mb-3 pb-3 space-y-1">
           <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide">Ya pagado</p>
           <app-bill-summary
             [subtotal]="pagado.subtotal"
@@ -59,6 +67,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
             [total]="pagado.total"
             totalLabel="Total pagado"
             size="sm"
+            [totalBorder]="false"
           />
         </div>
       }
@@ -75,69 +84,26 @@ import { ToastService } from '../../../shared/feedback/toast.service';
           <p class="text-[14px] text-[#9ca3af] py-6 text-center">Selecciona una mesa con consumo.</p>
         }
       } @else {
-        <!-- Cuentas: una tarjeta seleccionable por comensal (incluida la de
-             participant_id null -- "sin asignar", ítems del mesero). Se
-             elige por índice, no por participant_id, porque ese campo
-             legítimamente puede ser null para "sin asignar" y necesitamos
-             distinguir "sin selección" de "seleccioné la de sin asignar". -->
-        <div class="mb-3">
-          <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide mb-1.5">Cuentas</p>
-          <div class="flex flex-wrap gap-1.5">
-            @for (line of bill.split; track $index; let i = $index) {
-              <button
-                type="button"
-                (click)="selectedIndex.set(i)"
-                class="flex-1 min-w-[140px] text-left px-2.5 py-2 rounded-[6px] border transition-colors"
-                [class]="i === selectedIndex() ? 'border-[#4f46e5] bg-[#eef2ff]' : 'border-[#e5e7eb] bg-white hover:bg-[#f9fafb]'"
-              >
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="w-1.5 h-1.5 rounded-full shrink-0" [class]="i === selectedIndex() ? 'bg-[#4f46e5]' : 'bg-[#d1d5db]'"></span>
-                  <span class="text-[13px] font-semibold text-[#111827] truncate">{{ lineLabel(line.display_label) }}</span>
-                  <span class="text-[10px] font-medium text-[#6b7280] shrink-0">{{ line.items.length }} ítems</span>
-                </div>
-                <div class="text-[13px] font-bold text-[#4f46e5] mt-0.5">{{ money(+line.subtotal) }}</div>
-              </button>
-            }
-          </div>
-        </div>
-
-        <!-- Productos de la cuenta seleccionada -->
-        @if (selectedLine(); as line) {
-          <div class="mb-3 pb-3 border-b border-[#e5e7eb]">
-            <p class="text-[11px] font-semibold text-[#6b7280] uppercase tracking-wide mb-1.5">
-              Productos en {{ lineLabel(line.display_label) }} ({{ line.items.length }} ítems)
-            </p>
-            <ul class="space-y-1">
-              @for (item of line.items; track $index) {
-                <li class="flex items-center justify-between text-[13px] text-[#4b5563]">
-                  <span class="truncate">{{ +item.quantity }}× {{ item.description }}</span>
-                  <span class="font-medium text-[#111827]">{{ money(+item.line_total) }}</span>
-                </li>
-              }
-            </ul>
+        <!-- Total de TODA la mesa -- lo que realmente cobra el botón de
+             abajo. El detalle producto por producto de cada pedido se ve
+             tabulando a su pestaña "Pedido N" en el pedido (a la
+             izquierda), no aquí. Si no queda nada por cobrar (p. ej. mesa
+             pagada entera por QR, ya cubierto arriba por "Ya pagado"), este
+             bloque y el aviso de solo-lectura de abajo se omiten: repetir
+             un $0 no aporta nada. -->
+        @if (+bill.total > 0) {
+          <div class="mb-4">
+            @let summary = billSummary();
             <app-bill-summary
-              [discount]="+line.discount"
-              [total]="+line.subtotal"
-              [totalLabel]="'Subtotal ' + lineLabel(line.display_label)"
-              size="sm"
+              [subtotal]="summary ? summary.subtotal : undefined"
+              subtotalLabel="Subtotal mesa"
+              [discount]="summary ? summary.discount : 0"
+              [total]="+bill.total"
+              totalLabel="Total a cobrar"
+              size="md"
             />
           </div>
         }
-
-        <!-- Totales de TODA la mesa -- lo que realmente cobra el botón de
-             abajo, siempre visible aparte del subtotal de la cuenta
-             seleccionada para no sugerir un cobro parcial que no existe. -->
-        <div class="mb-4">
-          @let summary = billSummary();
-          <app-bill-summary
-            [subtotal]="summary ? summary.subtotal : undefined"
-            [subtotalLabel]="'Subtotal mesa (' + bill.split.length + ' cuenta' + (bill.split.length === 1 ? '' : 's') + ')'"
-            [discount]="summary ? summary.discount : 0"
-            [total]="+bill.total"
-            totalLabel="Total a cobrar"
-            size="md"
-          />
-        </div>
 
         @if (readOnly) {
           <!--
@@ -148,9 +114,6 @@ import { ToastService } from '../../../shared/feedback/toast.service';
             origen: cobrar de nuevo una mesa ya pagada por QR fallaba con un
             error que el cajero no sabía interpretar.
           -->
-          <p class="text-[13px] text-[#9ca3af] py-2">
-            Pedido pagado por el comensal desde el QR — nada que cobrar aquí.
-          </p>
         } @else {
         <!-- Pago -->
         <div class="flex-1 overflow-y-auto space-y-2 mb-3">
@@ -194,6 +157,14 @@ export class SessionBillPanelComponent implements OnChanges {
    */
   @Input() paidSummary: { subtotal: number; discount: number; total: number } | null = null;
   /**
+   * A pedido del usuario: el total del pedido enfocado por su propia pestaña
+   * "Pedido N" (a la izquierda) -- distinto del total/lo pagado de TODA la
+   * mesa que ya pinta el resto de este panel. `null` con un único pedido en
+   * la mesa (sin pestañas que navegar, sería redundante repetir el mismo
+   * número dos veces).
+   */
+  @Input() selectedOrderTotal: number | null = null;
+  /**
    * Feature 028 (T004/T009): `true` cuando el pedido activo es de canal `qr`
    * — el comensal ya pagó a distancia. Oculta el selector de método y el
    * botón "Cobrar y cerrar mesa"; solo queda el desglose de lectura.
@@ -233,16 +204,6 @@ export class SessionBillPanelComponent implements OnChanges {
   private readonly currentBill = signal<SessionBill | null>(null);
 
   readonly total = computed(() => Number(this.currentBill()?.total ?? 0));
-
-  /** Cuenta seleccionada en la sección "Cuentas" -- por índice de
-   *  `bill.split`, no por `participant_id` (ese campo puede legítimamente
-   *  ser `null` para "sin asignar", así que un índice evita la ambigüedad
-   *  entre "nada seleccionado" y "seleccioné la de sin asignar"). Se
-   *  resetea a la primera cuenta cada vez que cambia `bill` (mismo punto
-   *  que ya resetea `unifiedPayment`). */
-  readonly selectedIndex = signal(0);
-
-  readonly selectedLine = computed(() => this.currentBill()?.split[this.selectedIndex()] ?? null);
 
   /**
    * Subtotal/descuento agregados de toda la cuenta, sumando las mismas
@@ -288,20 +249,6 @@ export class SessionBillPanelComponent implements OnChanges {
     this.error.set(null);
     this.currentBill.set(this.bill);
     this.unifiedPayment.set(emptyPaymentDraft());
-    this.selectedIndex.set(0);
-  }
-
-  /** Los ítems sin comensal los añadió el mesero — spec 057, FR-005/FR-006:
-   *  se prioriza el nombre de cliente de la orden (ya disponible en
-   *  `customerName`, el mismo que se envía como `customer_name` al cobrar)
-   *  por encima de la etiqueta genérica, cuando existe. */
-  lineLabel(label: string | null): string {
-    if (label) return label;
-    return this.customerName.trim() || 'Sin asignar (mesero)';
-  }
-
-  money(n: number): string {
-    return formatMoney(n);
   }
 
   async charge(): Promise<void> {

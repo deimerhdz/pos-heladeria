@@ -215,7 +215,13 @@ describe('TransferDetailsStepComponent', () => {
     await waitUntil(() => successSpy.mock.calls.length > 0);
     fixture.detectChanges();
 
-    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/qr.png');
+    // `cache: 'no-store'` es parte del contrato, no un detalle: sin él, el <img>
+    // no-CORS del mismo QR envenena la caché del navegador y la revalidación del
+    // `fetch` CORS devuelve un 504 de Cloudflare (ver JSDoc de downloadImage()).
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://cdn.example.com/qr.png',
+      expect.objectContaining({ mode: 'cors', cache: 'no-store' }),
+    );
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(clicks()[0].download).toContain('qr-nequi');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');

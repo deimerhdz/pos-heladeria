@@ -75,4 +75,27 @@ describe('OrderSummaryCardComponent', () => {
 
     expect(emitted).toBe(1);
   });
+
+  /**
+   * spec 078 (US1, FR-004): con la corrección del total de la tarjeta de
+   * Domicilio, `toOrderCardView()` ya suma `delivery_fee` a `orderSubtotal()`.
+   * La plantilla **no** cambia: sigue habiendo un único `totalLabel` bajo la
+   * etiqueta "Total", sin línea aparte de "productos"/"domicilio" — solo cambia
+   * el número que llega por input.
+   */
+  it('renderiza un único total bajo la etiqueta "Total", sin desglose (FR-004, no regresión)', () => {
+    fixture.componentRef.setInput('totalLabel', '$31.000');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Total');
+    expect(text).toContain('$31.000');
+    // Un solo número de total: la plantilla no introduce "Productos" ni "Domicilio".
+    expect(text).not.toContain('Productos');
+    expect(text).not.toMatch(/Domicilio\s*\$/);
+
+    const totalCells = fixture.nativeElement.querySelectorAll('.tabular-nums');
+    expect(totalCells.length).toBe(1);
+    expect((totalCells[0].textContent as string).trim()).toBe('$31.000');
+  });
 });
