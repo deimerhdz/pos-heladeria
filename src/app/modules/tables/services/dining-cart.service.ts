@@ -19,6 +19,15 @@ export interface CartLine {
   notes: string | null;
   unitPrice: number;
   lineTotal: number;
+  /**
+   * spec 081 (data-model.md): derivados de `CartResponse.items[]`, ya presentes en
+   * la respuesta del backend pero antes descartados al construir la línea. Sirven
+   * para resolver el paso de cantidad de esta línea (`stepFor`) sin id de línea,
+   * que solo se conoce después de que el backend responde al agregado.
+   */
+  productVariantId: string;
+  /** Ids de opción elegidas, ordenados y unidos con coma — clave estable sin importar el orden de llegada. */
+  optionKey: string;
 }
 
 /** Índice del menú para resolver ids → nombres al pintar el carrito. */
@@ -55,6 +64,16 @@ export class DiningCartService {
   readonly isEmpty = computed(() => this.lines().length === 0);
 
   private index: MenuIndex = { variants: new Map(), options: new Map() };
+  /**
+   * spec 081 (research.md D3): paso de cantidad por variante+opciones, solo en
+   * memoria del navegador — nunca se lee ni se escribe desde `GET /cart`, así que
+   * no sobrevive a una recarga de página (limitación aceptada, no un pendiente).
+   */
+  private stepByKey = new Map<string, number>();
+
+  private static lineKey(variantId: string, optionKey: string): string {
+    return `${variantId}::${optionKey}`;
+  }
 
   /** Indexa el menú resuelto para poder mostrar nombres en las líneas. */
   indexMenu(categories: { products: MenuProduct[] }[]): void {
@@ -81,6 +100,11 @@ export class DiningCartService {
   /**
    * Añade una línea. Propaga el error para que la pantalla muestre qué insumo
    * falta cuando el backend responde el `409` estructurado.
+   *
+   * `stepQuantity` (spec 081, contrato §2) solo lo pasa el flujo que abre el
+   * modal desde la pestaña "Promociones" — cuando viene definido, se registra
+   * como el paso de +/- de la línea resultante **después** de que el backend
+   * confirme el agregado (nunca sobre un intento rechazado, p. ej. por stock).
    */
   async add(
     _product: MenuProduct,
@@ -88,6 +112,7 @@ export class DiningCartService {
     options: ChosenMenuOption[],
     quantity: number,
     notes: string | null,
+    stepQuantity?: number,
   ): Promise<void> {
     await this.mutate(() =>
       this.api.addItem({
@@ -97,6 +122,15 @@ export class DiningCartService {
         notes: notes || null,
       }),
     );
+    if (stepQuantity != null) {
+      const optionKey = options.map((c) => c.option.id).sort().join(',');
+      this.stepByKey.set(DiningCartService.lineKey(variant.id, optionKey), stepQuantity);
+    }
+  }
+
+  /** Paso de +/- para esta línea — `1` (libre) si nunca se agregó desde "Promociones". */
+  stepFor(line: CartLine): number {
+    return this.stepByKey.get(DiningCartService.lineKey(line.productVariantId, line.optionKey)) ?? 1;
   }
 
   async setQuantity(itemId: string, quantity: number): Promise<void> {
@@ -154,6 +188,8 @@ export class DiningCartService {
           notes: it.notes,
           unitPrice: effectivePrice(it.unit_price, it.discounted_unit_price),
           lineTotal: effectivePrice(it.line_total, it.discounted_line_total),
+          productVariantId: it.product_variant_id,
+          optionKey: it.options.map((o) => o.option_id).sort().join(','),
         };
       }),
     );

@@ -44,6 +44,13 @@ type MenuSection = 'carta' | 'pedidos';
  */
 const SECTION_PARAM = 'v';
 
+/**
+ * spec 081: sentinel de `activeCategoryId` para la pestaña "Promociones" — nunca
+ * colisiona con un UUID real de categoría. Se trata como una categoría virtual en
+ * vez de introducir un segundo sistema de navegación en paralelo (research.md D2).
+ */
+export const PROMOTIONS_TAB_ID = '__promociones__';
+
 /** Sondeo de respaldo cuando el stream de tiempo real está caído. */
 const ORDERS_POLL_MS = 10_000;
 /** Con el stream sano basta un latido lento: es red de seguridad, no la fuente. */
@@ -243,6 +250,17 @@ const REFRESH_DEBOUNCE_MS = 250;
                 </button>
                 <nav class="flex-1 min-w-0 overflow-x-auto">
                   <div class="flex gap-1 min-w-max">
+                    <!-- spec 081 (FR-001): siempre visible, incluso sin promociones vigentes
+                         (FR-008) — categoría virtual, no reemplaza las de abajo. -->
+                    <button
+                      (click)="selectCategory(promotionsTabId)"
+                      class="px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
+                      [class]="activeCategoryId() === promotionsTabId
+                        ? 'border-indigo-600 text-indigo-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'"
+                    >
+                      Promociones
+                    </button>
                     @for (category of categories(); track category.id) {
                       <button
                         (click)="selectCategory(category.id)"
@@ -436,7 +454,9 @@ const REFRESH_DEBOUNCE_MS = 250;
               <div class="text-center py-16">
                 <div class="text-5xl mb-4">🔍</div>
                 <p class="text-gray-600 font-medium">
-                  @if (searchOpen() && search()) {
+                  @if (activeCategoryId() === promotionsTabId) {
+                    No hay promociones activas en este momento.
+                  } @else if (searchOpen() && search()) {
                     Ningún producto coincide con «{{ search() }}»
                   } @else {
                     Esta categoría no tiene productos disponibles
@@ -574,6 +594,8 @@ const REFRESH_DEBOUNCE_MS = 250;
       @if (selectedProduct()) {
         <app-product-select
           [product]="selectedProduct()!"
+          [fromPromotions]="selectedProductFromPromotions()"
+          [existingQtyFor]="selectedProductExistingQtyFor()"
           (added)="onProductAdded($event)"
           (cancelled)="selectedProduct.set(null)"
         />
@@ -694,6 +716,10 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   readonly joining = signal(false);
 
   readonly selectedProduct = signal<MenuProduct | null>(null);
+  /** spec 081: si `selectedProduct` se abrió desde la pestaña "Promociones" (foto fija al abrir). */
+  readonly selectedProductFromPromotions = signal(false);
+  /** spec 081 (research.md D5): cuántas unidades ya hay en el carrito para una variante+opciones, al momento de abrir el modal. */
+  readonly selectedProductExistingQtyFor = signal<(variantId: string, optionKey: string) => number>(() => 0);
   readonly cartDrawerOpen = signal(false);
   readonly orderError = signal<string | null>(null);
 
@@ -727,6 +753,8 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   /** Categoría abierta en las pestañas. Se fija a la primera al cargar el menú. */
   readonly activeCategoryId = signal<string | null>(null);
+  /** Expuesto para la plantilla — un `const` de módulo no es enlazable directamente. */
+  readonly promotionsTabId = PROMOTIONS_TAB_ID;
   /** La lupa sustituye las pestañas por el input: en un móvil no caben las dos. */
   readonly searchOpen = signal(false);
   readonly search = signal('');
@@ -734,22 +762,31 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
   /**
    * Cae en la primera categoría si no hay ninguna elegida. Así no hay que sincronizar
    * el signal al cargar el menú ni al reanudar sesión: la carta nunca se ve vacía.
+   *
+   * spec 081: con la pestaña "Promociones" activa, `activeCategoryId()` no coincide con
+   * ninguna categoría real — sin este `null` explícito, el `find()` fallaría y el
+   * `?? this.categories()[0]` resolvería a la primera categoría, pintándola también
+   * como activa en las pestañas (dos pestañas resaltadas a la vez).
    */
-  readonly activeCategory = computed<MenuCategory | null>(
-    () =>
+  readonly activeCategory = computed<MenuCategory | null>(() => {
+    if (this.activeCategoryId() === PROMOTIONS_TAB_ID) return null;
+    return (
       this.categories().find((c) => c.id === this.activeCategoryId()) ??
       // TS tipa el índice como no-nulo, pero con la carta vacía es `undefined`:
       // el tipo explícito conserva ese caso y justifica el `?.` de la plantilla.
       this.categories()[0] ??
-      null,
-  );
+      null
+    );
+  });
 
   /**
    * Lo que se pinta en la rejilla.
    *
    * Buscando se ignora la pestaña y se recorre **toda** la carta: quien escribe un
    * nombre quiere ese producto, no ese producto dentro de la categoría que dejó
-   * abierta.
+   * abierta. La pestaña "Promociones" (spec 081) sigue el mismo patrón: recorre toda
+   * la carta, pero filtra por `hasPromotion()` en vez de por coincidencia de texto —
+   * mismo criterio que ya pinta la insignia "🎉 Promo" (spec 066), sin duplicarlo.
    */
   readonly visibleProducts = computed<MenuProduct[]>(() => {
     const q = normalizeText(this.search());
@@ -757,6 +794,11 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       return this.categories()
         .flatMap((c) => c.products)
         .filter((p) => normalizeText(p.name).includes(q));
+    }
+    if (this.activeCategoryId() === PROMOTIONS_TAB_ID) {
+      return this.categories()
+        .flatMap((c) => c.products)
+        .filter((p) => this.hasPromotion(p));
     }
     return this.activeCategory()?.products ?? [];
   });
@@ -797,6 +839,12 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       this.categories.set(categories);
       this.promotionAnnouncements.set(promotions ?? []);
       this.cart.indexMenu(categories);
+      // spec 081 (FR-014): si hay algo en promoción al entrar, es lo primero que ve el
+      // comensal. Solo al cargar el menú por primera vez — no se repite en refrescos
+      // posteriores porque `categories.set(...)` solo ocurre aquí, una vez por instancia.
+      if (categories.some((c) => c.products.some((p) => this.hasPromotion(p)))) {
+        this.activeCategoryId.set(PROMOTIONS_TAB_ID);
+      }
     } catch (err) {
       this.handleResolveError(err);
       return;
@@ -915,6 +963,15 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
 
   openProduct(product: MenuProduct): void {
     this.selectedProduct.set(product);
+    this.selectedProductFromPromotions.set(this.activeCategoryId() === PROMOTIONS_TAB_ID);
+    // Cierre sobre el carrito tal como está al abrir (spec 081, research.md D5) — no
+    // necesita ser reactivo mientras el modal permanece abierto.
+    const lines = this.cart.lines();
+    this.selectedProductExistingQtyFor.set(
+      (variantId: string, optionKey: string) =>
+        lines.find((l) => l.productVariantId === variantId && l.optionKey === optionKey)
+          ?.quantity ?? 0,
+    );
   }
 
   // --- Categorías y búsqueda ---
@@ -982,6 +1039,7 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
         selection.options,
         selection.quantity,
         selection.notes,
+        selection.stepQuantity,
       );
     } catch (err) {
       this.showCartError(err);

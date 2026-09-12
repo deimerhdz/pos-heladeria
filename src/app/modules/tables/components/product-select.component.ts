@@ -6,6 +6,7 @@ import {
   OnInit,
   Output,
   computed,
+  effect,
   signal,
 } from '@angular/core';
 import { MoneyPipe } from '../../../shared/money.pipe';
@@ -37,6 +38,12 @@ export interface ProductSelection {
   options: ChosenMenuOption[];
   quantity: number;
   notes: string | null;
+  /**
+   * spec 081: paso de cantidad a registrar en el carrito (`min_qty` de la regla
+   * vigente), solo cuando el modal se abrió desde "Promociones" y esa regla exige
+   * más de una unidad. `undefined` en cualquier otro caso (comportamiento actual).
+   */
+  stepQuantity?: number;
 }
 
 @Component({
@@ -77,10 +84,17 @@ export interface ProductSelection {
                 }
               </div>
               <div class="text-right shrink-0">
-                @if (product.variants.length > 1) {
+                <!-- spec 081 (FR-015, corregido tras probar en un entorno real): en cuanto la
+                     cantidad configurada satisface el mínimo de la regla vigente, deja de ser un
+                     precio "desde" por unidad -- es el total exacto que se va a cobrar, el mismo
+                     que muestra el botón "Agregar" más abajo. No depende de si el modal se abrió
+                     desde "Promociones" -- solo de si la cantidad ya califica. -->
+                @if (product.variants.length > 1 && !packageDealActive()) {
                   <span class="block text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Desde</span>
                 }
-                <p class="text-lg font-extrabold text-indigo-600 mt-0.5">{{ startingPrice() | money }}</p>
+                <p data-testid="header-price" class="text-lg font-extrabold text-indigo-600 mt-0.5">
+                  {{ (packageDealActive() ? lineTotal() : startingPrice()) | money }}
+                </p>
               </div>
             </div>
           </div>
@@ -116,10 +130,14 @@ export interface ProductSelection {
                         <span class="block text-sm font-semibold text-gray-900 truncate">{{ v.name }}</span>
                         <!-- spec 066 (FR-008): condición corta + equivalente por unidad, en
                              tono discreto para no competir con el precio. Texto ya compuesto
-                             por el backend. -->
+                             por el backend. spec 081 (FR-016, corregido): en cuanto la cantidad
+                             configurada ya satisface el mínimo, se omite el equivalente por
+                             unidad -- el precio de la fila lo reemplaza con el tachado + total
+                             del paquete, justo al lado. No depende de si se llegó desde
+                             "Promociones". -->
                         @if (v.promotion) {
                           <span class="inline-flex items-center text-[11px] font-medium text-indigo-700 bg-indigo-100/70 px-1.5 py-0.5 rounded mt-0.5">
-                            {{ v.promotion.display_text }}
+                            {{ rowPackagePromo(v) ? v.promotion.short_condition : v.promotion.display_text }}
                           </span>
                         }
                       </span>
@@ -147,6 +165,15 @@ export interface ProductSelection {
                           }
                           <span class="text-gray-400 text-xs line-through">{{ disc.original | money }}</span>
                           <span class="text-sm font-bold text-indigo-600">{{ disc.discounted | money }}</span>
+                        </span>
+                      } @else if (rowPackagePromo(v); as promo) {
+                        <!-- spec 081 (FR-016, corregido): min_qty > 1 nunca puebla
+                             discounted_price (discountFor arriba da null); en cuanto la cantidad
+                             configurada para ESTA variante ya satisface min_qty, se tacha el
+                             precio de lista y se muestra el total de un paquete completo. -->
+                        <span class="flex items-center gap-1.5">
+                          <span class="text-gray-400 text-xs line-through">{{ v.price | money }}</span>
+                          <span class="text-sm font-bold text-indigo-600">{{ packageTotal(v, promo) | money }}</span>
                         </span>
                       } @else {
                         <span class="text-sm font-bold text-gray-700">{{ variantPrice(v) | money }}</span>
@@ -315,7 +342,7 @@ export interface ProductSelection {
               <button
                 type="button"
                 (click)="dec()"
-                [disabled]="quantity() === 1"
+                [disabled]="quantity() === minQty()"
                 aria-label="Quitar uno"
                 class="w-11 h-11 rounded-full bg-white text-gray-700 shadow-sm hover:bg-gray-50 active:scale-95 text-xl font-bold leading-none flex items-center justify-center transition disabled:opacity-40"
               >−</button>
@@ -355,6 +382,15 @@ export class ProductSelectComponent implements OnInit {
    *  edición del rediseño de `create-order/code.html` (`store.editingSelection()`
    *  en `pos-terminal.store.ts`). `null`/ausente = modo "agregar" de siempre. */
   @Input() initialSelection: ProductSelection | null = null;
+  /** spec 081: `true` cuando el modal se abrió desde la pestaña "Promociones". */
+  @Input() fromPromotions = false;
+  /**
+   * spec 081 (research.md D5): closure hacia `cart.lines()` provisto por
+   * `public-menu.component.ts`, para poder recalcular la cantidad existente de
+   * CUALQUIER variante que el comensal seleccione dentro del modal, no solo la
+   * inicial (hallazgo C1 de `/speckit-analyze`).
+   */
+  @Input() existingQtyFor: (variantId: string, optionKey: string) => number = () => 0;
   @Output() added = new EventEmitter<ProductSelection>();
   @Output() cancelled = new EventEmitter<void>();
 
@@ -461,6 +497,42 @@ export class ProductSelectComponent implements OnInit {
     return chosen;
   });
 
+  /** Ids de opción elegidas, ordenados y unidos — misma forma de clave que `CartLine.optionKey`. */
+  private readonly currentOptionKey = computed(() =>
+    this.selectedOptions().map((c) => c.option.id).sort().join(','),
+  );
+
+  /**
+   * spec 081 (contrato §2): `1` fuera de "Promociones", o cuando la variante
+   * elegida no tiene ninguna regla vigente con cantidad mínima mayor a 1.
+   * No es `private`: la plantilla lo usa para deshabilitar "−" en el mínimo.
+   */
+  readonly minQty = computed(() =>
+    this.fromPromotions ? (this.selectedVariant()?.promotion?.min_qty ?? 1) : 1,
+  );
+
+  /** Unidades ya en el carrito para la variante+opciones actualmente elegidas. */
+  private readonly existingQty = computed(() =>
+    this.existingQtyFor(this.selectedVariant()?.id ?? '', this.currentOptionKey()),
+  );
+
+  /**
+   * spec 081 (research.md D4/D5, hallazgo C1 de `/speckit-analyze`): resincroniza
+   * `quantity` cada vez que `minQty()`/`existingQty()` cambian — lo que incluye un
+   * cambio de variante u opciones dentro del modal, no solo el instante en que se
+   * abrió. Fuera de "Promociones" (`fromPromotions == false`) no toca `quantity`
+   * en absoluto, para no pisar el modo edición (`initialSelection`) ni el arranque
+   * libre en 1 de siempre.
+   */
+  private readonly resyncQuantityForPromotions = effect(() => {
+    if (!this.fromPromotions) return;
+    const minQty = this.minQty();
+    const existingQty = this.existingQty();
+    this.quantity.set(
+      minQty === 1 ? 1 : existingQty % minQty === 0 ? minQty : minQty - (existingQty % minQty),
+    );
+  });
+
   /**
    * Precio de línea a cobrar por la cantidad realmente configurada.
    *
@@ -523,6 +595,40 @@ export class ProductSelectComponent implements OnInit {
   /** Precio efectivo de una presentación (con descuento si el backend lo trajo). */
   variantPrice(v: MenuVariant): number {
     return effectivePrice(v.price, v.discounted_price);
+  }
+
+  /**
+   * spec 081 (FR-016): total exacto de UN paquete completo (`promo.min_qty` unidades) para esta
+   * presentación, sin importar la cantidad que esté configurada en el modal — reusa
+   * `packagePrice()` (el mismo cálculo de `lineTotal()`) para no duplicar la regla de redondeo
+   * de `package_price` vs. `percent` (research.md D-4, `packagePrice()` más abajo).
+   */
+  packageTotal(v: MenuVariant, promo: MenuVariantPromotion): number {
+    return this.packagePrice(v.price, promo, promo.min_qty);
+  }
+
+  /**
+   * spec 081 (FR-015/FR-016, corregido tras probar en un entorno real): ¿la variante
+   * ACTUALMENTE elegida tiene una regla vigente que la cantidad ya configurada satisface?
+   * Deliberadamente independiente de `fromPromotions` — un comensal que encuentra el
+   * producto por el buscador y sube la cantidad a mano hasta el mínimo también debe ver el
+   * precio con descuento, no solo quien llegó desde la pestaña "Promociones". `fromPromotions`
+   * sigue gobernando únicamente el paso forzado de `inc()`/`dec()` (minQty arriba), nunca qué
+   * precio se muestra.
+   */
+  readonly packageDealActive = computed<boolean>(() => {
+    const promo = this.selectedVariant()?.promotion;
+    return !!promo && this.quantity() >= promo.min_qty;
+  });
+
+  /**
+   * Regla vigente de `v` si es la variante elegida Y la cantidad configurada ya la satisface —
+   * `null` en cualquier otro caso (otra fila, o la elegida pero sin alcanzar min_qty todavía).
+   */
+  rowPackagePromo(v: MenuVariant): MenuVariantPromotion | null {
+    if (v.id !== this.variantId()) return null;
+    const promo = v.promotion;
+    return promo && this.quantity() >= promo.min_qty ? promo : null;
   }
 
   discountFor(v: MenuVariant): DiscountInfo | null {
@@ -792,22 +898,24 @@ export class ProductSelectComponent implements OnInit {
   }
 
   inc(): void {
-    this.quantity.update((q) => q + 1);
+    this.quantity.update((q) => q + this.minQty());
   }
 
   dec(): void {
-    this.quantity.update((q) => Math.max(1, q - 1));
+    this.quantity.update((q) => Math.max(this.minQty(), q - this.minQty()));
   }
 
   confirm(): void {
     const variant = this.selectedVariant();
     if (!variant || !this.canConfirm()) return;
+    const minQty = this.minQty();
     this.added.emit({
       product: this.product,
       variant,
       options: this.selectedOptions(),
       quantity: this.quantity(),
       notes: this.notes().trim() || null,
+      stepQuantity: this.fromPromotions && minQty > 1 ? minQty : undefined,
     });
   }
 }

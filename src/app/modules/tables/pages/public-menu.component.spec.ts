@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
-import { PublicMenuComponent } from './public-menu.component';
+import { PROMOTIONS_TAB_ID, PublicMenuComponent } from './public-menu.component';
 import { DinerService } from '../services/diner.service';
 import { DinerTokenStore } from '../services/diner-token.store';
 import { DiningCartService } from '../services/dining-cart.service';
@@ -42,6 +42,7 @@ class FakeDiningCartService {
   readonly dinerName = signal('');
   readonly count = signal(0);
   readonly isEmpty = signal(true);
+  readonly lines = signal<{ productVariantId: string; optionKey: string; quantity: number }[]>([]);
   indexMenu(): void {}
   async load(): Promise<void> {}
   clear(): void {}
@@ -386,5 +387,164 @@ describe('PublicMenuComponent', () => {
 
     expect(el.textContent).toContain('🎉 Promo');
     expect(el.querySelector('.line-through')).not.toBeNull();
+  });
+
+  // ── spec 081 (US1) — pestaña dedicada de "Promociones" ────────────────────
+
+  it('FR-001/FR-008: la pestaña "Promociones" aparece en la navegación aunque no haya ninguna promoción vigente', async () => {
+    const categories: MenuCategory[] = [
+      { id: 'c1', name: 'Helados', products: [product({ id: 'p1' })] },
+    ];
+    const { fixture } = await createComponent('tok-1', categories, { withSession: true });
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('Promociones');
+  });
+
+  it('FR-002: seleccionar "Promociones" filtra a solo los productos con alguna variante en promoción vigente, sin importar la categoría', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [
+          product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] }),
+          product({ id: 'p2', name: 'Sin promo' }),
+        ],
+      },
+      {
+        id: 'c2', name: 'Bebidas',
+        products: [
+          product({ id: 'p3', name: 'Otra con promo', variants: [{ id: 'v3', name: 'Único', price: 6000, option_groups: [], available: true, promotion: promocion() }] }),
+        ],
+      },
+    ];
+    const { fixture, component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+    fixture.detectChanges();
+
+    const nombres = component.visibleProducts().map((p) => p.name);
+    expect(nombres).toEqual(['Con promo', 'Otra con promo']);
+  });
+
+  it('FR-003: una tarjeta de producto dentro de "Promociones" conserva la insignia y la condición, igual que en su categoría original', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [
+          product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] }),
+        ],
+      },
+    ];
+    const { fixture, component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('🎉 Promo');
+  });
+
+  it('FR-008: sin ninguna promoción vigente, "Promociones" muestra un aviso en vez de una grilla vacía sin explicación', async () => {
+    const categories: MenuCategory[] = [
+      { id: 'c1', name: 'Helados', products: [product({ id: 'p1' })] },
+    ];
+    const { fixture, component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+    fixture.detectChanges();
+
+    const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(texto).toContain('No hay promociones activas en este momento');
+  });
+
+  it('FR-009: seleccionar una categoría normal después de "Promociones" sigue mostrando todos sus productos, con o sin promoción', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [
+          product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] }),
+          product({ id: 'p2', name: 'Sin promo' }),
+        ],
+      },
+    ];
+    const { fixture, component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+    component.selectCategory('c1');
+    fixture.detectChanges();
+
+    const nombres = component.visibleProducts().map((p) => p.name);
+    expect(nombres).toEqual(['Con promo', 'Sin promo']);
+  });
+
+  // ── spec 081 (US3) — regresión: fuera de "Promociones" nada cambia ────────
+
+  it('FR-010: openProduct() fuera de "Promociones" no marca fromPromotions, aunque el producto tenga promoción', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [
+          product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] }),
+        ],
+      },
+    ];
+    const { component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory('c1');
+    component.openProduct(component.visibleProducts()[0]);
+
+    expect(component.selectedProductFromPromotions()).toBe(false);
+  });
+
+  it('FR-002/FR-011: openProduct() desde "Promociones" sí marca fromPromotions == true', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [
+          product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] }),
+        ],
+      },
+    ];
+    const { component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+    component.openProduct(component.visibleProducts()[0]);
+
+    expect(component.selectedProductFromPromotions()).toBe(true);
+  });
+
+  // ── Ajustes tras probar en un entorno real (2026-09-12) ───────────────────
+
+  it('con "Promociones" activa, activeCategory() es null — no se resalta ninguna categoría a la vez que "Promociones"', async () => {
+    const categories: MenuCategory[] = [
+      { id: 'c1', name: 'Helados', products: [product({ id: 'p1' })] },
+    ];
+    const { component } = await createComponent('tok-1', categories, { withSession: true });
+
+    component.selectCategory(PROMOTIONS_TAB_ID);
+
+    expect(component.activeCategory()).toBeNull();
+  });
+
+  it('FR-014: al ingresar con al menos una promoción vigente, "Promociones" queda seleccionada por defecto, sin que el comensal presione nada', async () => {
+    const categories: MenuCategory[] = [
+      {
+        id: 'c1', name: 'Helados',
+        products: [product({ id: 'p1', name: 'Con promo', variants: [{ id: 'v1', name: 'Único', price: 8000, option_groups: [], available: true, promotion: promocion() }] })],
+      },
+    ];
+    const { component } = await createComponent('tok-1', categories, { withSession: true });
+
+    expect(component.activeCategoryId()).toBe(PROMOTIONS_TAB_ID);
+  });
+
+  it('FR-014: sin ninguna promoción vigente, la primera categoría queda seleccionada, igual que antes de esta spec', async () => {
+    const categories: MenuCategory[] = [
+      { id: 'c1', name: 'Helados', products: [product({ id: 'p1' })] },
+    ];
+    const { component } = await createComponent('tok-1', categories, { withSession: true });
+
+    expect(component.activeCategoryId()).toBeNull();
+    expect(component.activeCategory()?.id).toBe('c1');
   });
 });
