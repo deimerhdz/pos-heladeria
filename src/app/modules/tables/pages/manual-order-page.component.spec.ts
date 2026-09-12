@@ -470,7 +470,7 @@ describe('ManualOrderPageComponent', () => {
     expect(topBar.textContent).not.toContain('Nueva orden');
   });
 
-  it('"Nueva orden", "Mesa asignada" y "Detalle del pedido" viven en el mismo panel derecho (spec 052, US1, FR-001/FR-002/FR-006; rediseño create-order/code.html)', async () => {
+  it('"Nueva orden" y "Mesa asignada" viven en el mismo panel derecho (spec 052, US1, FR-001/FR-002/FR-006; rediseño create-order/code.html)', async () => {
     createComponent('t1');
     tableService.tables.set([table({ id: 't1', number: 3 })]);
     fixture.detectChanges();
@@ -482,7 +482,6 @@ describe('ManualOrderPageComponent', () => {
     expect(rightPanel).toBeTruthy();
     expect(rightPanel!.textContent).toContain('Nueva orden');
     expect(rightPanel!.textContent).toContain('Mesa asignada');
-    expect(rightPanel!.textContent).toContain('Detalle del pedido');
     expect(rightPanel!.textContent).toContain('Crear pedido');
     expect(rightPanel!.textContent).not.toContain('Volver a la Terminal');
   });
@@ -762,6 +761,41 @@ describe('ManualOrderPageComponent', () => {
     // `ensureCheckoutDataLoaded()` (mismo pipeline de cobro que la terminal
     // de mesas) — ajeno a lo que prueba este test, solo se drena.
     for (const req of http.match(() => true)) req.flush([]);
+  });
+
+  it('bugfix: cambiar la mesa asignada en "orden-manual" conserva el carrito en curso (draftLines), no lo vacía', async () => {
+    createComponent('t1');
+    tableService.tables.set([
+      table({ id: 't1', number: 1, status: 'libre' }),
+      table({ id: 't2', number: 2, status: 'libre' }),
+    ]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Gaseosa' } as never,
+      variant: { id: 'v1', price: 3500 } as never,
+      options: [],
+      quantity: 3,
+      notes: null,
+    });
+    fixture.detectChanges();
+    expect(store.draftLines().length).toBe(1);
+
+    abrirSelectorMesas();
+    buscarEnSelectorMesas('2');
+    const opcionM2 = opcionesMesas().find((li) => li.textContent?.includes('Mesa 2'));
+    opcionM2!.click();
+    fixture.detectChanges();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    for (const req of http.match(() => true)) req.flush([]);
+
+    expect(store.selectedTableId()).toBe('t2');
+    expect(store.selectedOrderId()).toBeNull();
+    expect(store.draftLines().length).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('Gaseosa');
   });
 
   it('el listado de mesas ya no es una rejilla de botones, sino un select buscable (spec 053, US1, FR-001)', async () => {
