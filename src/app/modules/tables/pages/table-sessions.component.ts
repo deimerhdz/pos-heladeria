@@ -73,69 +73,74 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
            (extraído a un componente compartido con manual-order-page.component.ts). -->
       <app-pos-terminal-header />
 
-      <!-- Sub-barra: pestañas de tipo de orden + resumen de salón. -->
-      <div
-        class="bg-white border-b border-[#e5e7eb] px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0"
-      >
-        <div class="flex items-center gap-3">
-          <nav
-            class="flex items-center gap-1 bg-[#f3f4f6] p-1 rounded-[6px] overflow-x-auto sm:overflow-visible"
-          >
-            @for (t of orderTypeTabs; track t.key) {
-              <button
-                (click)="store.setOrderTypeTab(t.key)"
-                class="shrink-0 h-9 px-3.5 rounded-[6px] text-[13px] flex items-center gap-2 transition-colors whitespace-nowrap"
-                [class]="
-                  store.orderTypeTab() === t.key
-                    ? 'bg-white border border-[#e5e7eb] text-[#111827] font-semibold'
-                    : 'text-[#4b5563] hover:text-[#111827] font-medium'
-                "
-              >
-                {{ t.label }}
-              </button>
-            }
-          </nav>
-        </div>
+      <!-- Sub-barra: pestañas de tipo de orden + resumen de salón. Se oculta
+           en la vista de detalle de pedido (a pedido del usuario, el detalle
+           no necesita las pestañas de tipo ni el CTA de "Crear pedido nuevo",
+           ya tiene su propio botón de volver). -->
+      @if (!showingDetail()) {
+        <div
+          class="bg-white border-b border-[#e5e7eb] px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0"
+        >
+          <div class="flex items-center gap-3">
+            <nav
+              class="flex items-center gap-1 bg-[#f3f4f6] p-1 rounded-[6px] overflow-x-auto sm:overflow-visible"
+            >
+              @for (t of orderTypeTabs; track t.key) {
+                <button
+                  (click)="store.setOrderTypeTab(t.key)"
+                  class="shrink-0 h-9 px-3.5 rounded-[6px] text-[13px] flex items-center gap-2 transition-colors whitespace-nowrap"
+                  [class]="
+                    store.orderTypeTab() === t.key
+                      ? 'bg-white border border-[#e5e7eb] text-[#111827] font-semibold'
+                      : 'text-[#4b5563] hover:text-[#111827] font-medium'
+                  "
+                >
+                  {{ t.label }}
+                </button>
+              }
+            </nav>
+          </div>
 
-        <!-- spec 078 (US2, FR-007/FR-013/FR-015): el CTA "Crear pedido nuevo"
-             está fuera del guard de pestaña — visible y habilitado en las tres
-             pestañas y en los tres anchos, con etiqueta de texto siempre (nunca
-             solo el ícono +). Solo en "Mesas" exige una mesa libre; Domicilio y
-             Para llevar no exigen mesa y goToNewOrder() navega a la ruta sin
-             tableId con el query param tipo. -->
-        <div class="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            (click)="goToNewOrder()"
-            [disabled]="store.orderTypeTab() === 'mesas' && !store.newOrderTableId()"
-            [title]="
-              store.orderTypeTab() === 'mesas' && !store.newOrderTableId()
-                ? 'No hay ninguna mesa libre disponible'
-                : ''
-            "
-            class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <svg
-              class="w-4 h-4 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              viewBox="0 0 24 24"
+          <!-- spec 078 (US2, FR-007/FR-013/FR-015): el CTA "Crear pedido nuevo"
+               está fuera del guard de pestaña — visible y habilitado en las tres
+               pestañas y en los tres anchos, con etiqueta de texto siempre (nunca
+               solo el ícono +). Solo en "Mesas" exige una mesa libre; Domicilio y
+               Para llevar no exigen mesa y goToNewOrder() navega a la ruta sin
+               tableId con el query param tipo. -->
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              (click)="goToNewOrder()"
+              [disabled]="store.orderTypeTab() === 'mesas' && !store.newOrderTableId()"
+              [title]="
+                store.orderTypeTab() === 'mesas' && !store.newOrderTableId()
+                  ? 'No hay ninguna mesa libre disponible'
+                  : ''
+              "
+              class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" x2="12" y1="8" y2="16"></line>
-              <line x1="8" x2="16" y1="12" y2="12"></line>
-            </svg>
-            <span>Crear pedido nuevo</span>
-            <span
-              class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider"
-              >[F3]</span
-            >
-          </button>
+              <svg
+                class="w-4 h-4 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" x2="12" y1="8" y2="16"></line>
+                <line x1="8" x2="16" y1="12" y2="12"></line>
+              </svg>
+              <span>Crear pedido nuevo</span>
+              <span
+                class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider"
+                >[F3]</span
+              >
+            </button>
+          </div>
         </div>
-      </div>
+      }
 
       @if (store.loading()) {
         <div class="flex-1 flex items-center justify-center text-sm text-gray-400">
@@ -203,41 +208,26 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                    y no la acción principal de la pantalla (esa es "Cobrar" /
                    "Marcar pedido listo"), lleva el peso visual de una
                    secundaria -- outline en vez de relleno sólido. -->
-              <div class="shrink-0 px-4 pt-3">
+              <!--
+                A pedido del usuario: el botón "Volver a mesas" y el título
+                "Pedido de la mesa" van en la misma fila (antes en dos filas
+                separadas), con el título más grande. Ya no hay una vista
+                separada "Pagos por confirmar" (con su propio título y sin la
+                lista de ítems al lado) -- un pago QR pendiente de confirmar
+                se ve integrado en esta misma vista, junto a la lista de
+                ítems y el resto del cobro (ver app-pos-checkout-panel).
+              -->
+              <div
+                class="flex items-center gap-3 px-4 py-3 border-b border-[#e5e7eb] shrink-0"
+              >
                 <button
                   data-testid="page-back-button"
                   (click)="store.cancelSelection()"
-                  class="px-3 py-1.5 text-[13px] font-medium rounded-[6px] border border-[#4f46e5] text-[#4f46e5] bg-white hover:bg-[#eef2ff] transition-colors"
+                  class="px-3 py-1.5 text-[13px] font-medium rounded-[6px] border border-[#4f46e5] text-[#4f46e5] bg-white hover:bg-[#eef2ff] transition-colors shrink-0"
                 >
                   ← Volver a mesas
                 </button>
-              </div>
-              <!--
-                A pedido del usuario: ya no hay una vista separada
-                "Pagos por confirmar" (con su propio título y sin la lista de
-                ítems al lado) -- un pago QR pendiente de confirmar se ve
-                integrado en esta misma vista de "Pedido de la mesa", junto a
-                la lista de ítems y el resto del cobro (ver
-                app-pos-checkout-panel). El título ya no cambia según el
-                estado ni hace falta alternar entre pestañas. El botón de
-                silenciar la campana vive aquí porque tiene que verse pase lo
-                que pase en el centro.
-              -->
-              <div
-                class="flex items-center justify-between gap-2 px-4 py-2 border-b border-[#e5e7eb] shrink-0"
-              >
-                <span class="text-[13px] font-semibold text-[#4b5563]">Pedido de la mesa</span>
-                <button
-                  (click)="store.sound.toggleMute()"
-                  [title]="
-                    store.sound.muted()
-                      ? 'Activar el sonido de pedido nuevo'
-                      : 'Silenciar el sonido de pedido nuevo'
-                  "
-                  class="px-2 py-1 rounded-[6px] text-base hover:bg-[#f3f4f6] transition-colors"
-                >
-                  {{ store.sound.muted() ? '🔕' : '🔔' }}
-                </button>
+                <span class="text-[18px] font-semibold text-[#111827]">Pedido de la mesa</span>
               </div>
 
               <!-- Por debajo de lg: una única región de scroll para toda la

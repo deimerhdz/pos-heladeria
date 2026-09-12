@@ -115,19 +115,6 @@ import { splitVariantLabel } from '../services/menu-lookup';
                   >Cobro pendiente</span
                 >
               }
-              <!-- "Marcar pedido listo" vivía como fila propia a todo el
-                   ancho debajo de la lista -- a pedido del usuario, se sube
-                   a la cabecera, a la derecha de "Mesa N", junto con las
-                   pestañas/insignias que ya viven ahí. -->
-              @if (store.selectedOrder() && !store.kitchenReady() && !store.selectedOrderPending()) {
-                <button
-                  (click)="store.marcarListo()"
-                  [disabled]="store.submitting()"
-                  class="px-3 py-1.5 rounded-[6px] border border-[#bbf7d0] text-[12px] font-semibold text-[#15803d] hover:bg-[#f0fdf4] disabled:opacity-50 transition-colors whitespace-nowrap"
-                >
-                  Marcar pedido listo
-                </button>
-              }
             </div>
           </div>
 
