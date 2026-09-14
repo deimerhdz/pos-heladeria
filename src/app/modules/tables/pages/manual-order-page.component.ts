@@ -376,9 +376,6 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
           <div class="border-b border-[#e5e7eb] bg-white shrink-0 p-3 flex flex-col gap-2.5">
             <div class="flex items-center justify-between">
               <h2 class="text-[14px] font-bold tracking-tight text-[#111827]">Nueva orden</h2>
-              <span class="flex items-center gap-1 text-[11px] text-[#15803d] font-semibold">
-                <span class="w-1.5 h-1.5 bg-[#15803d] rounded-full inline-block"></span> Abierta
-              </span>
             </div>
 
             <div class="grid grid-cols-3 p-0.5 bg-[#f3f4f6] border border-[#e5e7eb] rounded-[6px]">
@@ -644,9 +641,6 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                mockup). -->
           <div class="lg:flex-1 lg:overflow-y-auto px-4 py-3 flex flex-col bg-white">
             <div class="flex items-center gap-2 flex-wrap pb-3 border-b border-[#e5e7eb]">
-              <h3 class="text-[17px] font-bold text-[#111827] tracking-tight">
-                Detalle del pedido
-              </h3>
               <span
                 class="px-2 py-0.5 text-[12px] font-medium text-[#4b5563] bg-[#f3f4f6] border border-[#e5e7eb] rounded-[6px] whitespace-nowrap"
                 >Ítems: {{ store.cartView().length }}</span
@@ -1119,7 +1113,11 @@ export class ManualOrderPageComponent implements OnInit, OnDestroy {
   }
 
   selectTable(id: string): void {
-    this.store.selectTable(id);
+    // `preserveDraft`: esta pantalla arma SIEMPRE un pedido nuevo -- cambiar
+    // de mesa aquí es solo reasignar dónde se sentará ese pedido en curso,
+    // nunca cambiar de sesión, así que el carrito (`draftLines()`) no debe
+    // vaciarse (bugfix: antes se perdía todo lo agregado al tocar otra mesa).
+    this.store.selectTable(id, { preserveDraft: true });
     // Bugfix: esta pantalla arma SIEMPRE un pedido nuevo (`draftLines()`) --
     // nunca edita uno existente. `selectTable()` autoselecciona el primer
     // pedido activo de la mesa (`selectedOrderId`), pensado para la terminal

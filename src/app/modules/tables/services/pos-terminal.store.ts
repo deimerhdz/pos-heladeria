@@ -1406,7 +1406,15 @@ export class PosTerminalStore {
   }
 
   // ─── Selección de mesa / pedido ───────────────────────────────────────────────
-  selectTable(tableId: string): void {
+  /**
+   * `preserveDraft` es solo para `ManualOrderPageComponent`: esa pantalla
+   * arma siempre un pedido nuevo y reutiliza `selectTable()` únicamente para
+   * reasignar a qué mesa se atará ese pedido, sin que eso deba vaciar el
+   * carrito en curso. `pos-tables-panel`/`table-sessions` (Terminal de
+   * Mesas) NO deben pasarlo: ahí cambiar de mesa sí es cambiar de
+   * sesión/pedido y el borrador debe limpiarse.
+   */
+  selectTable(tableId: string, options?: { preserveDraft?: boolean }): void {
     // Fuente `tableOrders()` (incluye los pagos QR por confirmar) -- a pedido
     // del usuario, una mesa con un único pago pendiente y nada más ya
     // arranca con ese pedido seleccionado (mismo pipeline de carrito que
@@ -1416,7 +1424,7 @@ export class PosTerminalStore {
     this.selectedTableId.set(tableId);
     void this.loadSessionBill(tableId);
     this.prefetchPaidOrderSales(tableId);
-    this.resetTransient();
+    this.resetTransient(options);
     if (list.length > 0) {
       this.selectedOrderId.set(list[0].id);
       this.customerName.set(list[0].customer_name || '');
@@ -1529,8 +1537,8 @@ export class PosTerminalStore {
     this.resetTransient();
   }
 
-  private resetTransient(): void {
-    this.draftLines.set([]);
+  private resetTransient(options?: { preserveDraft?: boolean }): void {
+    if (!options?.preserveDraft) this.draftLines.set([]);
     this.catalogOpen.set(false);
     this.catalogSearchText.set('');
     this.configuringProduct.set(null);

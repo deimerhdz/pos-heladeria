@@ -633,6 +633,44 @@ describe('PosTerminalStore.selectTable', () => {
 
     expect(store.selectedOrder()).toBeNull();
   });
+
+  it('sin options, cambiar de mesa vacía el borrador (draftLines) — comportamiento de la Terminal de Mesas', () => {
+    store.orders.set([]);
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    expect(store.draftLines().length).toBe(1);
+
+    store.selectTable('t2');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    expect(store.draftLines().length).toBe(0);
+  });
+
+  it('con { preserveDraft: true }, cambiar de mesa conserva el borrador (draftLines) — uso de "Nueva orden"', () => {
+    store.orders.set([]);
+    store.selectTable('t1');
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    store.addDraftFromSelection({
+      product: { id: 'p1', name: 'Mango Tropical' } as never,
+      variant: { id: 'v1', price: 5000, option_groups: [] } as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    expect(store.draftLines().length).toBe(1);
+
+    store.selectTable('t2', { preserveDraft: true });
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    expect(store.draftLines().length).toBe(1);
+  });
 });
 
 describe('PosTerminalStore.voidPersistedItem — spec 029, Historia 1', () => {
