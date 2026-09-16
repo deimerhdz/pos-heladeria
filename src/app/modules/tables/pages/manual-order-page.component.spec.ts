@@ -531,7 +531,10 @@ describe('ManualOrderPageComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('img')).toBeNull();
-    expect(fixture.nativeElement.querySelector('app-icon[name="image-off"]')).toBeTruthy();
+    const ligaduras = Array.from(
+      fixture.nativeElement.querySelectorAll('app-mi-icon .material-icons-outlined'),
+    ).map((n) => (n as HTMLElement).textContent?.trim());
+    expect(ligaduras).toContain('hide_image');
     const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(texto).toContain('Sin Foto');
   });
@@ -1298,6 +1301,63 @@ describe('ManualOrderPageComponent', () => {
         (b as HTMLButtonElement).textContent?.includes('Limpiar todo'),
       ),
     ).toBeUndefined();
+  });
+
+  it('ningún ícono se renderiza ya como SVG artesanal ni con forma de cono de helado (spec 082)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    const menuService = TestBed.inject(MenuService);
+    menuService.categories.set([menuCategory([menuProduct({ id: 'p1', name: 'Fresa' })])]);
+    store.setCatalogCategory('c1');
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    // "tune" reemplaza el ícono con forma de cono/copa de helado de "Modificar
+    // Toppings" (data-model.md, nota de heladería) — no debe quedar ningún
+    // ícono con esa forma, y "tune" debe ser el que la reemplaza.
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['arrow_back', 'search', 'table_restaurant', 'shopping_bag', 'delivery_dining']),
+    );
+  });
+
+  it('"Modificar Toppings" (antes con forma de cono de helado) renderiza la ligadura "tune", no el ícono de reserva (spec 082)', async () => {
+    createComponent('t1');
+    tableService.tables.set([table({ id: 't1', number: 3 })]);
+    fixture.detectChanges();
+    await Promise.resolve();
+    http.expectOne(`${API}/table-sessions`).flush([]);
+
+    const product = {
+      id: 'p1',
+      name: 'Mango Tropical',
+      description: null,
+      image_url: null,
+      available: true,
+      option_groups: [],
+      variants: [{ id: 'v1', name: 'Única', price: 5000, option_groups: [], available: true }],
+    };
+    store.addDraftFromSelection({
+      product: product as never,
+      variant: product.variants[0] as never,
+      options: [],
+      quantity: 1,
+      notes: null,
+    });
+    fixture.detectChanges();
+
+    const toppingsButton = fixture.nativeElement.querySelector(
+      '[title="Modificar Toppings"]',
+    ) as HTMLButtonElement;
+    expect(toppingsButton).toBeTruthy();
+    const icon = toppingsButton.querySelector('.material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('tune');
   });
 });
 

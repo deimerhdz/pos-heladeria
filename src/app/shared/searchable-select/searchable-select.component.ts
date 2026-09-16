@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 import { normalizeText } from '../normalize-text';
+import { IconMiComponent } from '../icon-mi/icon-mi.component';
 
 export interface SearchableSelectOption {
   id: string;
@@ -31,6 +32,7 @@ export interface SearchableSelectOption {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
+  imports: [IconMiComponent],
   template: `
     <div class="relative">
       <button
@@ -42,10 +44,7 @@ export interface SearchableSelectOption {
         [class.border-gray-200]="true"
       >
         <span class="truncate" [class.text-gray-400]="!value()">{{ selectedLabel() || placeholder }}</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round" class="w-4 h-4 text-gray-400 shrink-0">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <app-mi-icon name="expand_more" [size]="16" class="text-gray-400 shrink-0" />
       </button>
 
       @if (open()) {

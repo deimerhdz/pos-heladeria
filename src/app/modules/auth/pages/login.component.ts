@@ -5,6 +5,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { UserRole } from '../../../core/interfaces/user.interface';
 import { TenantContextService } from '../../../core/tenant/tenant-context.service';
 import { PasswordInputComponent } from '../../../shared/password-input/password-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 const ROLE_HOME: Record<UserRole, string> = {
   [UserRole.SUPER_ADMIN]: '/dashboard/admin',
@@ -16,7 +17,7 @@ const ROLE_HOME: Record<UserRole, string> = {
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, PasswordInputComponent, RouterLink],
+  imports: [ReactiveFormsModule, PasswordInputComponent, RouterLink, IconMiComponent],
   template: `
     <!-- lg:h-screen (y no solo min-h): fija el alto al viewport para que el panel
          derecho no empuje la página y deje el pie fuera de pantalla. -->
@@ -108,21 +109,7 @@ const ROLE_HOME: Record<UserRole, string> = {
                 class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 mt-2"
               >
                 @if (isLoading()) {
-                  <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      class="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    />
-                    <path
-                      class="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
+                  <app-mi-icon name="autorenew" ariaLabel="Cargando" [size]="16" class="animate-spin" />
                   Ingresando...
                 } @else {
                   Iniciar sesión

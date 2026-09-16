@@ -6,11 +6,12 @@ import { TableFormComponent } from '../components/table-form.component';
 import { TableQrComponent } from '../components/table-qr.component';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import { ToastService } from '../../../shared/feedback/toast.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-tables-page',
   standalone: true,
-  imports: [RouterLink, TableFormComponent, TableQrComponent, PaginationBarComponent],
+  imports: [RouterLink, TableFormComponent, TableQrComponent, PaginationBarComponent, IconMiComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -52,7 +53,7 @@ import { ToastService } from '../../../shared/feedback/toast.service';
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           @if (tableService.pagedTables().length === 0) {
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
-              <div class="text-5xl mb-4">🪑</div>
+              <app-mi-icon name="table_restaurant" [size]="48" class="mb-4" />
               <p class="text-gray-600 font-medium">Aún no hay mesas registradas</p>
               <p class="text-gray-400 text-sm mt-1">Crea la primera mesa para generar su QR</p>
               <button
@@ -77,7 +78,9 @@ import { ToastService } from '../../../shared/feedback/toast.service';
                   <tr [class.opacity-50]="!table.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">🪑</div>
+                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <app-mi-icon name="table_restaurant" [size]="20" />
+                        </div>
                         <div>
                           <span class="text-sm font-medium" [class.text-gray-400]="!table.active" [class.text-gray-900]="table.active">
                             Mesa {{ table.number }}
@@ -111,26 +114,30 @@ import { ToastService } from '../../../shared/feedback/toast.service';
                         <button
                           (click)="openQr(table)"
                           title="Ver QR"
-                          class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors text-base"
+                          class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                         >
-                          📷
+                          <app-mi-icon name="photo_camera" ariaLabel="Ver QR" [size]="18" />
                         </button>
                         <button
                           (click)="openEdit(table)"
                           title="Editar"
                           class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                         >
-                          ✏️
+                          <app-mi-icon name="edit" ariaLabel="Editar" [size]="18" />
                         </button>
                         <button
                           (click)="onToggle(table)"
                           [title]="table.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
                           [class]="table.active
-                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                            : 'text-gray-400 hover:text-green-600 hover:bg-green-50'"
+                            ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                            : 'text-green-600 hover:text-green-700 hover:bg-green-50'"
                         >
-                          {{ table.active ? '🔴' : '🟢' }}
+                          <app-mi-icon
+                            name="circle"
+                            [ariaLabel]="table.active ? 'Desactivar' : 'Activar'"
+                            [size]="14"
+                          />
                         </button>
                       </div>
                     </td>

@@ -1,23 +1,24 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { CashSessionStore } from '../services/cash-session.store';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Modal de arqueo: conteo de efectivo por denominación, diferencia en vivo
- * frente al efectivo esperado y cierre del turno. Cierra solo con ✕ o Cancelar.
+ * frente al efectivo esperado y cierre del turno. Cierra solo con el botón de
+ * cerrar o Cancelar.
  */
 @Component({
   selector: 'app-cash-arqueo-modal',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconMiComponent],
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-none">
           <h2 class="text-base font-bold text-gray-900">Arqueo de caja</h2>
           <button type="button" (click)="store.closeModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

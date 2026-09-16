@@ -6,24 +6,25 @@ import { ProductService } from '../services/product.service';
 import { CategoryService } from '../../categories/services/category.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-products-page',
   standalone: true,
-  imports: [FormsModule, PaginationBarComponent],
+  imports: [FormsModule, PaginationBarComponent, IconMiComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">Productos</h1>
+          <h1 class="text-2xl font-bold text-gray-900">Carta del menú</h1>
           <p class="text-gray-500 text-sm mt-1">Gestiona el catálogo de productos</p>
         </div>
         <button
           (click)="openCreate()"
           class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
         >
-          <span>+</span> Nuevo producto
+          <app-mi-icon name="add" [size]="16" /> Nuevo producto
         </button>
       </div>
 
@@ -67,7 +68,7 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
           @if (productService.products().length === 0) {
             <!-- Empty state -->
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
-              <div class="text-5xl mb-4">🍦</div>
+              <app-mi-icon name="shopping_bag" [size]="48" class="mb-4" />
               @if (searchSignal() || statusFilterValue !== 'all') {
                 <p class="text-gray-600 font-medium">No hay productos que coincidan</p>
                 <p class="text-gray-400 text-sm mt-1">Intenta cambiar los filtros</p>
@@ -129,9 +130,9 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                           />
                         } @else {
                           <div
-                            class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0"
+                            class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0"
                           >
-                            🍦
+                            <app-mi-icon name="image-off" ariaLabel="Sin imagen" [size]="18" />
                           </div>
                         }
                         <div>
@@ -170,12 +171,21 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-1.5 flex-wrap">
                         @if (product.active) {
-                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Activo</span>
+                          <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"
+                            >Activo</span
+                          >
                         } @else {
-                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactivo</span>
+                          <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"
+                            >Inactivo</span
+                          >
                         }
                         @if (!product.available) {
-                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Agotado</span>
+                          <span
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"
+                            >Agotado</span
+                          >
                         }
                       </div>
                     </td>
@@ -185,18 +195,24 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                           (click)="onToggleAvailable(product)"
                           [title]="product.available ? 'Marcar agotado' : 'Marcar disponible'"
                           class="p-2 rounded-lg transition-colors"
-                          [class]="product.available
-                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                            : 'text-amber-500 hover:text-emerald-600 hover:bg-emerald-50'"
+                          [class]="
+                            product.available
+                              ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                              : 'text-amber-500 hover:text-emerald-600 hover:bg-emerald-50'
+                          "
                         >
-                          {{ product.available ? '🍦' : '🚫' }}
+                          <app-mi-icon
+                            [name]="product.available ? 'check_circle' : 'block'"
+                            [ariaLabel]="product.available ? 'Marcar agotado' : 'Marcar disponible'"
+                            [size]="18"
+                          />
                         </button>
                         <button
                           (click)="openEdit(product)"
                           title="Editar"
                           class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                         >
-                          ✏️
+                          <app-mi-icon name="edit" ariaLabel="Editar" [size]="18" />
                         </button>
                         <button
                           (click)="onToggle(product)"
@@ -204,11 +220,15 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                           class="p-2 rounded-lg transition-colors"
                           [class]="
                             product.active
-                              ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                              ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                              : 'text-green-600 hover:text-green-700 hover:bg-green-50'
                           "
                         >
-                          {{ product.active ? '🔴' : '🟢' }}
+                          <app-mi-icon
+                            name="circle"
+                            [ariaLabel]="product.active ? 'Desactivar' : 'Activar'"
+                            [size]="14"
+                          />
                         </button>
                       </div>
                     </td>
@@ -218,11 +238,14 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
             </table>
           }
           <app-pagination-bar
-            [page]="productService.page()" [size]="productService.size()"
-            [total]="productService.total()" [totalPages]="productService.totalPages()"
+            [page]="productService.page()"
+            [size]="productService.size()"
+            [total]="productService.total()"
+            [totalPages]="productService.totalPages()"
             [loading]="productService.loading()"
             (pageChange)="productService.loadProducts($event, productService.size())"
-            (sizeChange)="productService.loadProducts(1, $event)" />
+            (sizeChange)="productService.loadProducts(1, $event)"
+          />
         </div>
       }
     </div>
@@ -288,7 +311,10 @@ export class ProductsPageComponent implements OnInit, OnDestroy {
 
   async onToggleAvailable(product: Product): Promise<void> {
     const ok = await this.productService.toggleAvailable(product.id, product.available);
-    if (ok) this.toast.success(product.available ? `"${product.name}" marcado agotado` : `"${product.name}" disponible`);
+    if (ok)
+      this.toast.success(
+        product.available ? `"${product.name}" marcado agotado` : `"${product.name}" disponible`,
+      );
     else this.toast.error(this.productService.error() ?? 'No se pudo actualizar');
   }
 }

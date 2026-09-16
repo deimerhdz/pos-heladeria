@@ -13,6 +13,7 @@ import { PosTablesPanelComponent } from '../components/pos-tables-panel.componen
 import { PosOrderPanelComponent } from '../components/pos-order-panel.component';
 import { PosCheckoutPanelComponent } from '../components/pos-checkout-panel.component';
 import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Terminal POS de mesas (staff) -- diseño alineado al mockup de referencia
@@ -66,6 +67,7 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
     PosOrderPanelComponent,
     PosCheckoutPanelComponent,
     PosTerminalHeaderComponent,
+    IconMiComponent,
   ],
   template: `
     <div class="flex flex-col -m-4 md:-m-6 bg-[#f9fafb] ">
@@ -119,19 +121,7 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
               "
               class="h-9 sm:h-10 px-3 sm:px-3.5 rounded-[6px] bg-[#4f46e5] hover:bg-[#4338ca] text-white text-[12px] sm:text-[13px] font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <svg
-                class="w-4 h-4 shrink-0"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" x2="12" y1="8" y2="16"></line>
-                <line x1="8" x2="16" y1="12" y2="12"></line>
-              </svg>
+              <app-mi-icon name="add_circle" [size]="16" class="shrink-0" />
               <span>Crear pedido nuevo</span>
               <span
                 class="hidden md:inline px-1.5 py-0.5 bg-white/20 rounded-[6px] text-[10px] font-semibold uppercase tracking-wider"
@@ -279,7 +269,7 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
       <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
           <div class="text-center space-y-1">
-            <div class="text-4xl">✅</div>
+            <app-mi-icon name="check_circle" [size]="40" class="text-green-600" />
             <h2 class="text-lg font-bold text-gray-900">Pago registrado</h2>
             @if (store.lastSale(); as s) {
               <p class="text-sm text-gray-500">
@@ -307,9 +297,10 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                   </div>
                   <button
                     (click)="store.printReceipt(i)"
-                    class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shrink-0"
+                    class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shrink-0 inline-flex items-center gap-1.5"
                   >
-                    🧾 Imprimir
+                    <app-mi-icon name="receipt" [size]="16" />
+                    Imprimir
                   </button>
                 </div>
               }
@@ -325,9 +316,10 @@ import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.co
                    para imprimir el ticket de cada comensal de una vez. -->
               <button
                 (click)="store.printReceipt()"
-                class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50"
+                class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
               >
-                🧾 Imprimir todos
+                <app-mi-icon name="receipt" [size]="16" />
+                Imprimir todos
               </button>
             }
             <button

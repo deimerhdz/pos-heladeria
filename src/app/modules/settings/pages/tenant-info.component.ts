@@ -16,6 +16,7 @@ import {
   buildReceiptHtml,
   printReceiptHtml,
 } from '../../tables/services/receipt.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /** Tope del campo en el backend (`TenantUpdate.receipt_message`). */
 const MAX_MESSAGE = 255;
@@ -30,7 +31,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
 @Component({
   selector: 'app-tenant-info',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, IconMiComponent],
   template: `
     <div class="max-w-3xl space-y-6">
       @if (tenantInfo.error()) {
@@ -42,7 +43,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
       <!-- Logotipo -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <div class="flex items-center gap-3 mb-4">
-          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🎨</span>
+          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+            <app-mi-icon name="palette" [size]="20" />
+          </span>
           <div>
             <h2 class="text-base font-semibold text-gray-900">Logotipo</h2>
             <p class="text-xs text-gray-400">Se muestra en el menú de la app y en el menú del QR</p>
@@ -57,8 +60,8 @@ const ROLE_LABEL: Record<UserRole, string> = {
               class="w-16 h-16 rounded-xl object-cover border border-gray-100"
             />
           } @else {
-            <div class="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-2xl">
-              🏪
+            <div class="w-16 h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center">
+              <app-mi-icon name="storefront" [size]="24" />
             </div>
           }
 
@@ -83,7 +86,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
       <!-- Mensaje del recibo -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <div class="flex items-center gap-3 mb-4">
-          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🧾</span>
+          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+            <app-mi-icon name="receipt" [size]="20" />
+          </span>
           <div>
             <h2 class="text-base font-semibold text-gray-900">Mensaje del recibo</h2>
             <p class="text-xs text-gray-400">Cierra la factura que se imprime al cobrar una mesa</p>
@@ -116,7 +121,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
       <!-- Impresión (de este dispositivo) -->
       <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <div class="flex items-center gap-3 mb-4">
-          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🖨️</span>
+          <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+            <app-mi-icon name="print" [size]="20" />
+          </span>
           <div>
             <h2 class="text-base font-semibold text-gray-900">Impresión</h2>
             <p class="text-xs text-gray-400">
@@ -151,9 +158,10 @@ const ROLE_LABEL: Record<UserRole, string> = {
         <div class="flex items-center gap-3 mt-4 pt-4 border-t border-gray-100">
           <button
             (click)="printTest()"
-            class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            class="px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors inline-flex items-center gap-1.5"
           >
-            🧾 Imprimir prueba
+            <app-mi-icon name="receipt" [size]="16" />
+            Imprimir prueba
           </button>
           <p class="text-xs text-gray-400">
             En el diálogo del navegador: escala <span class="font-medium">100 %</span> (no
@@ -167,7 +175,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
         <!-- Negocio -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div class="flex items-center gap-3 mb-4">
-            <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🏪</span>
+            <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <app-mi-icon name="storefront" [size]="20" />
+            </span>
             <h2 class="text-base font-semibold text-gray-900">Negocio</h2>
           </div>
           <dl class="space-y-3 text-sm">
@@ -185,7 +195,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
         <!-- Cuenta -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div class="flex items-center gap-3 mb-4">
-            <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">👤</span>
+            <span class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <app-mi-icon name="person" [size]="20" />
+            </span>
             <h2 class="text-base font-semibold text-gray-900">Tu cuenta</h2>
           </div>
           <dl class="space-y-3 text-sm">

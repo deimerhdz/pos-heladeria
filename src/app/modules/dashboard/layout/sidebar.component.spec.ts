@@ -197,3 +197,81 @@ describe('SidebarComponent — clases de escritorio honran sidebarOpen() (spec 0
     expect(aside().classList.contains('translate-x-0')).toBe(false);
   });
 });
+
+/**
+ * Spec 082: ni la marca por defecto ni los ítems de navegación deben mostrar
+ * ya un ícono SVG artesanal (`app-icon`) ni temática de heladería.
+ */
+describe('SidebarComponent — íconos estandarizados (spec 082)', () => {
+  function crear(isSuperAdmin: boolean) {
+    const currentUser = signal<User | null>(makeUser({ isSuperAdmin, role: UserRole.ADMIN }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SidebarComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { currentUser } },
+        { provide: TenantInfoService, useValue: { businessName: () => 'Heladería', logoUrl: () => null } },
+      ],
+    });
+    const fixture = TestBed.createComponent(SidebarComponent);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('ningún ícono se renderiza ya como SVG artesanal (app-icon)', () => {
+    const el = crear(false);
+    expect(el.querySelector('svg')).toBeNull();
+  });
+
+  it('la marca por defecto de un tenant regular usa un ícono neutro, no el cono de helado', () => {
+    const el = crear(false);
+    expect(el.textContent).not.toContain('🍦');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('storefront');
+  });
+
+  it('la marca de super-admin usa el ícono neutro correspondiente', () => {
+    const el = crear(true);
+    expect(el.textContent).not.toContain('🛡️');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('admin_panel_settings');
+  });
+
+  it('los ítems de navegación renderizan su ícono con el nuevo componente', () => {
+    const el = crear(false);
+    const ligaduras = Array.from(el.querySelectorAll('nav app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    // Dashboard/Ventas/Reportes/Órdenes/Terminal de mesas/Caja/Usuarios/Ajustes visibles para ADMIN.
+    // "point_of_sale" aparece dos veces (Ventas y Terminal de mesas) — basta con
+    // que la lista lo contenga una vez para esta aserción.
+    expect(ligaduras).toEqual(
+      expect.arrayContaining([
+        'dashboard',
+        'point_of_sale',
+        'assessment',
+        'receipt_long',
+        'payments',
+        'group',
+        'settings',
+      ]),
+    );
+  });
+
+  it('el ícono de "Terminal de mesas" coincide con el del acceso rápido del dashboard para la misma ruta (regresión)', () => {
+    // NAV_ITEMS usa el nombre semántico heredado "sessions"; el acceso rápido
+    // del dashboard (admin-dashboard.component.ts) usa el nombre nuevo
+    // "point_of_sale" directamente. Antes resolvían a ligaduras distintas
+    // (event_seat vs. restaurant) para la misma ruta — este test falla si
+    // alguno de los dos vuelve a desalinearse.
+    const el = crear(false);
+    const link = Array.from(el.querySelectorAll('a')).find(
+      (a) => a.getAttribute('href') === '/dashboard/mesas-sesiones',
+    )!;
+    const icon = link.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('point_of_sale');
+  });
+});

@@ -10,13 +10,14 @@ import { FormsModule } from '@angular/forms';
 import { Supplier } from '../interfaces/supplier.interface';
 import { SuppliersService } from '../services/suppliers.service';
 import { SupplierFormComponent } from '../components/supplier-form.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 type ActiveFilter = '' | 'active' | 'inactive';
 
 @Component({
   selector: 'app-suppliers-page',
   standalone: true,
-  imports: [FormsModule, SupplierFormComponent],
+  imports: [FormsModule, SupplierFormComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="space-y-6">
@@ -28,9 +29,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
         </div>
         <button (click)="openCreate()"
           class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
+          <app-mi-icon name="add" [size]="16" />
           Nuevo proveedor
         </button>
       </div>

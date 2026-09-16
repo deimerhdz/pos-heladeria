@@ -16,11 +16,12 @@ import { SearchableSelectComponent } from '../../../shared/searchable-select/sea
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 import { PurchaseForm, PurchaseLineForm } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-purchase-form',
   standalone: true,
-  imports: [FormsModule, DecimalPipe, SearchableSelectComponent, MoneyInputComponent],
+  imports: [FormsModule, DecimalPipe, SearchableSelectComponent, MoneyInputComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -28,9 +29,7 @@ import { InventoryService } from '../services/inventory.service';
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-base font-bold text-gray-900">Nueva compra</h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 
@@ -90,9 +89,7 @@ import { InventoryService } from '../services/inventory.service';
                   </span>
                   <button type="button" (click)="removeRow($index)"
                     class="col-span-1 text-gray-400 hover:text-red-500 transition-colors flex justify-center">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
+                    <app-mi-icon name="close" ariaLabel="Quitar renglón" [size]="16" />
                   </button>
                 </div>
               }

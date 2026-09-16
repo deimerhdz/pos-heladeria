@@ -7,19 +7,21 @@ import { MenuService } from '../../../core/services/menu.service';
 import { buildMenuLookup } from '../../tables/services/menu-lookup';
 import { displayOrderStatus, orderStatusClass, orderStatusLabel } from '../order-status.util';
 import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-order-detail',
   standalone: true,
-  imports: [RouterLink, TenantDatePipe],
+  imports: [RouterLink, TenantDatePipe, IconMiComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center gap-3">
         <a
           routerLink="/dashboard/orders"
+          aria-label="Volver a la lista"
           class="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:border-indigo-300 hover:text-indigo-700 shadow-sm transition-all"
         >
-          ←
+          <app-mi-icon name="arrow_back" [size]="18" />
         </a>
         <div>
           <h1 class="text-2xl font-bold text-gray-900">Detalle de Orden</h1>
@@ -35,7 +37,7 @@ import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
         </div>
       } @else if (!order()) {
         <div class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400">
-          <p class="text-4xl mb-3">🔍</p>
+          <app-mi-icon name="search" [size]="40" class="mb-3" />
           <p class="font-medium text-gray-600">Orden no encontrada</p>
           <a routerLink="/dashboard/orders" class="mt-3 inline-block text-sm text-indigo-600 hover:underline">
             Volver a la lista

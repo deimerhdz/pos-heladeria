@@ -12,11 +12,12 @@ import {
 } from '../order-status.util';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-orders-page',
   standalone: true,
-  imports: [RouterLink, TenantDatePipe, PaginationBarComponent],
+  imports: [RouterLink, TenantDatePipe, PaginationBarComponent, IconMiComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-center justify-between">
@@ -28,7 +29,7 @@ import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
           (click)="reload()"
           class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm font-medium text-gray-600 hover:border-indigo-300 hover:text-indigo-700 shadow-sm transition-all"
         >
-          <span>↺</span> Actualizar
+          <app-mi-icon name="autorenew" [size]="16" /> Actualizar
         </button>
       </div>
 
@@ -85,7 +86,7 @@ import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
         <div class="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">{{ svc.error() }}</div>
       } @else if (svc.orders().length === 0) {
         <div class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400">
-          <p class="text-4xl mb-3">📋</p>
+          <app-mi-icon name="receipt_long" [size]="40" class="mb-3" />
           <p class="font-medium">{{ hasFilters() ? 'No hay órdenes con estos filtros' : 'No hay órdenes' }}</p>
         </div>
       } @else {
@@ -98,14 +99,18 @@ import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
               >
                 <div class="px-4 py-3 flex items-center justify-between gap-3">
                   <div class="flex items-center gap-3 flex-1 min-w-0">
-                    <div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shrink-0">🍽️</div>
+                    <div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                      <app-mi-icon name="restaurant" [size]="22" class="text-indigo-600" />
+                    </div>
                     <div class="min-w-0">
                       <p class="text-sm font-semibold text-gray-800 truncate">{{ tableLabel(order) }}</p>
                       <p class="text-xs text-gray-400">
                         {{ order.created_at | tenantDate: 'HH:mm' }} · {{ itemCount(order) }} ítem(s)
                       </p>
                       @if (order.customer_name) {
-                        <p class="text-xs text-indigo-500 font-medium mt-0.5">👤 {{ order.customer_name }}</p>
+                        <p class="text-xs text-indigo-500 font-medium mt-0.5 inline-flex items-center gap-0.5">
+                          <app-mi-icon name="person" [size]="12" /> {{ order.customer_name }}
+                        </p>
                       }
                     </div>
                   </div>
