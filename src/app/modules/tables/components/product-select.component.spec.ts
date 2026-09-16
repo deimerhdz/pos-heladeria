@@ -500,3 +500,171 @@ describe('ProductSelectComponent — [initialSelection] (edición de una línea 
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Agregar');
   });
 });
+
+// ── spec 081 (US2) — paso de cantidad al abrir desde "Promociones" ─────────
+// Algoritmo reactivo revisado tras /speckit-analyze (hallazgo C1): `quantity`
+// se resincroniza cada vez que `minQty`/`existingQty` cambian, lo que incluye
+// un cambio de variante dentro del modal (contrato §2).
+describe('ProductSelectComponent — [fromPromotions]/[existingQtyFor] (spec 081)', () => {
+  let fixture: ComponentFixture<ProductSelectComponent>;
+  let component: ProductSelectComponent;
+
+  function create(
+    product: MenuProduct,
+    opts: { fromPromotions?: boolean; existingQtyFor?: (variantId: string, optionKey: string) => number } = {},
+  ): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ imports: [ProductSelectComponent] });
+    fixture = TestBed.createComponent(ProductSelectComponent);
+    component = fixture.componentInstance;
+    component.product = product;
+    if (opts.fromPromotions !== undefined) component.fromPromotions = opts.fromPromotions;
+    if (opts.existingQtyFor) component.existingQtyFor = opts.existingQtyFor;
+    fixture.detectChanges(); // ngOnInit
+  }
+
+  it('(a) fromPromotions == false (valor por defecto): quantity arranca en 1 y el paso es 1, aunque la variante tenga promoción (FR-005/FR-010, sin cambio)', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [v] }));
+
+    expect(component.quantity()).toBe(1);
+    component.inc();
+    expect(component.quantity()).toBe(2);
+    component.inc();
+    expect(component.quantity()).toBe(3); // de 1 en 1, no de 2 en 2
+  });
+
+  it('(b) fromPromotions == true, min_qty == 2, sin unidades previas: quantity arranca en 2 y avanza de 2 en 2', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [v] }), { fromPromotions: true, existingQtyFor: () => 0 });
+
+    expect(component.quantity()).toBe(2);
+    component.inc();
+    expect(component.quantity()).toBe(4);
+    component.dec();
+    expect(component.quantity()).toBe(2);
+    component.dec(); // ya está en el mínimo: no baja de un paso completo dentro del modal
+    expect(component.quantity()).toBe(2);
+  });
+
+  it('(c) fromPromotions == true, min_qty == 1: quantity arranca en 1, igual que si no viniera de "Promociones" (FR-005)', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 1 }) });
+    create(makeProduct({ variants: [v] }), { fromPromotions: true, existingQtyFor: () => 0 });
+
+    expect(component.quantity()).toBe(1);
+  });
+
+  it('(d) fromPromotions == true, min_qty == 2, existingQtyFor devuelve 1: quantity arranca en 1 (múltiplo más cercano hacia arriba: 2 − 1), no en 2 (FR-012, hallazgo C2)', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [v] }), { fromPromotions: true, existingQtyFor: () => 1 });
+
+    expect(component.quantity()).toBe(1);
+  });
+
+  it('(e) cambiar de variante dentro del modal reajusta quantity de inmediato al nuevo min_qty, sin esperar a inc()/dec() (FR-011, hallazgo C1)', () => {
+    const sinPromo = makeVariant({ id: 'v1', name: 'Sin promo' });
+    const conPromo = makeVariant({ id: 'v2', name: 'Con promo', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [sinPromo, conPromo] }), { fromPromotions: true, existingQtyFor: () => 0 });
+
+    expect(component.quantity()).toBe(1); // arrancó en la variante sin promoción
+
+    component.selectVariant(conPromo);
+    fixture.detectChanges(); // fuerza el flush del effect() de resincronización
+    expect(component.quantity()).toBe(2); // reajustada sin tocar inc()/dec()
+
+    component.selectVariant(sinPromo);
+    fixture.detectChanges();
+    expect(component.quantity()).toBe(1); // vuelve a 1 al salir de la variante cubierta
+  });
+
+  it('confirm() emite stepQuantity == min_qty solo cuando fromPromotions && min_qty > 1', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [v] }), { fromPromotions: true, existingQtyFor: () => 0 });
+
+    let emitted: ProductSelection | undefined;
+    component.added.subscribe((sel) => (emitted = sel));
+    component.confirm();
+
+    expect(emitted?.stepQuantity).toBe(2);
+  });
+
+  it('confirm() no emite stepQuantity fuera de "Promociones" (FR-010)', () => {
+    const v = makeVariant({ id: 'v1', promotion: promocion({ min_qty: 2 }) });
+    create(makeProduct({ variants: [v] })); // fromPromotions por defecto: false
+
+    let emitted: ProductSelection | undefined;
+    component.added.subscribe((sel) => (emitted = sel));
+    component.confirm();
+
+    expect(emitted?.stepQuantity).toBeUndefined();
+  });
+
+  // ── FR-015/FR-016, corregidos (tercera ronda): el precio con descuento
+  // depende de si `quantity()` ya satisface `min_qty`, NUNCA de `fromPromotions`
+  // ni de cómo se llegó al modal (buscador, categoría o "Promociones") ───────
+
+  function headerPriceText(): string {
+    return (fixture.nativeElement.querySelector('[data-testid="header-price"]') as HTMLElement)
+      .textContent!.trim();
+  }
+
+  function packagePromo() {
+    return promocion({
+      min_qty: 2, type: 'package_price', value: 7000,
+      short_condition: '2 x $7.000', unit_equivalent_text: '$3.500 c/u',
+      display_text: '2 x $7.000 · $3.500 c/u',
+    });
+  }
+
+  it('FR-015: con quantity() >= min_qty, el encabezado es el total con descuento (lineTotal()) — sin importar fromPromotions', () => {
+    const v = makeVariant({ id: 'v1', price: 15000, promotion: packagePromo() });
+    create(makeProduct({ variants: [v] })); // fromPromotions por defecto: false, como el buscador
+    component.inc(); // 1 -> 2: alcanza min_qty a mano, igual que subir el "+" tras buscar el producto
+    fixture.detectChanges();
+
+    expect(component.quantity()).toBe(2);
+    expect(component.lineTotal()).toBe(7000);
+    expect(headerPriceText()).toContain('7.000');
+    expect(headerPriceText()).not.toContain('15.000');
+  });
+
+  it('FR-015: con quantity() < min_qty, el encabezado sigue mostrando el precio de lista (startingPrice()), sin cambio', () => {
+    const v = makeVariant({ id: 'v1', price: 15000, promotion: packagePromo() });
+    create(makeProduct({ variants: [v] })); // quantity arranca en 1, min_qty == 2: no califica todavía
+
+    expect(headerPriceText()).toContain('15.000');
+  });
+
+  it('FR-016: con quantity() >= min_qty, la fila tacha el precio de lista, muestra el total del paquete y la condición corta (sin "c/u")', () => {
+    const v = makeVariant({ id: 'v1', price: 15000, promotion: packagePromo() });
+    create(makeProduct({ variants: [v] }));
+    component.inc(); // 1 -> 2
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('2 x $7.000');
+    expect(el.textContent).not.toContain('$3.500 c/u');
+    const struck = el.querySelector('.line-through');
+    expect(struck?.textContent).toContain('15.000');
+    expect(el.textContent).toContain('7.000'); // total del paquete, en negrita
+  });
+
+  it('FR-016: con quantity() < min_qty, la fila conserva display_text completo y el precio sin tachar', () => {
+    const v = makeVariant({ id: 'v1', price: 15000, promotion: packagePromo() });
+    create(makeProduct({ variants: [v] })); // quantity arranca en 1, no alcanza min_qty == 2
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('2 x $7.000 · $3.500 c/u');
+    expect(el.querySelector('.line-through')).toBeNull();
+  });
+
+  it('FR-015/FR-016: activarse desde "Promociones" (fromPromotions == true) también muestra el descuento, sin cambio de comportamiento', () => {
+    // El paso forzado de FR-004 ya deja quantity() en min_qty desde que se abre el modal.
+    const v = makeVariant({ id: 'v1', price: 15000, promotion: packagePromo() });
+    create(makeProduct({ variants: [v] }), { fromPromotions: true, existingQtyFor: () => 0 });
+
+    expect(component.quantity()).toBe(2);
+    expect(headerPriceText()).toContain('7.000');
+    expect(fixture.nativeElement.querySelector('.line-through')?.textContent).toContain('15.000');
+  });
+});
