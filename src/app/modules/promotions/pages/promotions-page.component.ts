@@ -25,6 +25,7 @@ import {
 import { PromotionService } from '../services/promotion.service';
 import { PromoDisplay, getPromoDisplay } from '../services/promotion-pricing.util';
 import { conditionText, setDescriptor } from '../services/promotion-condition.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 type Screen = 'list' | 'form' | 'review';
 type StatusTab = PromotionStatus | '';
@@ -102,7 +103,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
 @Component({
   selector: 'app-promotions-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PaginationBarComponent, MoneyInputComponent],
+  imports: [FormsModule, PaginationBarComponent, MoneyInputComponent, IconMiComponent],
   template: `
     <div>
       @if (showMigrationBanner()) {
@@ -287,14 +288,14 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
             <div class="flex items-center gap-3">
               <button type="button" (click)="backToList()" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                <app-mi-icon name="arrow_back" [size]="16" />
                 Volver
               </button>
               <span class="text-gray-200">|</span>
               <h1 class="text-lg font-bold text-gray-900">{{ editingId() ? 'Editar promoción' : 'Nueva promoción' }}</h1>
             </div>
             <button type="button" class="w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600" title="Ayuda">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <app-mi-icon name="help_outline" ariaLabel="Ayuda" [size]="16" />
             </button>
           </div>
 
@@ -552,7 +553,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 (click)="goReview()"
                 class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <app-mi-icon name="check_circle" [size]="16" />
                 Revisar y guardar
               </button>
             }

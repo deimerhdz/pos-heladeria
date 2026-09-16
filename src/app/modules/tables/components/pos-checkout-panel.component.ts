@@ -21,6 +21,7 @@ import {
   paymentIssue,
   paymentLines,
 } from '../services/payment-draft.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Cuenta de la mesa y cobro -- se apila debajo de `app-pos-order-panel`
@@ -65,6 +66,7 @@ import {
     PaymentInputComponent,
     BillSummaryComponent,
     PaymentAttemptReviewPanelComponent,
+    IconMiComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // spec 078 (US3/US4, research.md D4/D5): min-w-0 para que cliente/método
@@ -247,7 +249,7 @@ import {
                     title="Editar nombre de facturación"
                     class="absolute right-2 inset-y-0 flex items-center text-[#9ca3af] hover:text-[#4b5563] transition-colors"
                   >
-                    ✏️
+                    <app-mi-icon name="edit" ariaLabel="Editar nombre de facturación" [size]="16" />
                   </button>
                 </div>
               </div>
@@ -350,9 +352,10 @@ import {
               @if (!store.selectedOrderPending() && store.centralState() !== 'validar-pago') {
               <button
                 (click)="store.printOrderInvoice(order.id)"
-                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] transition-colors"
+                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] transition-colors inline-flex items-center justify-center gap-1.5"
               >
-                🧾 Imprimir Factura
+                <app-mi-icon name="receipt" [size]="16" />
+                Imprimir Factura
               </button>
               }
             }
@@ -368,9 +371,10 @@ import {
               <button
                 (click)="store.releaseTable()"
                 [disabled]="store.submitting()"
-                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] disabled:opacity-40 transition-colors"
+                class="w-full min-h-11 py-2 border border-[#e5e7eb] rounded-[6px] text-[13px] font-medium text-[#4b5563] hover:bg-[#f9fafb] disabled:opacity-40 transition-colors inline-flex items-center justify-center gap-1.5"
               >
-                🔓 Liberar Mesa
+                <app-mi-icon name="lock_open" [size]="16" />
+                Liberar Mesa
               </button>
             }
           </div>

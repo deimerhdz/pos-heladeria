@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { SearchableSelectComponent } from './searchable-select.component';
 
 /**
@@ -8,6 +8,7 @@ import { SearchableSelectComponent } from './searchable-select.component';
  */
 describe('SearchableSelectComponent', () => {
   let component: SearchableSelectComponent;
+  let fixture: ComponentFixture<SearchableSelectComponent>;
 
   const OPCIONES = [
     { id: '1', label: 'Café · kg' },
@@ -18,7 +19,8 @@ describe('SearchableSelectComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({ imports: [SearchableSelectComponent] });
-    component = TestBed.createComponent(SearchableSelectComponent).componentInstance;
+    fixture = TestBed.createComponent(SearchableSelectComponent);
+    component = fixture.componentInstance;
     component.options = OPCIONES;
   });
 
@@ -88,5 +90,13 @@ describe('SearchableSelectComponent', () => {
   it('una opción disabled sigue apareciendo en el listado filtrado (spec 053)', () => {
     component.options = [...OPCIONES, { id: '5', label: 'Mesa 5 · Ocupada', disabled: true }];
     expect(buscar('Mesa 5')).toEqual(['Mesa 5 · Ocupada']);
+  });
+
+  it('el chevron desplegable ya no es un SVG artesanal (spec 082)', () => {
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('expand_more');
   });
 });

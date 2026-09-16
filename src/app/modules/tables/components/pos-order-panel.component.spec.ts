@@ -831,10 +831,10 @@ describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', ()
     expect(addr.className).not.toMatch(/line-clamp/);
   });
 
-  it('el valor del 🛵 es store.fmt(selectedOrder().delivery_fee) — el mismo número del total de la tarjeta (FR-029)', () => {
+  it('el valor del ícono de domicilio es store.fmt(selectedOrder().delivery_fee) — el mismo número del total de la tarjeta (FR-029)', () => {
     seleccionarDomicilio({ delivery_fee: 6000 });
     const value = Array.from(deliveryRow().querySelectorAll('span')).find((s) =>
-      s.textContent?.includes('🛵'),
+      s.textContent?.includes('Domicilio:'),
     ) as HTMLElement;
     expect(value.textContent).toContain(store.fmt(6000));
   });
@@ -855,5 +855,19 @@ describe('PosOrderPanelComponent — pedido sin mesa (spec 059, Historia 3)', ()
     fixture.detectChanges();
 
     expect(deliveryRow()).toBeNull();
+  });
+
+  it('los íconos de dirección/teléfono/domicilio ya no son emoji (spec 082)', () => {
+    seleccionarDomicilio();
+    const el = deliveryRow();
+    expect(el.textContent).not.toContain('📍');
+    expect(el.textContent).not.toContain('📞');
+    expect(el.textContent).not.toContain('🛵');
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['location_on', 'call', 'delivery_dining']),
+    );
   });
 });

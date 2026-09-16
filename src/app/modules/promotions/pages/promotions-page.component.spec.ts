@@ -34,6 +34,19 @@ describe('PromotionsPageComponent', () => {
     http.verify();
   });
 
+  it('los íconos del formulario (volver, ayuda, revisar) ya no son SVG artesanales (spec 082)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.componentInstance.screen.set('form');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(expect.arrayContaining(['arrow_back', 'help_outline', 'check_circle']));
+  });
+
   it('la ventana de vigencia (date) va string-a-string, sin corrimiento de día', () => {
     const fixture = TestBed.createComponent(PromotionsPageComponent);
     fixture.detectChanges();

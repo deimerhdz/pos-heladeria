@@ -27,6 +27,7 @@ import { SearchableSelectComponent } from '../../../shared/searchable-select/sea
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
 import { TenantDatePipe } from '../../../shared/pipes/tenant-date.pipe';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 type Tab = 'items' | 'purchases' | 'movements';
 type TypeFilter = '' | InventoryItemType;
@@ -44,6 +45,7 @@ type ActiveFilter = '' | 'active' | 'inactive';
     PurchaseFormComponent,
     SearchableSelectComponent,
     PaginationBarComponent,
+    IconMiComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -58,18 +60,14 @@ type ActiveFilter = '' | 'active' | 'inactive';
           @if (tab() === 'items') {
             <button (click)="openCreate()"
               class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-              </svg>
+              <app-mi-icon name="add" [size]="16" />
               Nuevo insumo
             </button>
           }
           @if (tab() === 'purchases') {
             <button (click)="showPurchase.set(true)"
               class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-              </svg>
+              <app-mi-icon name="add" [size]="16" />
               Nueva compra
             </button>
           }
@@ -342,7 +340,9 @@ type ActiveFilter = '' | 'active' | 'inactive';
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
           <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 class="text-base font-bold text-gray-900">Recibir compra</h2>
-            <button type="button" (click)="receivePurchase.set(null)" class="text-gray-400 hover:text-gray-600">✕</button>
+            <button type="button" (click)="receivePurchase.set(null)" class="text-gray-400 hover:text-gray-600">
+              <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
+            </button>
           </div>
           <div class="p-6 space-y-3 overflow-y-auto">
             <p class="text-sm text-gray-500">Indica cuánto recibes ahora de cada ítem. Puedes recibir parcialmente.</p>

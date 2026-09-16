@@ -85,7 +85,7 @@ describe('TableSessionsComponent — diálogo de éxito sin botón duplicado (sp
 
   const printButtons = (): HTMLButtonElement[] =>
     Array.from(fixture.nativeElement.querySelectorAll('button')).filter((b) =>
-      (b as HTMLButtonElement).textContent?.includes('🧾'),
+      (b as HTMLButtonElement).textContent?.includes('Imprimir'),
     ) as HTMLButtonElement[];
 
   it('un solo comprobante: no ofrece ningún botón de impresión en el diálogo', () => {
@@ -106,9 +106,26 @@ describe('TableSessionsComponent — diálogo de éxito sin botón duplicado (sp
     ]);
     fixture.detectChanges();
 
-    const textos = printButtons().map((b) => b.textContent?.trim());
-    expect(textos).toContain('🧾 Imprimir todos');
-    expect(textos.filter((t) => t === '🧾 Imprimir')).toHaveLength(2);
+    const textos = printButtons().map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
+    expect(textos.some((t) => t?.endsWith('Imprimir todos'))).toBe(true);
+    expect(textos.filter((t) => t?.endsWith('Imprimir') && !t.endsWith('Imprimir todos'))).toHaveLength(2);
+  });
+
+  it('los botones de imprimir ya no usan el emoji 🧾 (spec 082)', () => {
+    store.successOpen.set(true);
+    store.lastSale.set({ total: 20000, customer: 'Mostrador' });
+    store.lastReceipts.set([
+      { saleId: 's1', customerName: 'Ana', total: 10000 } as ReturnType<PosTerminalStore['lastReceipts']>[number],
+    ]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    expect(el.textContent).not.toContain('🧾');
+    expect(el.textContent).not.toContain('✅');
+    const dialogo = el.querySelector('.fixed.inset-0')!;
+    const icon = dialogo.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('check_circle');
   });
 });
 

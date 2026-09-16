@@ -292,4 +292,24 @@ describe('PosTablesPanelComponent', () => {
 
     expect(selectSpy).toHaveBeenCalledWith('o1');
   });
+
+  it('el buscador de la pestaña "Mesas" ya no usa un SVG artesanal (spec 082)', () => {
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('search');
+  });
+
+  it('el estado vacío de "Domicilios" ya no usa el emoji 🧾 (spec 082)', () => {
+    fixture.detectChanges();
+    store.setOrderTypeTab('domicilios');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    expect(el.textContent).not.toContain('🧾');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('receipt');
+  });
 });

@@ -198,6 +198,20 @@ describe('PosCatalogDrawerComponent', () => {
     expect(store.cardPromotionText(store.categories()[0].products[0].variants)).toBe('-15%');
   });
 
+  it('la insignia de promoción ya no usa el emoji 🏷️ (spec 082)', () => {
+    menuService.categories.set([
+      { id: 'c1', name: 'Bebidas', products: [
+        productWithPromo('p1', 'Cono', { short_condition: '-15%', display_text: '$6.800 c/u', min_qty: 1, type: 'percent', value: 15 }),
+      ] },
+    ]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).not.toContain('🏷️');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('sell');
+  });
+
   it('"← Volver a la lista" cierra el catálogo sin perder ningún ítem ya agregado', () => {
     store.draftLines.set([
       {

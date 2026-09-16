@@ -17,11 +17,12 @@ import {
 } from '@angular/forms';
 import { Category, CategoryForm } from '../interfaces/category.interface';
 import { CategoryService } from '../services/category.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-category-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -35,7 +36,7 @@ import { CategoryService } from '../services/category.service';
             (click)="onCancel()"
             class="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            ✕
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

@@ -273,7 +273,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     });
 
     const texto = fixture.nativeElement.textContent as string;
-    expect(texto).toContain('✓ Pago confirmado');
+    expect(texto).toContain('Pago confirmado');
     expect(texto).toContain('Cambio: $ 0');
   });
 
@@ -398,7 +398,7 @@ describe('PaymentAttemptReviewPanelComponent', () => {
     });
 
     const texto = fixture.nativeElement.textContent as string;
-    expect(texto).toContain('✓ Pago confirmado');
+    expect(texto).toContain('Pago confirmado');
     expect(texto).toContain('Recibido: $ 22.000');
     expect(texto).toContain('Cambio: $ 2.000');
   });
@@ -490,5 +490,19 @@ describe('PaymentAttemptReviewPanelComponent', () => {
 
     expect(rejectOrderButton()).toBeUndefined();
     expect(fixture.nativeElement.textContent as string).toContain('Rechazar');
+  });
+
+  it('el método de pago pendiente ya no usa el emoji 💳 (spec 082)', async () => {
+    await renderWith(
+      [attempt({ status: 'pendiente', payment_method_name: 'Efectivo' })],
+      order('o1', [item('8000', 1)]),
+      preview({ total: '8000' }),
+    );
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    expect(el.textContent).not.toContain('💳');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('credit_card');
   });
 });

@@ -162,4 +162,12 @@ describe('OptionFormComponent', () => {
     await Promise.resolve();
     http.expectOne(GROUPS).flush([]);
   });
+
+  it('el botón de cerrar ya no es un SVG artesanal (spec 082)', async () => {
+    await create(makeGroup(), null, false);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('close');
+  });
 });

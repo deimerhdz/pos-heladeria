@@ -7,6 +7,7 @@ import { UserRoleModalComponent } from '../components/user-role-modal.component'
 import { TenantUser } from '../interfaces/user-profile.interface';
 import { InvitationsService } from '../services/invitations.service';
 import { UsersService } from '../services/users.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
@@ -30,6 +31,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
     InvitationFormComponent,
     PendingInvitationsListComponent,
     UserRoleModalComponent,
+    IconMiComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -81,7 +83,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
         <div
           class="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center text-gray-400"
         >
-          <p class="text-4xl mb-3">👥</p>
+          <app-mi-icon name="group" [size]="40" class="mb-3 inline-flex" />
           <p class="font-medium">No hay usuarios registrados</p>
         </div>
       } @else {

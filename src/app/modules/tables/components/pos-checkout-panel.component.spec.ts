@@ -655,6 +655,17 @@ describe('PosCheckoutPanelComponent — pedido ya en cocina, cobro por sesión d
     expect(texto).toContain('Liberar Mesa');
   });
 
+  it('"Imprimir Factura" y "Liberar Mesa" ya no usan emoji ni SVG artesanal (spec 082)', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    expect(el.textContent).not.toContain('🧾');
+    expect(el.textContent).not.toContain('🔓');
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(expect.arrayContaining(['receipt', 'lock_open']));
+  });
+
   it('T035: "Liberar Mesa" pide la liberación y muestra el motivo del 409 si falla', async () => {
     const button = Array.from(fixture.nativeElement.querySelectorAll('button')).find((b) =>
       (b as HTMLButtonElement).textContent?.includes('Liberar Mesa'),
