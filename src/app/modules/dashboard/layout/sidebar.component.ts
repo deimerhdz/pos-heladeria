@@ -3,7 +3,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { NAV_ITEMS, SUPER_ADMIN_NAV_ITEMS } from '../../../core/config/navigation.config';
 import { NAV_GROUP_ORDER, NavItem } from '../../../core/interfaces/navigation.interface';
-import { IconComponent } from '../../../shared/icon/icon.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 import { TenantInfoService } from '../../../core/tenant/tenant-info.service';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { LayoutService } from './layout.service';
@@ -16,7 +16,7 @@ interface NavGroup {
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, IconComponent],
+  imports: [RouterLink, RouterLinkActive, IconMiComponent],
   template: `
     <aside
       class="w-64 bg-indigo-600 text-white flex flex-col shrink-0 h-full
@@ -38,7 +38,10 @@ interface NavGroup {
             <span
               class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-lg shrink-0"
             >
-              {{ isSuperAdmin() ? '🛡️' : '🍦' }}
+              <app-mi-icon
+                [name]="isSuperAdmin() ? 'admin_panel_settings' : 'storefront'"
+                [size]="20"
+              />
             </span>
           }
           <div class="min-w-0">
@@ -69,7 +72,7 @@ interface NavGroup {
                   [class]="rla.isActive ? activeClass : inactiveClass"
                 >
                   <span class="w-5 h-5 flex items-center justify-center shrink-0">
-                    <app-icon [name]="item.icon" />
+                    <app-mi-icon [name]="item.icon" [size]="20" />
                   </span>
                   <span class="truncate">{{ item.label }}</span>
                 </a>

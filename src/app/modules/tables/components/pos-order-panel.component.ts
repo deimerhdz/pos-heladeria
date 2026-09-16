@@ -5,6 +5,7 @@ import { kitchenStatusClass, kitchenStatusLabel } from '../../orders/order-statu
 import { PosCatalogDrawerComponent } from './pos-catalog-drawer.component';
 import { CartItemOptionsComponent } from './cart-item-options.component';
 import { splitVariantLabel } from '../services/menu-lookup';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Columna central: armado y edición del pedido de la mesa seleccionada.
@@ -18,7 +19,7 @@ import { splitVariantLabel } from '../services/menu-lookup';
 @Component({
   selector: 'app-pos-order-panel',
   standalone: true,
-  imports: [PosCatalogDrawerComponent, CartItemOptionsComponent],
+  imports: [PosCatalogDrawerComponent, CartItemOptionsComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // El host es `inline` por defecto: sin esto no se ve como una columna.
   // shrink-0 (no flex-1 min-h-0): a pedido del usuario, el carrito ya no
@@ -32,7 +33,7 @@ import { splitVariantLabel } from '../services/menu-lookup';
       <div
         class="flex-1 flex flex-col items-center justify-center text-center text-[#9ca3af] p-6 gap-2"
       >
-        <div class="text-4xl">🍽️</div>
+        <app-mi-icon name="restaurant" [size]="40" />
         <p class="text-[13px] max-w-xs">
           Selecciona una mesa para ver su pedido, o usa el filtro "Pendientes" de arriba para
           encontrar pagos por confirmar.
@@ -132,11 +133,20 @@ import { splitVariantLabel } from '../services/menu-lookup';
               data-testid="delivery-info-row"
               class="text-[12px] text-[#6b7280] flex flex-wrap items-start gap-x-3 gap-y-1 shrink-0"
             >
-              <span class="min-w-0 break-words">📍 {{ store.selectedOrder()?.delivery_address }}</span>
+              <span class="min-w-0 break-words inline-flex items-center gap-1">
+                <app-mi-icon name="location_on" [size]="14" />
+                {{ store.selectedOrder()?.delivery_address }}
+              </span>
               @if (store.selectedOrder()?.delivery_phone; as phone) {
-                <span class="whitespace-nowrap">📞 {{ phone }}</span>
+                <span class="whitespace-nowrap inline-flex items-center gap-1">
+                  <app-mi-icon name="call" [size]="14" />
+                  {{ phone }}
+                </span>
               }
-              <span class="whitespace-nowrap">🛵 Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}</span>
+              <span class="whitespace-nowrap inline-flex items-center gap-1">
+                <app-mi-icon name="delivery_dining" [size]="14" />
+                Domicilio: {{ store.fmt(store.selectedOrder()?.delivery_fee ?? 0) }}
+              </span>
             </div>
           }
         </div>
@@ -214,7 +224,7 @@ import { splitVariantLabel } from '../services/menu-lookup';
                       }}</span>
                       <span
                         class="inline-flex items-center gap-1 bg-[#ecfdf5] text-[#15803d] border border-[#bbf7d0] text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                        >✓ Ahorras {{ store.fmt(promo.savings) }}</span
+                        ><app-mi-icon name="check" [size]="12" /> Ahorras {{ store.fmt(promo.savings) }}</span
                       >
                     </div>
                   }

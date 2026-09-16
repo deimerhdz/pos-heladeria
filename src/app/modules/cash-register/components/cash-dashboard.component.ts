@@ -4,6 +4,7 @@ import { CashSessionStore } from '../services/cash-session.store';
 import { CashService } from '../services/cash.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Dashboard del turno en curso: acciones, banner de efectivo esperado, KPIs y la
@@ -17,7 +18,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
   selector: 'app-cash-dashboard',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MoneyInputComponent],
+  imports: [FormsModule, MoneyInputComponent, IconMiComponent],
   template: `
     <div class="flex-1 w-full max-w-[1240px] mx-auto p-6">
       @if (store.error() && !store.modal()) {
@@ -161,7 +162,9 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col">
           <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 class="text-base font-bold text-gray-900">Arqueo parcial</h2>
-            <button type="button" (click)="showPartial.set(false)" class="text-gray-400 hover:text-gray-600">✕</button>
+            <button type="button" (click)="showPartial.set(false)" class="text-gray-400 hover:text-gray-600">
+              <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
+            </button>
           </div>
           <div class="p-6 space-y-3">
             <p class="text-sm text-gray-500">

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { formatMoney } from '../../../shared/money';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Desglose de cuenta reutilizable (Subtotal/Descuento/Domicilio/Total):
@@ -16,6 +17,7 @@ import { formatMoney } from '../../../shared/money';
   selector: 'app-bill-summary',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconMiComponent],
   template: `
     @if (subtotal !== undefined) {
       <div class="flex justify-between items-center text-[13px] text-[#6b7280]">
@@ -33,11 +35,7 @@ import { formatMoney } from '../../../shared/money';
       <div class="flex justify-between items-center text-[13px] text-[#6b7280] pt-0.5">
         <span class="flex items-center gap-1" [class]="showDeliveryIcon ? 'text-[#111827] font-medium' : ''">
           @if (showDeliveryIcon) {
-            <svg class="w-[15px] h-[15px] text-[#4f46e5]" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-              <circle cx="5.5" cy="17.5" r="3.5"></circle>
-              <circle cx="18.5" cy="17.5" r="3.5"></circle>
-              <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 11.5V14l-3-3 4-3 2 3h2"></path>
-            </svg>
+            <app-mi-icon name="delivery_dining" [size]="15" class="text-[#4f46e5]" />
           }
           {{ deliveryFeeLabel }}
         </span>

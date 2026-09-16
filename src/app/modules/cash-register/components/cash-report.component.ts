@@ -1,18 +1,17 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { CashSessionStore } from '../services/cash-session.store';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /** Reporte de cierre del turno: resumen financiero, arqueo y movimientos. */
 @Component({
   selector: 'app-cash-report',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconMiComponent],
   template: `
     <div class="flex-1 w-full max-w-[900px] mx-auto p-6">
       <div class="flex items-center gap-2 mb-2 text-gray-500">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="11" width="18" height="10" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
+        <app-mi-icon name="lock" [size]="18" />
         <span class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Turno cerrado</span>
       </div>
       <h2 class="text-2xl font-bold text-gray-900 mb-2">Reporte de cierre — {{ store.cajaLabel() }}</h2>

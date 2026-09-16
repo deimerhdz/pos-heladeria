@@ -13,11 +13,12 @@ import { UnitMeasureService } from '../../../core/services/unit-measure.service'
 import { InventoryItem, InventoryItemForm } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-inventory-item-form',
   standalone: true,
-  imports: [ReactiveFormsModule, MoneyInputComponent],
+  imports: [ReactiveFormsModule, MoneyInputComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -27,9 +28,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
             {{ item ? 'Editar insumo' : 'Nuevo insumo' }}
           </h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

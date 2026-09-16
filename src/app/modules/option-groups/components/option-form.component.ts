@@ -17,11 +17,12 @@ import { Option, OptionForm, OptionGroup } from '../../products/interfaces/produ
 import { OptionGroupService } from '../services/option-group.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-option-form',
   standalone: true,
-  imports: [ReactiveFormsModule, SearchableSelectComponent, MoneyInputComponent],
+  imports: [ReactiveFormsModule, SearchableSelectComponent, MoneyInputComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -31,9 +32,7 @@ import { MoneyInputComponent } from '../../../shared/money-input/money-input.com
             {{ option ? 'Editar opción' : 'Nueva opción' }} @if (group) { · {{ group.name }} }
           </h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

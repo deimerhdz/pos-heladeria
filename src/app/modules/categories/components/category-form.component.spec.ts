@@ -104,4 +104,12 @@ describe('CategoryFormComponent', () => {
     http.expectOne(CATEGORIES).flush(makeCategory({ display_order: 1 }));
     await submitPromise;
   });
+
+  it('el botón de cerrar ya no es un emoji (spec 082)', async () => {
+    await create(null);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).not.toContain('✕');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('close');
+  });
 });

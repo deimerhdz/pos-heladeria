@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject, viewChild } from '@angular/core';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { OrderSummaryCardComponent } from './order-summary-card.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Contenido de la tarjeta blanca de mesas (mockup de referencia,
@@ -18,7 +19,7 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
   selector: 'app-pos-tables-panel',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [OrderSummaryCardComponent],
+  imports: [OrderSummaryCardComponent, IconMiComponent],
   template: `
     <div class="w-full min-w-0 h-full flex flex-col bg-white">
       @if (store.orderTypeTab() === 'mesas') {
@@ -50,10 +51,7 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
           </div>
           <div class="relative sm:w-64 shrink-0">
             <span class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
-              <svg class="w-[18px] h-[18px] stroke-[#6b7280]" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" x2="16.65" y1="21" y2="16.65"></line>
-              </svg>
+              <app-mi-icon name="search" [size]="18" class="text-[#6b7280]" />
             </span>
             <input
               #searchInput
@@ -116,7 +114,7 @@ import { OrderSummaryCardComponent } from './order-summary-card.component';
         <!-- FR-003/FR-009: listado vacío con mensaje claro, no un error ni
              una grilla en blanco sin explicación. -->
         <div class="flex flex-col items-center justify-center text-center text-[#6b7280] p-8 gap-3">
-          <div class="text-4xl">🧾</div>
+          <app-mi-icon name="receipt" [size]="40" />
           <p class="text-[13px] max-w-xs">
             Todavía no hay ningún pedido de
             {{ store.orderTypeTab() === 'domicilios' ? 'domicilio' : 'para llevar' }} pendiente de

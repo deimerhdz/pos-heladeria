@@ -50,7 +50,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   // ── CATÁLOGO ───────────────────────────────────────────────────────────
   {
-    label: 'Productos',
+    label: 'Carta del menú',
     icon: 'products',
     route: '/dashboard/products',
     group: 'CATÁLOGO',

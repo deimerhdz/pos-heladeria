@@ -6,7 +6,7 @@ import {
   signal,
 } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
-import { IconComponent } from '../icon/icon.component';
+import { IconMiComponent } from '../icon-mi/icon-mi.component';
 
 /**
  * Reusable password field with a show/hide toggle. Implements
@@ -21,7 +21,7 @@ import { IconComponent } from '../icon/icon.component';
   selector: 'app-password-input',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IconComponent],
+  imports: [IconMiComponent],
   template: `
     <div class="relative">
       <input
@@ -47,7 +47,7 @@ import { IconComponent } from '../icon/icon.component';
         class="absolute right-3 inset-y-0 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
       >
         <span class="w-5 h-5 block">
-          <app-icon [name]="show() ? 'eye-off' : 'eye'" />
+          <app-mi-icon [name]="show() ? 'eye-off' : 'eye'" [size]="20" />
         </span>
       </button>
     </div>

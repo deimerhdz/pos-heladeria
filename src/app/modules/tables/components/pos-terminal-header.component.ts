@@ -4,6 +4,7 @@ import { PosTerminalStore } from '../services/pos-terminal.store';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Cabecera de terminal compartida entre `table-sessions.component.ts` y
@@ -18,6 +19,7 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
   selector: 'app-pos-terminal-header',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [IconMiComponent],
   template: `
     <header class="h-14 bg-white border-b border-[#e5e7eb] px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0">
       <div class="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -30,12 +32,7 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
         </div>
         <div class="hidden sm:block h-6 w-px bg-[#e5e7eb] mx-1"></div>
         <div class="hidden sm:flex items-center gap-2 text-[#4b5563]">
-          <svg class="w-[18px] h-[18px] stroke-[#6b7280] shrink-0" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
+          <app-mi-icon name="group" [size]="18" class="text-[#6b7280] shrink-0" />
           <span class="text-[12px] font-medium text-[#4b5563] whitespace-nowrap">{{ shiftLabel() }}</span>
         </div>
       </div>
@@ -63,10 +60,7 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
             title="Abrir turno de caja"
             class="h-9 px-2.5 sm:px-3 rounded-[6px] border border-[#e5e7eb] bg-transparent hover:bg-[#f3f4f6] flex items-center gap-1.5 text-[12px] font-medium text-[#4b5563] transition-colors"
           >
-            <svg class="w-[18px] h-[18px] shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-              <rect height="14" rx="2" width="20" x="2" y="5"></rect>
-              <line x1="2" x2="22" y1="10" y2="10"></line>
-            </svg>
+            <app-mi-icon name="credit_card" [size]="18" class="shrink-0" />
             <span class="hidden sm:inline">Turno caja</span>
           </button>
         }
@@ -75,10 +69,7 @@ import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/vi
           title="Bloquear terminal"
           class="h-9 w-9 rounded-[6px] border border-[#e5e7eb] bg-transparent hover:bg-[#f3f4f6] flex items-center justify-center text-[#4b5563] transition-colors"
         >
-          <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewBox="0 0 24 24">
-            <rect height="11" rx="2" ry="2" width="18" x="3" y="11"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
+          <app-mi-icon name="lock" [size]="18" />
         </button>
       </div>
     </header>

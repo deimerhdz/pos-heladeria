@@ -97,4 +97,21 @@ describe('TablesPageComponent', () => {
     fixture.detectChanges();
     expect((fixture.nativeElement.textContent as string)).toContain('Aún no hay mesas registradas');
   });
+
+  it('ningún ícono se renderiza ya como emoji ni SVG artesanal (spec 082)', () => {
+    svc.pagedTables.set([table({ id: 't1', number: 1, status: 'libre', active: true })]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    for (const emoji of ['🪑', '📷', '✏️', '🔴', '🟢']) {
+      expect(el.textContent).not.toContain(emoji);
+    }
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['table_restaurant', 'photo_camera', 'edit', 'circle']),
+    );
+  });
 });

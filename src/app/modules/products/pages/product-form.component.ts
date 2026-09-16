@@ -35,6 +35,7 @@ import {
 import { ProductService } from '../services/product.service';
 import { SearchableSelectComponent } from '../../../shared/searchable-select/searchable-select.component';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /** Una fila del desglose: qué pasa si el cliente elige esta opción. */
 interface SlotBreakdownRow {
@@ -74,6 +75,7 @@ interface SlotBreakdown {
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
+    IconMiComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -107,7 +109,9 @@ interface SlotBreakdown {
               @if (previewUrl() ?? draft().image_url; as img) {
                 <img [src]="img" alt="" class="w-32 h-32 rounded-xl object-cover border border-gray-100" />
               } @else {
-                <div class="w-32 h-32 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-3xl">🍦</div>
+                <div class="w-32 h-32 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center">
+                  <app-mi-icon name="image-off" ariaLabel="Sin imagen" [size]="32" />
+                </div>
               }
               <label class="mt-2 block text-xs text-indigo-600 hover:text-indigo-700 cursor-pointer">
                 {{ uploading() ? 'Subiendo…' : 'Cambiar imagen' }}
@@ -199,7 +203,7 @@ interface SlotBreakdown {
 
           @if (showsInventoryWarning()) {
             <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 text-sm text-amber-700">
-              ⚠ Este producto no podrá venderse hasta que se le configure al menos un insumo en alguna presentación.
+              <app-mi-icon name="warning" [size]="16" class="inline-flex align-text-bottom" /> Este producto no podrá venderse hasta que se le configure al menos un insumo en alguna presentación.
             </div>
           }
 
@@ -302,7 +306,7 @@ interface SlotBreakdown {
                         class="w-24 px-2 py-2 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                       <span class="w-12 text-xs text-gray-400">{{ unitAbbr(line.inventory_item_id) }}</span>
                       <button type="button" (click)="removeRecipeLine(av.localId, $index)"
-                        class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg">✕</button>
+                        class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg"><app-mi-icon name="close" ariaLabel="Quitar" [size]="14" /></button>
                     </div>
                   }
                   <button type="button" (click)="addRecipeLine(av.localId)"
@@ -342,7 +346,7 @@ interface SlotBreakdown {
                           (ngModelChange)="setGroupField(av.localId, $index, 'option_group_id', $event)"
                           [options]="groupOptionsFor(av.localId, $index)" placeholder="Grupo…" class="flex-1 min-w-40" />
                         <button type="button" (click)="removeGroup(av.localId, $index)"
-                          class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg">✕</button>
+                          class="px-2 py-1.5 text-xs font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-lg"><app-mi-icon name="close" ariaLabel="Quitar" [size]="14" /></button>
                       </div>
 
                       <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mt-2 text-sm">
@@ -371,7 +375,7 @@ interface SlotBreakdown {
                       }
                       @if (sectionsEnabled()) {
                         @for (w of groupWarnings(g); track w) {
-                          <p class="text-xs text-amber-700 mt-1.5">⚠ {{ w }}</p>
+                          <p class="text-xs text-amber-700 mt-1.5"><app-mi-icon name="warning" [size]="14" class="inline-flex align-text-bottom" /> {{ w }}</p>
                         }
                       }
 
@@ -382,7 +386,7 @@ interface SlotBreakdown {
                               <span class="font-medium text-gray-600">Descuenta de:</span>
                               {{ bd.summary }}
                               @if (bd.missing > 0) {
-                                <span class="text-amber-700 font-medium">· ⚠ {{ bd.missing }} sin insumo</span>
+                                <span class="text-amber-700 font-medium inline-flex items-center gap-0.5">· <app-mi-icon name="warning" [size]="14" /> {{ bd.missing }} sin insumo</span>
                               }
                             </p>
                             <a routerLink="/dashboard/ajustes/grupos-opciones" target="_blank" rel="noopener"

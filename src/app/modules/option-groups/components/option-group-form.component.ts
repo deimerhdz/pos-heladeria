@@ -11,11 +11,12 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { OptionGroup, OptionGroupForm } from '../../products/interfaces/product.interface';
 import { OptionGroupService } from '../services/option-group.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-option-group-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -25,9 +26,7 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
             {{ group ? 'Editar grupo de opciones' : 'Nuevo grupo de opciones' }}
           </h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 
