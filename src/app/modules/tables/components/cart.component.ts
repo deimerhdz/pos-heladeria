@@ -38,18 +38,21 @@ import { DiningCartService } from '../services/dining-cart.service';
                 <p class="text-xs text-gray-400">{{ line.unitPrice | money }} c/u</p>
               </div>
               <!-- 44 px: el objetivo táctil mínimo cómodo con el pulgar. -->
+              <!-- spec 081 (FR-004/FR-006): el paso lo decide stepFor(line) — 1 (libre) para
+                   lo agregado desde una categoría normal, min_qty de la regla para lo
+                   agregado desde "Promociones" (research.md D3, contrato §3). -->
               <div class="flex items-center gap-1 shrink-0">
                 <button
-                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity - 1 })"
+                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity - cart.stepFor(line) })"
                   [disabled]="cart.busy()"
-                  [attr.aria-label]="line.quantity === 1 ? 'Quitar del pedido' : 'Quitar uno'"
+                  [attr.aria-label]="line.quantity === cart.stepFor(line) ? 'Quitar del pedido' : 'Quitar uno'"
                   class="w-11 h-11 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
                 >
                   −
                 </button>
                 <span class="w-8 text-center text-base font-semibold text-gray-900">{{ line.quantity }}</span>
                 <button
-                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity + 1 })"
+                  (click)="quantityChanged.emit({ itemId: line.id, quantity: line.quantity + cart.stepFor(line) })"
                   [disabled]="cart.busy()"
                   aria-label="Añadir uno"
                   class="w-11 h-11 rounded-full bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 text-xl font-bold leading-none flex items-center justify-center transition-colors disabled:opacity-40"
