@@ -73,7 +73,11 @@ export interface Promotion {
   rules: PromotionRule[];
 }
 
-/** Modelo de **una regla** dentro del formulario (UI). */
+/** Modelo de **una regla** dentro del formulario (UI). spec 083 (US3): cada
+ *  fila se agrega ya completa desde el Paso 1/Paso 2 de la pantalla de
+ *  configuración ("Agregar a la lista") — no hay edición in-situ, solo alta
+ *  y baja de filas, así que ya no hace falta distinguir una regla "nueva en
+ *  esta sesión" de una que ya existía (`isExisting` de spec 071 se retira). */
 export interface PromotionRuleForm {
   type: PromotionType;
   value: number;
@@ -82,23 +86,20 @@ export interface PromotionRuleForm {
   /** Conjunto explícito de variantes elegibles de esta regla (FR-001a): ≥1,
    *  sin repetidos dentro de la regla. */
   variantIds: string[];
-  /** spec 071 (FR-015): `true` si esta fila ya existía cuando se abrió el
-   *  formulario (`openEdit`); `false` si se agregó con "+ Agregar regla" en
-   *  esta misma sesión. Gobierna `canEditRuleTypeValue()` — cliente-only,
-   *  nunca viaja al backend (`toRules()` arma el payload campo por campo). */
-  isExisting: boolean;
 }
 
 /** Modelo del formulario (UI): vigencia de la promoción + su lista repetible
- *  de reglas (research.md D-R4, creación por lote). */
+ *  de reglas (research.md D-R4, creación por lote). spec 083 (FR-010): el
+ *  tipo se fija una sola vez (pantalla de creación) y se aplica a toda
+ *  regla que se agregue después — ya no es un campo por regla en la UI. */
 export interface PromotionForm {
   name: string;
-  description: string;
   starts_at: string | null;
   ends_at: string | null;
   days_of_week: number[]; // 0=lunes..6=domingo
   start_time: string | null;
   end_time: string | null;
+  type: PromotionType;
   rules: PromotionRuleForm[];
 }
 
@@ -109,10 +110,12 @@ export interface PromotionRuleInPayload {
   variant_ids: string[];
 }
 
-/** Campos escalares comunes a create y update — de la **promoción**. */
+/** Campos escalares comunes a create y update — de la **promoción**. spec 083
+ *  (FR-023): `description` se retira por completo del flujo de UI — el
+ *  frontend ya no lo lee ni lo envía en ningún payload (el campo del backend
+ *  sigue existiendo, sin cambios, para no perder datos históricos). */
 interface PromotionScalars {
   name: string;
-  description: string | null;
   ends_at: string | null;
   days_of_week: string | null;
   start_time: string | null;
@@ -175,13 +178,14 @@ export interface RuleVariantConflictError {
   variant_ids: string[];
 }
 
-/** Cuerpo del 409 de FR-016: el precio de paquete de una regla no representa
- *  un descuento. */
+/** Cuerpo del 409 de FR-016/FR-026: el precio de paquete de una regla no
+ *  representa un descuento frente a la suma de precios regulares de las
+ *  unidades del paquete. */
 export interface PackageNotDiscountError {
   error: string;
   rule_id: string;
   value: string;
   min_qty: number;
-  cheapest_unit_price: string;
+  regular_price_sum: string;
   variant_id: string;
 }

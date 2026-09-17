@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  HostListener,
   OnInit,
   computed,
   inject,
@@ -24,12 +25,19 @@ import {
 } from '../interfaces/promotion.interface';
 import { PromotionService } from '../services/promotion.service';
 import { PromoDisplay, getPromoDisplay } from '../services/promotion-pricing.util';
-import { conditionText, setDescriptor } from '../services/promotion-condition.util';
+import { setDescriptor } from '../services/promotion-condition.util';
 
-type Screen = 'list' | 'form' | 'review';
+/**
+ * spec 083 (US3): tres pantallas fieles a los prototipos
+ * (`~/Escritorio/promociones/*.html`) — listado, creación mínima (nombre +
+ * tipo) y configuración (vigencia + reglas de precio), sin pantalla de
+ * revisión intermedia (research.md D9/D10: cero cambios en
+ * `app/api/v1/promotions/`, mismo patrón `FormsModule`/`ngModel`).
+ */
+type Screen = 'list' | 'create' | 'configure';
 type StatusTab = PromotionStatus | '';
 
-const DAY_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const DAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const DAY_FULL = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
 
 const STATUS_TABS: { value: StatusTab; label: string }[] = [
@@ -40,12 +48,18 @@ const STATUS_TABS: { value: StatusTab; label: string }[] = [
   { value: 'finished', label: 'Finalizadas' },
 ];
 
-const TYPE_OPTIONS: { value: PromotionType; label: string; hint: string }[] = [
-  { value: 'percent', label: 'Descuento %', hint: 'Un porcentaje sobre las variantes elegidas' },
+const TYPE_OPTIONS: { value: PromotionType; label: string; badge: string; hint: string }[] = [
+  {
+    value: 'percent',
+    label: 'Descuento %',
+    badge: 'Porcentual',
+    hint: 'Un porcentaje sobre las variantes o productos elegidos (ej. 20% OFF en conos dobles, Happy Hour de malteadas).',
+  },
   {
     value: 'package_price',
     label: 'Precio de paquete',
-    hint: 'Llevando N unidades cualesquiera del conjunto, pagas un precio fijo',
+    badge: 'Precio de paquete',
+    hint: 'Llevando N unidades cualesquiera del conjunto, el cliente paga un precio fijo preferencial (ej. 2x$12.000, 3x$20.000).',
   },
 ];
 
@@ -60,27 +74,32 @@ interface CatalogVariant {
   price: number;
 }
 
-/** spec 063 (revisión 2026-09-01): filtro de ayuda para poblar el selector de
- *  **una** regla (FR-004) — nunca se guarda, solo puebla el checkbox list. */
-interface RuleFilter {
-  category: string;
-  text: string;
+/** Producto del catálogo con sus variantes, para las tarjetas del Paso 1. */
+interface CatalogProduct {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  minPrice: number;
+  variants: CatalogVariant[];
 }
 
-function emptyRule(): PromotionRuleForm {
-  return { type: 'percent', value: 0, min_qty: 1, variantIds: [], isExisting: false };
+/** Filtro de ayuda para poblar el Paso 1 — nunca se guarda (FR-012). */
+interface StepOneFilter {
+  category: string;
+  text: string;
 }
 
 function emptyForm(): PromotionForm {
   return {
     name: '',
-    description: '',
     starts_at: null,
     ends_at: null,
     days_of_week: [],
     start_time: null,
     end_time: null,
-    rules: [emptyRule()],
+    type: 'package_price',
+    rules: [],
   };
 }
 
@@ -129,34 +148,35 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
 
       @switch (screen()) {
         @case ('list') {
-          <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
+          <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
             <div>
-              <p class="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-1">Catálogo</p>
-              <h1 class="text-2xl font-bold text-gray-900">Promociones</h1>
-              <p class="text-gray-500 text-sm mt-1">
+              <p class="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Catálogo</p>
+              <h1 class="text-2xl font-bold text-gray-900 leading-none mb-1.5">Promociones</h1>
+              <p class="text-[13px] text-gray-400">
                 Descuento por porcentaje o precio de paquete sobre uno o varios conjuntos de variantes
               </p>
             </div>
             <button
               type="button"
               (click)="openNew()"
-              class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
+              class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors"
             >
-              + Nueva promoción
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              Nueva promoción
             </button>
           </div>
 
           <div class="flex items-center gap-3 flex-wrap mb-4">
-            <div class="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div class="flex items-center gap-1.5">
               @for (tab of statusTabs; track tab.value) {
                 <button
                   type="button"
                   (click)="selectTab(tab.value)"
-                  class="px-3.5 py-2 text-sm font-semibold transition-colors border-l border-gray-200 first:border-l-0"
+                  class="px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
                   [class]="
                     svc.statusFilter() === tab.value
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                   "
                 >
                   {{ tab.label }}
@@ -167,8 +187,8 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               [ngModel]="searchSignal()"
               (ngModelChange)="onSearchChange($event)"
               type="search"
-              placeholder="Buscar por nombre…"
-              class="flex-1 min-w-[200px] max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              placeholder="Buscar por nombre..."
+              class="flex-1 min-w-[200px] max-w-xs px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
 
@@ -197,400 +217,529 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               </button>
             </div>
           } @else {
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-visible mb-4">
               <div class="overflow-x-auto">
-                <table class="w-full min-w-[860px]">
+                <table class="w-full min-w-[860px] text-left border-collapse">
                   <thead>
-                    <tr class="border-b border-gray-100 bg-gray-50">
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Promoción</th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Reglas</th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Vigencia</th>
-                      <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3">Estado</th>
-                      <th class="px-5 py-3"></th>
+                    <tr class="border-b border-gray-100 bg-gray-50 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      <th class="py-3 px-5 w-[22%]">Promoción</th>
+                      <th class="py-3 px-5 w-[33%]">Reglas</th>
+                      <th class="py-3 px-5 w-[25%]">Vigencia</th>
+                      <th class="py-3 px-5 w-[10%]">Estado</th>
+                      <th class="py-3 px-5 text-right w-[10%]"><span class="sr-only">Acciones</span></th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-gray-50">
+                  <tbody class="divide-y divide-gray-50 text-xs">
                     @for (p of svc.promotions(); track p.id) {
-                      <tr class="hover:bg-gray-50 transition-colors align-top">
-                        <td class="px-5 py-3">
-                          <div class="text-sm font-semibold text-gray-900">{{ p.name }}</div>
-                          @if (p.description) {
-                            <div class="text-[11.5px] text-gray-400 mt-1 max-w-[220px]">{{ p.description }}</div>
-                          }
+                      <tr class="hover:bg-gray-50/50 transition align-top">
+                        <td class="py-4 px-5 font-bold text-gray-900">{{ p.name }}</td>
+                        <td class="py-4 px-5 text-gray-600">
+                          <span class="inline-block text-[10px] font-bold tracking-tight px-1.5 py-0.5 rounded uppercase bg-indigo-50 text-indigo-600">
+                            {{ promotionTypeLabel(p) }}
+                          </span>
                         </td>
-                        <td class="px-5 py-3 text-sm text-gray-600 max-w-[300px]">
-                          <ul class="space-y-1.5">
-                            @for (r of p.rules; track r.id) {
-                              <li>
-                                <span
-                                  class="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 mr-1"
-                                  >{{ typeLabel(r.type) }}</span
-                                >
-                                {{ r.condition_text || '—' }}
-                                <span class="text-[11px] text-gray-400">({{ r.variants.length }} var.)</span>
-                              </li>
-                            } @empty {
-                              <li class="text-gray-400">Sin reglas</li>
-                            }
-                          </ul>
-                        </td>
-                        <td class="px-5 py-3 text-sm text-gray-600 max-w-[220px]">{{ vigencia(p) }}</td>
-                        <td class="px-5 py-3">
+                        <td class="py-4 px-5 text-gray-600 leading-relaxed">{{ vigencia(p) }}</td>
+                        <td class="py-4 px-5">
                           <span
-                            class="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full"
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium"
                             [class]="displayClass(displayOf(p))"
                           >
                             {{ displayLabel(displayOf(p)) }}
                           </span>
                         </td>
-                        <td class="px-5 py-3 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            (click)="openEdit(p)"
-                            class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2"
-                          >
-                            {{ p.status === 'finished' ? 'Ver' : 'Editar' }}
-                          </button>
-                          <button
-                            type="button"
-                            (click)="startDuplicate(p)"
-                            class="text-xs font-semibold text-gray-500 hover:text-gray-700 px-2"
-                          >
-                            Duplicar
-                          </button>
-                          @for (to of transitionsOf(p); track to) {
+                        <td class="py-4 px-5 text-right whitespace-nowrap relative">
+                          <div class="relative inline-block text-left">
                             <button
                               type="button"
-                              (click)="changeStatus(p, to)"
-                              class="text-xs font-semibold text-gray-500 hover:text-gray-700 px-2"
+                              aria-haspopup="true"
+                              aria-label="Opciones de promoción"
+                              (click)="toggleActionsMenu(p.id, $event)"
+                              class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-indigo-400"
                             >
-                              {{ statusVerb(to) }}
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                             </button>
-                          }
+                            @if (openActionsId() === p.id) {
+                              <div
+                                (click)="$event.stopPropagation()"
+                                class="absolute right-0 mt-1 w-44 bg-white rounded-lg border border-gray-100 shadow-lg py-1 z-30 text-left"
+                              >
+                                <button type="button" (click)="openEdit(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors">
+                                  Configurar
+                                </button>
+                                <button type="button" (click)="startDuplicate(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors">
+                                  Duplicar
+                                </button>
+                                @if (transitionsOf(p).length > 0 || canDelete(p)) {
+                                  <div class="border-b border-gray-100 my-1"></div>
+                                }
+                                @for (to of transitionsOf(p); track to) {
+                                  <button type="button" (click)="changeStatus(p, to); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors">
+                                    {{ statusVerb(to) }}
+                                  </button>
+                                }
+                                @if (canDelete(p)) {
+                                  <button type="button" (click)="removePromotion(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors">
+                                    Eliminar
+                                  </button>
+                                }
+                              </div>
+                            }
+                          </div>
                         </td>
                       </tr>
                     }
                   </tbody>
                 </table>
               </div>
+              <app-pagination-bar
+                [page]="svc.page()"
+                [size]="svc.size()"
+                [pageSizes]="[20, 50, 100]"
+                [totalPages]="svc.totalPages()"
+                [total]="svc.total()"
+                [loading]="svc.loading()"
+                (pageChange)="svc.load($event)"
+                (sizeChange)="svc.load(1, $event)"
+              />
             </div>
-            <app-pagination-bar
-              [page]="svc.page()"
-              [totalPages]="svc.totalPages()"
-              [total]="svc.total()"
-              (pageChange)="svc.load($event)"
-            />
           }
         }
 
-        @case ('form') {
-          <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+        @case ('create') {
+          <div class="flex items-center gap-3 pb-4 border-b border-gray-100 mb-6">
+            <button type="button" (click)="backToList()" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+              Volver
+            </button>
+            <span class="text-gray-200">|</span>
+            <h1 class="text-lg font-bold text-gray-900">Nueva promoción</h1>
+          </div>
+
+          <div class="max-w-6xl w-full space-y-6">
+            <section class="bg-white rounded-xl border border-gray-200/80 shadow-sm p-6">
+              <h2 class="text-base font-semibold text-gray-800 mb-4">Información general</h2>
+              <label class="block">
+                <span class="block text-xs font-bold text-gray-500 tracking-wider uppercase mb-2">Nombre</span>
+                <input
+                  [ngModel]="createName()"
+                  (ngModelChange)="createName.set($event)"
+                  placeholder="Ej. Happy Hour Lunes a Jueves"
+                  class="w-full h-11 px-3.5 text-sm bg-gray-50/50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-500 transition-all"
+                />
+              </label>
+            </section>
+
+            <section class="bg-white rounded-xl border border-gray-200/80 shadow-sm p-6">
+              <h2 class="text-base font-semibold text-gray-800">Tipo de promoción</h2>
+              <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                Elige si esta promoción aplicará un porcentaje de descuento o un precio fijo de paquete para conjuntos de productos.
+              </p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                @for (t of typeOptions; track t.value) {
+                  <label
+                    class="relative flex flex-col p-5 rounded-xl border-2 cursor-pointer transition-all select-none"
+                    [class]="createType() === t.value ? 'border-indigo-500 bg-indigo-50/30' : 'border-gray-200 hover:border-gray-300 bg-white'"
+                  >
+                    <input type="radio" class="sr-only" name="promo_type" [checked]="createType() === t.value" (change)="createType.set(t.value)" />
+                    <div class="flex items-start justify-between mb-3">
+                      <div class="flex items-center gap-3">
+                        <div
+                          class="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg"
+                          [class]="createType() === t.value ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'"
+                        >
+                          {{ t.value === 'percent' ? '%' : '📦' }}
+                        </div>
+                        <div>
+                          <span class="text-sm font-bold text-gray-800 block">{{ t.label }}</span>
+                          <span class="inline-block text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md mt-0.5">{{ t.badge }}</span>
+                        </div>
+                      </div>
+                      <div
+                        class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                        [class]="createType() === t.value ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'"
+                      >
+                        @if (createType() === t.value) {
+                          <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        }
+                      </div>
+                    </div>
+                    <p class="text-xs text-gray-500 leading-relaxed">{{ t.hint }}</p>
+                  </label>
+                }
+              </div>
+            </section>
+
+            @if (formError()) {
+              <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ formError() }}</div>
+            }
+
+            <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pb-8">
+              <button type="button" (click)="backToList()" class="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 shadow-sm transition-colors">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                [disabled]="!createName().trim() || svc.isSubmitting()"
+                (click)="continueToConfigure()"
+                class="inline-flex justify-center items-center px-6 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {{ svc.isSubmitting() ? 'Creando…' : 'Continuar' }}
+              </button>
+            </div>
+          </div>
+        }
+
+        @case ('configure') {
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
             <div class="flex items-center gap-3">
               <button type="button" (click)="backToList()" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
                 Volver
               </button>
               <span class="text-gray-200">|</span>
-              <h1 class="text-lg font-bold text-gray-900">{{ editingId() ? 'Editar promoción' : 'Nueva promoción' }}</h1>
+              <h1 class="text-lg font-bold text-gray-900">
+                {{ editingId() ? 'Configurar precios de la promoción' : 'Configurar precios' }}
+              </h1>
             </div>
-            <button type="button" class="w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600" title="Ayuda">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            </button>
-          </div>
-
-          @if (isReadOnly()) {
-            <p class="text-sm text-amber-600 mb-4">Esta promoción está finalizada — solo lectura.</p>
-          } @else if (isPaused()) {
-            <p class="text-sm text-gray-500 mb-4">
-              Promoción pausada: puedes agregar o quitar reglas completas, y agregar o quitar
-              productos del conjunto de cualquiera de ellas. El tipo, el valor y la cantidad
-              mínima de una regla que ya existía siguen bloqueados — para cambiarlos, quítala y
-              agrega una nueva, o duplica la promoción.
-            </p>
-          } @else if (!isDraft()) {
-            <p class="text-sm text-gray-500 mb-4">
-              En una promoción activa solo puedes editar nombre, descripción, vigencia y horario —
-              afecta a todas sus reglas de una vez. Para cambiar el tipo, el valor, la cantidad o el
-              conjunto de una regla, o agregar/quitar reglas, páusala primero, o duplícala.
-            </p>
-          }
-
-          <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
-            <h2 class="text-base font-semibold text-gray-900 pb-3 mb-4 border-b border-gray-100">Información general</h2>
-            <div class="space-y-4">
-              <label class="block">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre</span>
-                <input [(ngModel)]="form.name" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-              </label>
-              <label class="block">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Descripción</span>
-                <textarea [(ngModel)]="form.description" [disabled]="isReadOnly()" rows="2" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
-              </label>
-
-              <div class="border-t border-gray-100 pt-4">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vigencia (aplica a todas las reglas)</span>
-                <div class="mt-2 flex flex-wrap gap-1.5">
-                  @for (d of days; track d.idx) {
-                    <button
-                      type="button"
-                      [disabled]="isReadOnly()"
-                      (click)="toggleDay(d.idx)"
-                      class="px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors"
-                      [class]="form.days_of_week.includes(d.idx) ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'"
-                    >
-                      {{ d.label }}
-                    </button>
-                  }
-                </div>
-                <div class="mt-3 grid grid-cols-2 gap-4">
-                  <label class="block">
-                    <span class="text-[11px] text-gray-400">Desde (hora)</span>
-                    <input type="time" [(ngModel)]="form.start_time" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </label>
-                  <label class="block">
-                    <span class="text-[11px] text-gray-400">Hasta (hora)</span>
-                    <input type="time" [(ngModel)]="form.end_time" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </label>
-                  <label class="block">
-                    <span class="text-[11px] text-gray-400">Desde (fecha)</span>
-                    <input type="date" [(ngModel)]="form.starts_at" [disabled]="isReadOnly() || !isDraft()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </label>
-                  <label class="block">
-                    <span class="text-[11px] text-gray-400">Hasta (fecha)</span>
-                    <input type="date" [(ngModel)]="form.ends_at" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
-            <div class="flex items-center justify-between pb-3 mb-4 border-b border-gray-100">
-              <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
-                Reglas
-                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">{{ form.rules.length }}</span>
-              </h2>
-              @if (canEditRuleSet()) {
-                <button
-                  type="button"
-                  (click)="addRule()"
-                  class="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
-                >
-                  + Agregar regla
-                </button>
-              }
-            </div>
-
-            @if (sharedVariantConflict(); as sc) {
-              <div class="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
-                La variante <strong>{{ sc.variantLabel }}</strong> está en la regla {{ sc.a + 1 }} y en la
-                regla {{ sc.b + 1 }} — cada variante solo puede pertenecer a una regla de esta promoción.
-              </div>
-            }
-
-            <div class="space-y-3">
-              @for (rule of form.rules; track $index; let ruleIndex = $index) {
-                @if (isRuleExpanded(ruleIndex)) {
-                  <div class="rounded-xl border border-gray-200 p-4">
-                    <div class="flex items-center justify-between mb-3">
-                      <span class="text-xs font-semibold text-gray-400">Regla {{ ruleIndex + 1 }}</span>
-                      @if (canEditRuleSet() && form.rules.length > 1) {
-                        <button
-                          type="button"
-                          (click)="removeRule(ruleIndex)"
-                          class="text-[11px] font-semibold text-red-500 hover:text-red-700"
-                        >
-                          Quitar regla
-                        </button>
-                      }
-                    </div>
-
-                    <div class="grid gap-4 md:grid-cols-2">
-                      <div class="space-y-3">
-                        <div>
-                          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tipo</span>
-                          <div class="mt-1 grid grid-cols-2 gap-2">
-                            @for (t of typeOptions; track t.value) {
-                              <button
-                                type="button"
-                                [disabled]="!canEditRuleTypeValue(rule)"
-                                (click)="setRuleType(ruleIndex, t.value)"
-                                class="rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-60"
-                                [class]="rule.type === t.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600'"
-                              >
-                                <div class="font-semibold">{{ t.label }}</div>
-                                <div class="text-[11px] text-gray-400">{{ t.hint }}</div>
-                              </button>
-                            }
-                          </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-3">
-                          <label class="block">
-                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                              {{ rule.type === 'percent' ? 'Porcentaje' : 'Precio del paquete' }}
-                            </span>
-                            @if (rule.type === 'percent') {
-                              <input type="number" [(ngModel)]="rule.value" [disabled]="!canEditRuleTypeValue(rule)" min="0" max="100" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                            } @else {
-                              <app-money-input [(ngModel)]="rule.value" [disabled]="!canEditRuleTypeValue(rule)" class="mt-1 block" />
-                            }
-                          </label>
-                          <label class="block">
-                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                              {{ rule.type === 'percent' ? 'Unidades mínimas' : 'Unidades del paquete' }}
-                            </span>
-                            <input type="number" [(ngModel)]="rule.min_qty" [disabled]="!canEditRuleTypeValue(rule)" min="1" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div class="space-y-2">
-                        <div class="flex items-center justify-between">
-                          <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            Conjunto ({{ rule.variantIds.length }})
-                          </span>
-                          @if (canEditRuleSet() && rule.variantIds.length > 0) {
-                            <button type="button" (click)="clearRuleVariants(ruleIndex)" class="text-[11px] text-gray-400 hover:text-gray-600">Vaciar</button>
-                          }
-                        </div>
-
-                        @if (canEditRuleSet()) {
-                          <div class="flex flex-wrap gap-2">
-                            <select [(ngModel)]="ruleFilters[ruleIndex].category" class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
-                              <option value="">Todas las categorías</option>
-                              @for (c of categoryFilterOptions(); track c.id) {
-                                <option [value]="c.id">{{ c.name }}</option>
-                              }
-                            </select>
-                            <input [(ngModel)]="ruleFilters[ruleIndex].text" type="search" placeholder="Buscar variante…" class="flex-1 min-w-[120px] px-2 py-1.5 border border-gray-200 rounded-lg text-xs" />
-                            <button type="button" (click)="selectAllFilteredForRule(ruleIndex)" class="px-2 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600">
-                              Agregar visibles
-                            </button>
-                          </div>
-
-                          @if (searchResultsForRule(ruleIndex).length > 0) {
-                            <div class="border border-gray-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-gray-50">
-                              @for (v of searchResultsForRule(ruleIndex); track v.id) {
-                                <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                                  <input type="checkbox" [checked]="rule.variantIds.includes(v.id)" [disabled]="!canEditRuleSet()" (change)="toggleVariantForRule(ruleIndex, v.id)" />
-                                  <span class="flex-1">{{ v.productName }} - {{ v.variantName }}</span>
-                                  <span class="text-xs text-gray-400">{{ money(v.price) }}</span>
-                                </label>
-                              }
-                            </div>
-                          } @else if (ruleFilters[ruleIndex].category || ruleFilters[ruleIndex].text) {
-                            <p class="text-xs text-gray-400">Sin variantes que coincidan con el filtro.</p>
-                          }
-                        }
-
-                        <div class="border border-gray-200 rounded-lg max-h-[220px] overflow-y-auto divide-y divide-gray-50">
-                          @for (v of selectedVariantsForRule(ruleIndex); track v.id) {
-                            <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
-                              <input type="checkbox" [checked]="true" [disabled]="!canEditRuleSet()" (change)="toggleVariantForRule(ruleIndex, v.id)" />
-                              <span class="flex-1">{{ v.productName }} - {{ v.variantName }}</span>
-                              <span class="text-xs text-gray-400">{{ money(v.price) }}</span>
-                            </label>
-                          } @empty {
-                            <p class="px-3 py-4 text-xs text-gray-400">Sin productos seleccionados.</p>
-                          }
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                } @else {
-                  <div class="rounded-xl border border-gray-200 p-4">
-                    <div class="flex items-center justify-between">
-                      <span class="text-sm font-semibold text-gray-700">Regla {{ ruleIndex + 1 }}</span>
-                      <div class="flex items-center gap-3">
-                        <button type="button" (click)="expandRule(ruleIndex)" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Editar</button>
-                        @if (form.rules.length > 1) {
-                          <button type="button" (click)="removeRule(ruleIndex)" class="text-xs font-semibold text-red-500 hover:text-red-700">Quitar</button>
-                        }
-                      </div>
-                    </div>
-                    <p class="mt-1 text-sm text-gray-600">{{ typeLabel(rule.type) }} - {{ ruleSummaryText(ruleIndex) }}</p>
-                    <p class="text-xs text-gray-400">
-                      {{ rule.variantIds.length }} producto{{ rule.variantIds.length === 1 ? '' : 's' }} seleccionado{{ rule.variantIds.length === 1 ? '' : 's' }}
-                    </p>
-                  </div>
-                }
-              }
-            </div>
-          </div>
-
-          @if (formError()) {
-            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ formError() }}</div>
-          }
-
-          <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 mb-5">
-            <h2 class="text-sm font-bold text-indigo-700 mb-3">Resumen</h2>
-            <div class="space-y-2 text-sm">
-              <div class="flex items-center justify-between">
-                <span class="text-gray-500">Estado</span>
-                <span class="flex items-center gap-1.5 font-semibold text-gray-800">
-                  <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                  {{ rawStatusLabel(editingStatus()) }}
-                </span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-gray-500">Reglas configuradas</span>
-                <span class="font-semibold text-gray-800">{{ form.rules.length }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-gray-500">Total productos afectados</span>
-                <span class="font-semibold text-gray-800">{{ totalAffectedProducts() }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-3">
             @if (!isReadOnly()) {
               <button
                 type="button"
                 [disabled]="svc.isSubmitting() || !formValid()"
-                (click)="goReview()"
-                class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-50"
+                (click)="saveConfigure()"
+                class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                Revisar y guardar
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                {{ svc.isSubmitting() ? 'Guardando…' : 'Guardar y sincronizar' }}
               </button>
             }
-            <button type="button" (click)="backToList()" class="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50">Cancelar</button>
           </div>
-        }
 
-        @case ('review') {
-          <button type="button" (click)="screen.set('form')" class="text-sm text-gray-500 hover:text-gray-700 mb-4">← Volver a editar</button>
-          <h1 class="text-xl font-bold text-gray-900 mb-4">Revisa antes de guardar</h1>
-          <div class="bg-white rounded-2xl border border-gray-100 p-5 space-y-4 max-w-xl">
-            <div>
-              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vigencia</span>
-              <p class="text-sm text-gray-800">{{ vigenciaPreview() }}</p>
-            </div>
-            @for (rule of form.rules; track $index) {
-              <div class="border-t border-gray-100 pt-3">
-                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Regla {{ $index + 1 }} — {{ typeLabel(rule.type) }}
-                </span>
-                <p class="text-sm text-gray-800 mt-1">{{ ruleConditionPreview($index) }}</p>
-                <ul class="mt-2 text-sm text-gray-700 space-y-0.5 max-h-40 overflow-y-auto">
-                  @for (v of selectedVariantsForRule($index); track v.id) {
-                    <li class="flex justify-between">
-                      <span>{{ v.productName }} - {{ v.variantName }}</span>
-                      <span class="text-gray-400">{{ money(v.price) }}</span>
-                    </li>
-                  }
-                </ul>
+          @if (isReadOnly()) {
+            <p class="text-sm text-amber-600 mb-4">Esta promoción está finalizada — solo lectura.</p>
+          }
+
+          <!-- Card informativa: tipo bloqueado (FR-018) -->
+          <div class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5">
+            <div class="flex items-start gap-3">
+              <div class="p-2 bg-indigo-600 text-white rounded-lg shadow-sm mt-0.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
               </div>
-            }
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-bold text-indigo-950 uppercase tracking-wider">Tipo seleccionado: {{ typeLabel(form.type) }}</span>
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-900">Fijado en creación</span>
+                </div>
+                <p class="text-xs text-indigo-800 mt-0.5">
+                  El tipo de regla no es modificable — aplica a todas las filas que agregues en esta promoción.
+                </p>
+              </div>
+            </div>
+            <div class="text-xs bg-white border border-indigo-200 px-3.5 py-1.5 rounded-lg text-indigo-900 font-semibold whitespace-nowrap shadow-sm flex items-center gap-2">
+              <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <span>Vigencia: <strong class="text-indigo-700">{{ vigenciaPreview() }}</strong></span>
+            </div>
           </div>
+
+          <!-- Información general (nombre, FR-018/FR-023: sin campo de descripción) -->
+          <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-5">
+            <h2 class="text-base font-semibold text-gray-800 mb-4">Información general</h2>
+            <label class="block">
+              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre</span>
+              <input [(ngModel)]="form.name" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </label>
+          </div>
+
+          <!-- Configuración de Vigencia y Horarios -->
+          <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-5">
+            <div class="flex items-center gap-2.5 mb-4">
+              <span class="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </span>
+              <div>
+                <h2 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Configuración de Vigencia y Horarios</h2>
+                <p class="text-[11px] text-gray-500">Define el periodo, días activos de la semana y franja horaria para el descuento en el POS.</p>
+              </div>
+            </div>
+            <div class="space-y-1.5 mb-4">
+              <div class="flex items-center justify-between">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600">Días de la semana aplicables</span>
+                <span class="text-[11px] text-gray-400">Vacío = todos los días</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                @for (d of days; track d.idx) {
+                  <button
+                    type="button"
+                    [disabled]="isReadOnly()"
+                    (click)="toggleDay(d.idx)"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                    [class]="form.days_of_week.includes(d.idx) ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+                  >
+                    @if (form.days_of_week.includes(d.idx)) { ✓ }{{ d.label }}
+                  </button>
+                }
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <label class="block">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Fecha inicio</span>
+                <div class="relative rounded-lg shadow-xs">
+                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  </div>
+                  <input type="date" [(ngModel)]="form.starts_at" [disabled]="isReadOnly() || !isDraft()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                </div>
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Fecha fin</span>
+                <div class="relative rounded-lg shadow-xs">
+                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  </div>
+                  <input type="date" [(ngModel)]="form.ends_at" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                </div>
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Hora desde</span>
+                <div class="relative rounded-lg shadow-xs">
+                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <input type="time" [(ngModel)]="form.start_time" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                </div>
+              </label>
+              <label class="block">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Hora hasta</span>
+                <div class="relative rounded-lg shadow-xs">
+                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <input type="time" [(ngModel)]="form.end_time" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          @if (canEditRuleSet()) {
+            <!-- Paso 1: productos -->
+            <div class="bg-gray-50/80 border border-gray-200/80 rounded-xl p-5 mb-5">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                  <div>
+                    <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">¿Qué productos participan?</h3>
+                    <p class="text-[11px] text-gray-500">Elige los sabores o productos base que combinan en esta promoción</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <select [(ngModel)]="stepOneFilter.category" class="text-xs border-gray-300 rounded-lg py-1.5 pl-2.5 pr-8 text-gray-700 bg-white">
+                    <option value="">Todas las categorías</option>
+                    @for (c of categoryFilterOptions(); track c.id) {
+                      <option [value]="c.id">{{ c.name }}</option>
+                    }
+                  </select>
+                  <input [(ngModel)]="stepOneFilter.text" type="search" placeholder="Buscar producto o sabor..." class="w-48 sm:w-56 text-xs border border-gray-300 rounded-lg py-1.5 px-2.5 text-gray-700" />
+                </div>
+              </div>
+
+              @if (stepOneResults().length > 0) {
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                  @for (p of stepOneResults(); track p.id) {
+                    <div
+                      (click)="toggleProductCandidate(p.id)"
+                      class="relative border-2 rounded-xl p-3.5 cursor-pointer transition-all"
+                      [class]="isProductSelected(p.id) ? 'border-indigo-500 bg-indigo-50/30' : 'border-gray-200 bg-white hover:border-gray-300'"
+                    >
+                      @if (isProductSelected(p.id)) {
+                        <span class="absolute top-2 right-2 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        </span>
+                      }
+                      <div class="text-2xl mb-1">🍨</div>
+                      <div class="font-bold text-xs text-gray-800 leading-tight">{{ p.name }}</div>
+                      <div class="text-[10px] text-gray-500 mt-0.5">{{ p.categoryName }}</div>
+                      <div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+                        <span>Desde {{ money(p.minPrice) }}</span>
+                        <span [class]="isProductSelected(p.id) ? 'font-medium text-indigo-700' : 'text-indigo-600'">
+                          {{ isProductSelected(p.id) ? 'Incluido' : '+ Seleccionar' }}
+                        </span>
+                      </div>
+                    </div>
+                  }
+                </div>
+              } @else if (stepOneFilter.category || stepOneFilter.text) {
+                <p class="text-xs text-gray-400">Sin productos que coincidan con el filtro.</p>
+              } @else {
+                <p class="text-xs text-gray-400">Elige una categoría o busca un producto para empezar.</p>
+              }
+
+              <div class="flex items-center gap-2 pt-3 flex-wrap">
+                <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                  Seleccionados ({{ selectedCandidateProducts().length }}):
+                </span>
+                <div class="flex flex-wrap gap-1.5">
+                  @for (p of selectedCandidateProducts(); track p.id) {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                      {{ p.name }}
+                      <button type="button" (click)="toggleProductCandidate(p.id)" class="text-indigo-400 hover:text-indigo-600 ml-0.5">×</button>
+                    </span>
+                  } @empty {
+                    <span class="text-gray-400 text-[11px] italic">Sin productos seleccionados.</span>
+                  }
+                </div>
+              </div>
+            </div>
+
+            <!-- Paso 2: presentación y regla de precio -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+              <div class="flex items-center gap-2.5 mb-4">
+                <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                <div>
+                  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Presentación y Regla de Precio</h3>
+                  <p class="text-[11px] text-gray-500">Define el tamaño aplicable y las condiciones de cobro fijo en el POS</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-gray-50/80 p-3.5 rounded-xl border border-gray-200/80">
+                <label class="block">
+                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Presentación / Tamaño</span>
+                  <select [ngModel]="pickerLabel()" (ngModelChange)="pickerLabel.set($event)" class="w-full text-xs border-gray-300 rounded-lg py-2 pl-2.5 pr-8 text-gray-700 bg-white font-medium">
+                    <option [ngValue]="null">Elige una presentación</option>
+                    @for (l of availableLabels(); track l) {
+                      <option [ngValue]="l">{{ l }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="block">
+                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Unidades</span>
+                  <input type="number" [attr.min]="minPickerQty()" [ngModel]="pickerQty()" (ngModelChange)="onPickerQtyChange($event)" class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800" />
+                </label>
+                <label class="block">
+                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+                    {{ form.type === 'percent' ? 'Porcentaje (%)' : 'Precio promocional ($ COP)' }}
+                  </span>
+                  @if (form.type === 'percent') {
+                    <input type="number" min="0" max="100" [ngModel]="pickerValue()" (ngModelChange)="pickerValue.set($event)" class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800" />
+                  } @else {
+                    <app-money-input [ngModel]="pickerValue()" (ngModelChange)="pickerValue.set($event)" class="block" />
+                  }
+                </label>
+                <button
+                  type="button"
+                  [disabled]="!canAddRuleRow()"
+                  (click)="addRuleRow()"
+                  class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1.5 h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                  Agregar a la lista
+                </button>
+              </div>
+
+              @if (pickerError()) {
+                <p class="mt-2 text-xs text-red-600">{{ pickerError() }}</p>
+              }
+
+              @if (sharedVariantConflict(); as sc) {
+                <div class="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
+                  La variante <strong>{{ sc.variantLabel }}</strong> está repetida entre dos reglas — cada variante solo
+                  puede pertenecer a una regla de esta promoción.
+                </div>
+              }
+
+              <div class="mt-4 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-gray-600">Reglas de precio configuradas</span>
+                  <span class="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60">
+                    {{ form.rules.length }} regla{{ form.rules.length === 1 ? '' : 's' }} configurada{{ form.rules.length === 1 ? '' : 's' }}
+                  </span>
+                </div>
+                <div class="overflow-hidden border border-gray-200 rounded-xl">
+                  <table class="w-full text-left text-xs">
+                    <thead class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                      <tr>
+                        <th class="p-3">Presentación</th>
+                        <th class="p-3">Unidades mínimas</th>
+                        <th class="p-3">Precio regular est.</th>
+                        <th class="p-3">Precio especial / promo</th>
+                        <th class="p-3">Ahorro en caja</th>
+                        <th class="p-3 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 bg-white">
+                      @for (rule of form.rules; track $index) {
+                        <tr class="hover:bg-gray-50/50 transition-colors">
+                          <td class="p-3 font-bold text-gray-800">
+                            <span class="w-2 h-2 rounded-full bg-indigo-600 inline-block mr-1.5"></span>{{ ruleProductsLabel(rule) }}
+                          </td>
+                          <td class="p-3 text-gray-600 font-medium">{{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}</td>
+                          @if (previewSavings(rule); as pv) {
+                            <td class="p-3 text-gray-400 line-through">{{ money(pv.regular) }}</td>
+                            <td class="p-3 font-bold text-indigo-700">
+                              {{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}
+                            </td>
+                            <td class="p-3">
+                              @if (pv.amountOff > 0) {
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Ahorro {{ money(pv.amountOff) }}
+                                </span>
+                              } @else {
+                                <span class="text-gray-400">—</span>
+                              }
+                            </td>
+                          } @else {
+                            <td class="p-3 text-gray-400">—</td>
+                            <td class="p-3 font-bold text-indigo-700">{{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}</td>
+                            <td class="p-3 text-gray-400">—</td>
+                          }
+                          <td class="p-3 text-right">
+                            <button type="button" (click)="removeRuleRow($index)" title="Eliminar regla" class="text-gray-400 hover:text-red-500 p-1 rounded transition-colors">
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="6" class="p-4 text-center text-gray-400">Sin reglas configuradas todavía.</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <!-- Solo lectura: Activa o Finalizada (FR-018) -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-5">
+              <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Reglas configuradas</h3>
+              <div class="overflow-hidden border border-gray-200 rounded-xl">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                    <tr>
+                      <th class="p-3">Presentación</th>
+                      <th class="p-3">Unidades mínimas</th>
+                      <th class="p-3">Precio / descuento</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100 bg-white">
+                    @for (rule of form.rules; track $index) {
+                      <tr>
+                        <td class="p-3 font-bold text-gray-800">{{ ruleProductsLabel(rule) }}</td>
+                        <td class="p-3 text-gray-600 font-medium">{{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}</td>
+                        <td class="p-3 font-bold text-indigo-700">{{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}</td>
+                      </tr>
+                    } @empty {
+                      <tr><td colspan="3" class="p-4 text-center text-gray-400">Sin reglas.</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
 
           @if (formError()) {
-            <div class="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600 max-w-xl">{{ formError() }}</div>
+            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ formError() }}</div>
           }
           @if (svc.overlapConflict(); as oc) {
-            <div class="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700 max-w-xl">
+            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
               <p class="font-semibold">{{ oc.error }}</p>
               <ul class="mt-1 list-disc pl-5">
                 @for (c of oc.conflicts; track c.rule_id) {
@@ -600,37 +749,16 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             </div>
           }
           @if (svc.ruleVariantConflict(); as rc) {
-            <div class="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700 max-w-xl">
+            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
               <p class="font-semibold">{{ rc.error }}</p>
-              <p class="mt-1">Regla {{ rc.rule_index_a + 1 }} y regla {{ rc.rule_index_b + 1 }} comparten
-                {{ rc.variant_ids.length }} variante(s).</p>
+              <p class="mt-1">Regla {{ rc.rule_index_a + 1 }} y regla {{ rc.rule_index_b + 1 }} comparten {{ rc.variant_ids.length }} variante(s).</p>
             </div>
           }
           @if (svc.packageNotDiscount(); as pk) {
-            <div class="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700 max-w-xl">
+            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
               <p class="font-semibold">{{ pk.error }}</p>
-              <p class="mt-1">
-                {{ pk.min_qty }} unidades de la variante más barata costarían
-                {{ money(pk.min_qty * numVal(pk.cheapest_unit_price)) }} — el precio de paquete
-                ({{ money(numVal(pk.value)) }}) no representa un descuento.
-              </p>
             </div>
           }
-
-          <div class="mt-6 flex gap-3">
-            @if (isDraft() && !editingId()) {
-              <button type="button" [disabled]="svc.isSubmitting()" (click)="save('draft')" class="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-semibold">
-                Guardar borrador
-              </button>
-              <button type="button" [disabled]="svc.isSubmitting()" (click)="save('active')" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
-                Guardar y activar
-              </button>
-            } @else {
-              <button type="button" [disabled]="svc.isSubmitting()" (click)="save('draft')" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
-                Guardar cambios
-              </button>
-            }
-          </div>
         }
       }
     </div>
@@ -674,18 +802,33 @@ export class PromotionsPageComponent implements OnInit {
   readonly duplicating = signal<Promotion | null>(null);
   readonly duplicateName = signal('');
 
-  /** Índice de la única regla mostrada en forma expandida (acordeón); las
-   *  demás se muestran como resumen colapsado. */
-  readonly expandedRuleIndex = signal(0);
+  /** Pantalla 1: menú de acciones desplegable, una fila a la vez. */
+  readonly openActionsId = signal<string | null>(null);
+
+  /** Pantalla 2 (creación): nombre + tipo, antes de tener un `PromotionForm`. */
+  readonly createName = signal('');
+  readonly createType = signal<PromotionType>('package_price');
 
   form: PromotionForm = emptyForm();
-  /** spec 063 (revisión 2026-09-01): un filtro de ayuda por regla — índice
-   *  paralelo a `form.rules`, nunca se guarda (FR-004). */
-  ruleFilters: RuleFilter[] = [{ category: '', text: '' }];
+
+  /** Pantalla 3, Paso 1: productos candidatos elegidos (persisten entre altas
+   *  de filas, FR-014 — solo se limpian al abrir/cerrar la pantalla). */
+  readonly candidateProductIds = signal<Set<string>>(new Set());
+  stepOneFilter: StepOneFilter = { category: '', text: '' };
+
+  /** Pantalla 3, Paso 2: la fila en construcción, nunca se guarda directo —
+   *  "Agregar a la lista" la empuja a `form.rules`. Signals (no campos
+   *  planos) para que `packagePriceCheck`/`packagePriceExceedsRegularSum`
+   *  (FR-026) se recalculen solos cada vez que cambian (spec 083, sesión
+   *  2026-09-17). */
+  readonly pickerLabel = signal<string | null>(null);
+  readonly pickerQty = signal(1);
+  readonly pickerValue = signal(0);
+  readonly pickerError = signal<string | null>(null);
 
   readonly statusTabs = STATUS_TABS;
   readonly typeOptions = TYPE_OPTIONS;
-  readonly days = DAY_SHORT.map((label, idx) => ({ label, idx }));
+  readonly days = DAY_LABELS.map((label, idx) => ({ label, idx }));
 
   private searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
@@ -718,6 +861,22 @@ export class PromotionsPageComponent implements OnInit {
     return out;
   });
 
+  /** Productos del catálogo agrupados (Paso 1) — cada uno con sus variantes,
+   *  para resolver la etiqueta de presentación del Paso 2 (FR-013). */
+  readonly catalogProducts = computed<CatalogProduct[]>(() => {
+    const map = new Map<string, CatalogProduct>();
+    for (const v of this.catalogVariants()) {
+      let p = map.get(v.productId);
+      if (!p) {
+        p = { id: v.productId, name: v.productName, categoryId: v.categoryId, categoryName: v.categoryName, minPrice: v.price, variants: [] };
+        map.set(v.productId, p);
+      }
+      p.variants.push(v);
+      if (v.price < p.minPrice) p.minPrice = v.price;
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  });
+
   readonly categoryFilterOptions = computed(() => {
     const seen = new Map<string, string>();
     for (const v of this.catalogVariants()) seen.set(v.categoryId, v.categoryName);
@@ -726,9 +885,26 @@ export class PromotionsPageComponent implements OnInit {
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
+  readonly selectedCandidateProducts = computed<CatalogProduct[]>(() => {
+    const ids = this.candidateProductIds();
+    return this.catalogProducts().filter((p) => ids.has(p.id));
+  });
+
+  /** Presentaciones disponibles para el Paso 2 (FR-013): unión de etiquetas
+   *  de las variantes de los productos candidatos del Paso 1. */
+  readonly availableLabels = computed<string[]>(() => {
+    const ids = this.candidateProductIds();
+    const labels = new Set<string>();
+    for (const p of this.catalogProducts()) {
+      if (!ids.has(p.id)) continue;
+      for (const v of p.variants) labels.add(this.variantLabel(v));
+    }
+    return [...labels].sort((a, b) => a.localeCompare(b));
+  });
+
   /** spec 063 (revisión 2026-09-01, FR-001a): variante repetida entre dos
    *  reglas del formulario — validación de cliente, antes de enviar
-   *  (el servidor la revalida siempre, contracts/superficies-consumo.md §3). */
+   *  (el servidor la revalida siempre). */
   readonly sharedVariantConflict = computed<{ a: number; b: number; variantLabel: string } | null>(() => {
     const rules = this.form.rules;
     const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
@@ -745,11 +921,52 @@ export class PromotionsPageComponent implements OnInit {
     return null;
   });
 
+  /** FR-025 (spec 083, sesión 2026-09-17): unidades mínimas de la fila en
+   *  construcción — 2 para precio de paquete, 1 para porcentaje. Método (no
+   *  `computed`): depende de `form.type`, un campo plano fijado al entrar a
+   *  la pantalla de configuración (mismo criterio que `stepOneResults()`). */
+  minPickerQty(): number {
+    return this.form.type === 'package_price' ? 2 : 1;
+  }
+
+  /** FR-026: recálculo dinámico del guard de precio de paquete —
+   *  `_guard_package_is_discount` espejado — que se actualiza solo cada vez
+   *  que cambian producto, presentación o unidades (los signals de los que
+   *  depende). `null` si todavía no hay suficiente información para calcularlo. */
+  readonly packagePriceCheck = computed<{ regularSum: number } | null>(() => {
+    if (this.form.type !== 'package_price') return null;
+    const label = this.pickerLabel();
+    if (!label) return null;
+    const variantIds = this.resolvedVariantIdsForLabel(label);
+    const cheapest = this.cheapestPrice(variantIds);
+    if (cheapest === null) return null;
+    return { regularSum: this.pickerQty() * cheapest };
+  });
+
+  /** FR-026: `true` cuando el precio promocional actual no representa un
+   *  ahorro frente a la suma de precios regulares — se recalcula cada vez
+   *  que cambia producto, presentación, unidades o precio. */
+  readonly packagePriceExceedsRegularSum = computed<boolean>(() => {
+    const check = this.packagePriceCheck();
+    if (!check) return false;
+    return this.pickerValue() >= check.regularSum;
+  });
+
   ngOnInit(): void {
     this.svc.load(1);
     this.categories.loadAllCategories();
     void this.menu.loadMenu();
     this.svc.loadClosedByRefactor();
+  }
+
+  @HostListener('document:click')
+  closeActionsMenu(): void {
+    this.openActionsId.set(null);
+  }
+
+  toggleActionsMenu(id: string, event: Event): void {
+    event.stopPropagation();
+    this.openActionsId.set(this.openActionsId() === id ? null : id);
   }
 
   selectTab(status: StatusTab): void {
@@ -770,6 +987,12 @@ export class PromotionsPageComponent implements OnInit {
     return PROMOTION_TRANSITIONS[p.status] ?? [];
   }
 
+  /** FR-021: habilitado salvo que la promoción esté `Activa` por estado real
+   *  (sin importar lo que diga el badge de estado visual derivado). */
+  canDelete(p: Promotion): boolean {
+    return p.status !== 'active';
+  }
+
   async changeStatus(p: Promotion, to: PromotionStatus): Promise<void> {
     const ok = await this.confirm.ask({
       title: `${this.statusVerb(to)} "${p.name}"`,
@@ -786,105 +1009,90 @@ export class PromotionsPageComponent implements OnInit {
     }
   }
 
-  openNew(): void {
-    this.form = emptyForm();
-    this.ruleFilters = [{ category: '', text: '' }];
-    this.editingId.set(null);
-    this.editingSource.set(null);
-    this.formError.set(null);
-    this.expandedRuleIndex.set(0);
-    this.screen.set('form');
+  async removePromotion(p: Promotion): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: `Eliminar "${p.name}"`,
+      message: 'Esta acción no se puede deshacer.',
+    });
+    if (!ok) return;
+    const done = await this.svc.remove(p.id);
+    if (done) {
+      this.toast.success('Promoción eliminada');
+      this.svc.load();
+    } else {
+      this.toast.error(this.svc.otherError() ?? 'No se pudo eliminar.');
+    }
   }
+
+  // ───────────────────────── Pantalla 2: creación ─────────────────────────
+
+  openNew(): void {
+    this.createName.set('');
+    this.createType.set('package_price');
+    this.screen.set('create');
+  }
+
+  /** spec 083 (FR-020, A-75): crea la promoción de inmediato en `Borrador`
+   *  con una lista de reglas vacía — no espera a la primera regla agregada
+   *  en la pantalla de configuración. */
+  async continueToConfigure(): Promise<void> {
+    const name = this.createName().trim();
+    if (!name) return;
+    this.formError.set(null);
+    const form: PromotionForm = {
+      ...emptyForm(),
+      name,
+      type: this.createType(),
+      starts_at: new Date().toISOString().slice(0, 10),
+    };
+    const res = await this.svc.create(form, 'draft');
+    if (!res) {
+      this.formError.set(this.svc.otherError() ?? 'No se pudo crear la promoción.');
+      return;
+    }
+    this.editingId.set(res.id);
+    this.editingSource.set(res);
+    this.form = form;
+    this.resetRuleBuilder();
+    this.screen.set('configure');
+  }
+
+  // ───────────────────────── Pantalla 3: configuración ────────────────────
 
   openEdit(p: Promotion): void {
     this.editingId.set(p.id);
     this.editingSource.set(p);
     this.formError.set(null);
-    const rules: PromotionRuleForm[] = p.rules.length
-      ? p.rules.map((r) => ({
-          type: r.type === 'package_price' ? 'package_price' : 'percent',
-          value: Number(r.value),
-          min_qty: r.min_qty,
-          variantIds: r.variants.map((v) => v.product_variant_id),
-          isExisting: true,
-        }))
-      : [emptyRule()];
+    const legacyType = p.rules[0]?.type;
+    const type: PromotionType = legacyType === 'percent' || legacyType === 'package_price' ? legacyType : 'package_price';
     this.form = {
       name: p.name,
-      description: p.description ?? '',
       starts_at: p.starts_at ? p.starts_at.slice(0, 10) : null,
       ends_at: p.ends_at ? p.ends_at.slice(0, 10) : null,
       days_of_week: p.days_of_week ? p.days_of_week.split(',').map(Number) : [],
       start_time: p.start_time ? p.start_time.slice(0, 5) : null,
       end_time: p.end_time ? p.end_time.slice(0, 5) : null,
-      rules,
+      type,
+      rules: p.rules.map((r) => ({
+        type: r.type === 'percent' || r.type === 'package_price' ? r.type : type,
+        value: Number(r.value),
+        min_qty: r.min_qty,
+        variantIds: r.variants.map((v) => v.product_variant_id),
+      })),
     };
-    this.ruleFilters = rules.map(() => ({ category: '', text: '' }));
-    this.expandedRuleIndex.set(0);
-    this.screen.set('form');
+    this.resetRuleBuilder();
+    this.screen.set('configure');
   }
 
   backToList(): void {
     this.screen.set('list');
   }
 
-  /**
-   * spec 063 FR-018 + spec 071 (A-69, FR-013/FR-014): agregar o quitar
-   * reglas, y agregar/quitar productos del conjunto de cualquiera de ellas,
-   * se habilita en `draft` y también en `paused` (antes solo en `draft`; en
-   * `active` sigue bloqueado sin cambio).
-   */
+  /** FR-018: en `active`, las reglas quedan de solo lectura; en `finished`,
+   *  toda la pantalla es de solo lectura. `draft`/`paused` permiten agregar,
+   *  quitar y volver a agregar filas (no hay edición in-situ, FR-014/016). */
   canEditRuleSet(): boolean {
     return !this.isReadOnly() && (this.isDraft() || this.isPaused());
-  }
-
-  /**
-   * spec 071 (FR-015): tipo, valor y cantidad mínima de una regla que ya
-   * existía al pausar la promoción siguen bloqueados **in situ** en
-   * `paused` — solo `draft`, o una regla agregada en esta misma sesión de
-   * edición (`!rule.isExisting`), los habilita.
-   */
-  canEditRuleTypeValue(rule: PromotionRuleForm): boolean {
-    if (this.isReadOnly()) return false;
-    if (this.isDraft()) return true;
-    return this.isPaused() && !rule.isExisting;
-  }
-
-  /** spec 071 (FR-012): la regla nueva entra en la primera posición, no al
-   *  final — las existentes conservan su orden relativo, corridas una
-   *  posición hacia abajo. `ruleFilters` es un arreglo paralelo por índice y
-   *  se mueve igual. */
-  addRule(): void {
-    if (!this.canEditRuleSet()) return;
-    this.form.rules.unshift(emptyRule());
-    this.ruleFilters.unshift({ category: '', text: '' });
-    this.expandedRuleIndex.set(0);
-  }
-
-  removeRule(index: number): void {
-    if (!this.canEditRuleSet() || this.form.rules.length <= 1) return;
-    this.form.rules.splice(index, 1);
-    this.ruleFilters.splice(index, 1);
-    if (this.expandedRuleIndex() >= this.form.rules.length) {
-      this.expandedRuleIndex.set(this.form.rules.length - 1);
-    }
-  }
-
-  /** Acordeón: solo una regla se muestra expandida a la vez (fuera de
-   *  `canEditRuleSet()`, donde todas son de solo lectura y se ven completas). */
-  isRuleExpanded(index: number): boolean {
-    return !this.canEditRuleSet() || this.expandedRuleIndex() === index;
-  }
-
-  expandRule(index: number): void {
-    this.expandedRuleIndex.set(index);
-  }
-
-  setRuleType(index: number, t: PromotionType): void {
-    const rule = this.form.rules[index];
-    if (!this.canEditRuleTypeValue(rule)) return;
-    rule.type = t;
-    if (rule.min_qty < 1) rule.min_qty = 1;
   }
 
   toggleDay(idx: number): void {
@@ -894,60 +1102,190 @@ export class PromotionsPageComponent implements OnInit {
     else this.form.days_of_week.push(idx);
   }
 
-  toggleVariantForRule(ruleIndex: number, variantId: string): void {
-    if (!this.canEditRuleSet()) return;
-    const ids = this.form.rules[ruleIndex].variantIds;
-    const i = ids.indexOf(variantId);
-    if (i >= 0) ids.splice(i, 1);
-    else ids.push(variantId);
+  // ── Paso 1 ──
+
+  private resetRuleBuilder(): void {
+    this.candidateProductIds.set(new Set());
+    this.stepOneFilter = { category: '', text: '' };
+    this.pickerLabel.set(null);
+    this.pickerQty.set(this.minPickerQty());
+    this.pickerValue.set(0);
+    this.pickerError.set(null);
   }
 
-  clearRuleVariants(ruleIndex: number): void {
-    if (!this.canEditRuleSet()) return;
-    this.form.rules[ruleIndex].variantIds = [];
-  }
-
-  /**
-   * spec 071 (FR-006 a FR-008): reemplaza a `visibleVariantsForRule`. Solo
-   * devuelve resultados cuando hay una categoría específica elegida o texto
-   * de búsqueda — con "Todas las categorías" y el buscador vacío devuelve
-   * `[]` para no volver a listar el catálogo completo por defecto (FR-006).
-   * Es independiente de qué esté ya seleccionado: ver `selectedVariantsForRule`
-   * para el listado del conjunto (contracts/busqueda-y-seleccion.md).
-   */
-  searchResultsForRule(ruleIndex: number): CatalogVariant[] {
-    const filter = this.ruleFilters[ruleIndex] ?? { category: '', text: '' };
-    const text = filter.text.trim().toLowerCase();
-    if (!filter.category && !text) return [];
-    return this.catalogVariants().filter((v) => {
-      if (filter.category && v.categoryId !== filter.category) return false;
-      if (text && !`${v.productName} ${v.variantName}`.toLowerCase().includes(text)) return false;
+  /** Igual que en el diseño anterior: sin categoría ni texto, no se lista el
+   *  catálogo completo por defecto. Método (no `computed`): depende de
+   *  `stepOneFilter`, un objeto plano mutado por `ngModel`. */
+  stepOneResults(): CatalogProduct[] {
+    const text = this.stepOneFilter.text.trim().toLowerCase();
+    const cat = this.stepOneFilter.category;
+    if (!cat && !text) return [];
+    return this.catalogProducts().filter((p) => {
+      if (cat && p.categoryId !== cat) return false;
+      if (text && !p.name.toLowerCase().includes(text)) return false;
       return true;
     });
   }
 
-  selectAllFilteredForRule(ruleIndex: number): void {
-    if (!this.canEditRuleSet()) return;
-    const rule = this.form.rules[ruleIndex];
-    const ids = new Set(rule.variantIds);
-    for (const v of this.searchResultsForRule(ruleIndex)) ids.add(v.id);
-    rule.variantIds = [...ids];
+  isProductSelected(id: string): boolean {
+    return this.candidateProductIds().has(id);
   }
 
-  selectedVariantsForRule(ruleIndex: number): CatalogVariant[] {
-    const rule = this.form.rules[ruleIndex];
-    if (!rule) return [];
-    const set = new Set(rule.variantIds);
-    return this.catalogVariants().filter((v) => set.has(v.id));
+  toggleProductCandidate(id: string): void {
+    const next = new Set(this.candidateProductIds());
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.candidateProductIds.set(next);
+    this.pickerLabel.set(null);
+    this.pickerError.set(null);
   }
+
+  // ── Paso 2 ──
+
+  /** FR-013: nombre de la presentación si coincide con el catálogo, nombre
+   *  propio en cualquier otro caso; "Presentación única" si el producto no
+   *  maneja variaciones. */
+  variantLabel(v: CatalogVariant): string {
+    const product = this.catalogProducts().find((p) => p.id === v.productId);
+    if (product && product.variants.length === 1) return 'Presentación única';
+    return v.variantName;
+  }
+
+  resolvedVariantIdsForLabel(label: string): string[] {
+    const ids = this.candidateProductIds();
+    const out: string[] = [];
+    for (const p of this.catalogProducts()) {
+      if (!ids.has(p.id)) continue;
+      const match = p.variants.find((v) => this.variantLabel(v) === label);
+      if (match) out.push(match.id);
+    }
+    return out;
+  }
+
+  private cheapestPrice(variantIds: string[]): number | null {
+    const set = new Set(variantIds);
+    const prices = this.catalogVariants().filter((v) => set.has(v.id)).map((v) => v.price);
+    return prices.length ? Math.min(...prices) : null;
+  }
+
+  canAddRuleRow(): boolean {
+    const minQty = this.minPickerQty();
+    if (!this.pickerLabel() || this.pickerQty() < minQty || this.pickerValue() <= 0 || this.candidateProductIds().size === 0) {
+      return false;
+    }
+    return !(this.form.type === 'package_price' && this.packagePriceExceedsRegularSum());
+  }
+
+  /** FR-016/FR-025/FR-026: validación local — feedback inmediato antes de
+   *  enviar; la autoritativa sigue siendo el 409 del backend
+   *  (`_guard_package_is_discount`/`PromotionRuleIn`). */
+  addRuleRow(): void {
+    this.pickerError.set(null);
+    const label = this.pickerLabel();
+    if (!label) {
+      this.pickerError.set('Elige una presentación.');
+      return;
+    }
+    const variantIds = this.resolvedVariantIdsForLabel(label);
+    if (variantIds.length === 0) {
+      this.pickerError.set('Ningún producto seleccionado tiene esa presentación.');
+      return;
+    }
+    const minQty = this.minPickerQty();
+    if (this.pickerQty() < minQty) {
+      this.pickerError.set(
+        this.form.type === 'package_price'
+          ? 'En promociones por paquete, el mínimo es de 2 unidades'
+          : 'Las unidades deben ser al menos 1.',
+      );
+      return;
+    }
+    if (this.form.type === 'percent' && (this.pickerValue() <= 0 || this.pickerValue() > 100)) {
+      this.pickerError.set('El porcentaje debe estar entre 1 y 100.');
+      return;
+    }
+    if (this.form.type === 'package_price') {
+      if (this.pickerValue() <= 0) {
+        this.pickerError.set('El precio debe ser mayor a 0.');
+        return;
+      }
+      if (this.packagePriceExceedsRegularSum()) {
+        const regularSum = this.packagePriceCheck()?.regularSum ?? 0;
+        this.pickerError.set(
+          `El precio promocional (${this.money(this.pickerValue())}) debe ser menor a la suma ` +
+            `del precio regular de los productos seleccionados (${this.money(regularSum)}).`,
+        );
+        return;
+      }
+    }
+
+    const rule: PromotionRuleForm = {
+      type: this.form.type,
+      value: this.pickerValue(),
+      min_qty: this.pickerQty(),
+      variantIds,
+    };
+    this.form.rules.push(rule);
+    this.pickerLabel.set(null);
+    this.pickerQty.set(this.minPickerQty());
+    this.pickerValue.set(0);
+  }
+
+  /** FR-025: clamp del input de unidades — nunca por debajo del mínimo del
+   *  tipo de promoción actual. */
+  onPickerQtyChange(value: number): void {
+    const min = this.minPickerQty();
+    if (value < min) {
+      this.pickerError.set(
+        this.form.type === 'package_price'
+          ? 'En promociones por paquete, el mínimo es de 2 unidades'
+          : 'Las unidades deben ser al menos 1.',
+      );
+    } else {
+      this.pickerError.set(null);
+    }
+    this.pickerQty.set(Math.max(value, min));
+  }
+
+  removeRuleRow(index: number): void {
+    if (!this.canEditRuleSet()) return;
+    this.form.rules.splice(index, 1);
+  }
+
+  /** "Presentación" de una fila ya agregada (tabla del Paso 2): la etiqueta
+   *  de presentación + los productos que cubre (FR-014, `setDescriptor` de
+   *  spec 066 para el orden y el tope de nombres). */
+  ruleProductsLabel(rule: PromotionRuleForm): string {
+    const set = new Set(rule.variantIds);
+    const vs = this.catalogVariants().filter((v) => set.has(v.id));
+    if (vs.length === 0) return 'Sin variantes';
+    const label = this.variantLabel(vs[0]);
+    const names = [...new Set(vs.map((v) => v.productName))];
+    const descriptor = setDescriptor(names);
+    return descriptor ? `${label} · ${descriptor.text}` : label;
+  }
+
+  /** Vista previa de ahorro (FR-015): mirror local del precio regular
+   *  estimado (unidades × precio más barato del conjunto) — el efectivo real
+   *  lo resuelve siempre el backend en el preview de cobro. */
+  previewSavings(rule: PromotionRuleForm): { regular: number; amountOff: number } | null {
+    const cheapest = this.cheapestPrice(rule.variantIds);
+    if (cheapest === null) return null;
+    const regular = rule.min_qty * cheapest;
+    const special = rule.type === 'package_price' ? rule.value : regular * (1 - rule.value / 100);
+    return { regular, amountOff: Math.max(0, regular - special) };
+  }
+
+  // ── Guardado ──
 
   formValid(): boolean {
     if (!this.form.name.trim()) return false;
+    if (!this.form.starts_at) return false;
     if (this.form.rules.length === 0) return false;
-    if (!this.form.start_time !== !this.form.end_time) return false;
+    if (!!this.form.start_time !== !!this.form.end_time) return false;
     if (this.sharedVariantConflict()) return false;
     for (const rule of this.form.rules) {
-      if (this.canEditRuleSet() && rule.variantIds.length === 0) return false;
+      if (rule.variantIds.length === 0) return false;
       if (rule.type === 'percent' && (rule.value <= 0 || rule.value > 100)) return false;
       if (rule.type === 'package_price' && rule.value <= 0) return false;
       if (rule.min_qty < 1) return false;
@@ -955,43 +1293,36 @@ export class PromotionsPageComponent implements OnInit {
     return true;
   }
 
-  goReview(): void {
+  async saveConfigure(): Promise<void> {
     this.formError.set(null);
     this.svc.overlapConflict.set(null);
     this.svc.packageNotDiscount.set(null);
     this.svc.ruleVariantConflict.set(null);
     if (!this.formValid()) {
       this.formError.set(
-        'Revisa los campos: nombre, cada regla con un valor válido y al menos una variante, ' +
-          'y ninguna variante repetida entre reglas.',
+        'Revisa los campos: nombre, fecha de inicio, y al menos una regla con su presentación, unidades y precio.',
       );
       return;
     }
-    this.screen.set('review');
-  }
 
-  async save(status: 'draft' | 'active'): Promise<void> {
-    this.formError.set(null);
-    const id = this.editingId();
+    // spec 083 (FR-020, A-75): al llegar a esta pantalla la promoción ya
+    // existe en base de datos (creada en Borrador desde "Continuar", o
+    // abierta para editar desde el listado) — `saveConfigure` nunca crea.
+    const id = this.editingId()!;
     let res: Promotion | null;
-    if (!id) {
-      res = await this.svc.create(this.form, status);
-    } else if (this.isDraft() || this.isPaused()) {
-      // spec 071 (FR-014): en `paused`, igual que en `draft`, hay que
-      // reemplazar la lista de reglas antes de los escalares.
+    if (this.isDraft() || this.isPaused()) {
       res = await this.svc.updateShape(id, this.form);
       if (res) res = await this.svc.update(id, this.form);
-      if (res && status === 'active') res = await this.svc.changeStatus(id, 'active');
     } else {
       res = await this.svc.update(id, this.form);
     }
 
     if (res) {
-      this.toast.success(id ? 'Promoción actualizada' : 'Promoción creada');
+      this.toast.success('Promoción actualizada');
       this.screen.set('list');
       this.svc.load();
     } else if (this.svc.overlapConflict() || this.svc.packageNotDiscount() || this.svc.ruleVariantConflict()) {
-      // Se muestran en el panel de la pantalla de revisión.
+      // Se muestran inline, debajo de las reglas.
     } else {
       this.formError.set(this.svc.otherError() ?? 'No se pudo guardar.');
     }
@@ -1037,10 +1368,6 @@ export class PromotionsPageComponent implements OnInit {
     return formatMoney(n);
   }
 
-  numVal(s: string): number {
-    return Number(s);
-  }
-
   typeLabel(type: string): string {
     switch (type) {
       case 'percent':
@@ -1057,6 +1384,13 @@ export class PromotionsPageComponent implements OnInit {
       default:
         return type;
     }
+  }
+
+  /** FR-017: la columna "Reglas" del listado muestra únicamente el tipo. */
+  promotionTypeLabel(p: Promotion): string {
+    if (p.rules.length === 0) return 'Sin reglas';
+    const types = new Set(p.rules.map((r) => r.type));
+    return types.size === 1 ? this.typeLabel(p.rules[0].type) : 'Tipos mixtos';
   }
 
   statusVerb(to: PromotionStatus): string {
@@ -1094,39 +1428,6 @@ export class PromotionsPageComponent implements OnInit {
     return parts.length ? parts.join(', ') : 'Todos los días, sin límite';
   }
 
-  /**
-   * spec 071 (FR-001 a FR-005): línea corta para la regla colapsada en el
-   * acordeón (Reglas), nombrando el/los producto(s) del conjunto — nunca solo
-   * la cantidad de unidades. Reutiliza `setDescriptor` (spec 066) para el
-   * orden alfabético y el tope de tres nombres; la oración final es propia de
-   * esta spec (contracts/resumen-de-regla.md), distinta de
-   * `ruleConditionPreview` (pantalla de revisión).
-   */
-  ruleSummaryText(ruleIndex: number): string {
-    const rule = this.form.rules[ruleIndex];
-    if (!rule) return '';
-    const names = this.selectedVariantsForRule(ruleIndex)
-      .map((v) => v.variantName?.trim() || v.productName?.trim() || '')
-      .filter((n) => n !== '');
-    const descriptor = setDescriptor(names);
-    if (!descriptor) return 'Sin productos seleccionados.';
-
-    const d = descriptor.multiple ? `entre ${descriptor.text}` : descriptor.text;
-    const unidad = rule.min_qty === 1 ? 'unidad' : 'unidades';
-
-    if (rule.type === 'package_price') {
-      return `Paga ${this.money(rule.value)} llevando ${rule.min_qty} ${unidad} ${d}.`;
-    }
-    if (rule.min_qty === 1) {
-      return `${rule.value}% en ${d}.`;
-    }
-    return `${rule.value}% llevando ${rule.min_qty} ${unidad} ${d}.`;
-  }
-
-  totalAffectedProducts(): number {
-    return this.form.rules.reduce((acc, r) => acc + r.variantIds.length, 0);
-  }
-
   rawStatusLabel(status: PromotionStatus): string {
     switch (status) {
       case 'draft':
@@ -1140,30 +1441,6 @@ export class PromotionsPageComponent implements OnInit {
       default:
         return status;
     }
-  }
-
-  /**
-   * spec 066 (FR-018): la vista previa nombra las variantes **seleccionadas en
-   * este momento**, con el mismo algoritmo que el backend.
-   *
-   * Recibe el índice y no la regla porque necesita `selectedVariantsForRule` para
-   * resolver los nombres. El criterio es el de `variant_display_names`: el nombre
-   * de la variante y, si está vacío, el del producto.
-   *
-   * Es el único punto del frontend que calcula el texto en vez de recibirlo: aquí
-   * las variantes todavía no están guardadas, así que no hay a quién pedírselo.
-   */
-  ruleConditionPreview(ruleIndex: number): string {
-    const rule = this.form.rules[ruleIndex];
-    if (!rule) return '';
-    const names = this.selectedVariantsForRule(ruleIndex)
-      .map((v) => v.variantName?.trim() || v.productName?.trim() || '')
-      .filter((n) => n !== '');
-    return conditionText(
-      { type: rule.type, value: rule.value, min_qty: rule.min_qty },
-      names,
-      rule.variantIds.length,
-    );
   }
 
   displayLabel(d: PromoDisplay): string {
