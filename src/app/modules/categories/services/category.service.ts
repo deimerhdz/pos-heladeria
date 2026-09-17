@@ -111,6 +111,7 @@ export class CategoryService {
       name: data.name,
       description: data.description || null,
       display_order: data.display_order,
+      presentation_ids: data.presentation_ids,
     };
 
     try {
@@ -134,6 +135,7 @@ export class CategoryService {
       name: data.name,
       description: data.description || null,
       display_order: data.display_order,
+      presentation_ids: data.presentation_ids,
     };
 
     try {

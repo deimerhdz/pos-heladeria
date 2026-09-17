@@ -13,6 +13,7 @@ function makeCategory(partial: Partial<Category> = {}): Category {
     display_order: 10,
     created_at: '2026-09-01T00:00:00Z',
     ...partial,
+    presentations: partial.presentations ?? [],
   };
 }
 

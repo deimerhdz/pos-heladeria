@@ -8,6 +8,7 @@ import { Category } from '../interfaces/category.interface';
 
 const API = environment.apiBaseUrl;
 const CATEGORIES = `${API}/categories`;
+const PRESENTATIONS = `${API}/presentations`;
 
 function makeCategory(partial: Partial<Category> = {}): Category {
   return {
@@ -18,6 +19,7 @@ function makeCategory(partial: Partial<Category> = {}): Category {
     display_order: 10,
     created_at: '2026-09-01T00:00:00Z',
     ...partial,
+    presentations: partial.presentations ?? [],
   };
 }
 
@@ -47,6 +49,11 @@ describe('CategoryFormComponent', () => {
     // a mano, igual que lo haría el binding real del padre.
     component.ngOnChanges();
     fixture.detectChanges();
+    // spec 083: `ngOnInit()` carga el picker de presentaciones (FR-004) -- se
+    // responde vacío acá, sin datos, salvo que el test lo necesite distinto.
+    http.expectOne((r) => r.url === PRESENTATIONS).flush({
+      items: [], total: 0, page: 1, size: 100, pages: 0,
+    });
   }
 
   afterEach(() => http.verify());
