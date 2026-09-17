@@ -109,8 +109,16 @@ export const dashboardRoutes: Routes = [
           ),
         canActivate: [roleGuard([UserRole.ADMIN])],
       },
-      // spec 063 (A-63): la ruta `/dashboard/presentations` se elimina con la
-      // entidad `Presentation` (revierte la parte de modelo de datos de spec 040).
+      {
+        // spec 083: catálogo global de presentaciones (entidad nueva, sin relación
+        // con la `Presentation` de spec 040 retirada en 063b -- ver research.md D1).
+        path: 'presentations',
+        loadComponent: () =>
+          import('../presentations/pages/presentations-page.component').then(
+            (m) => m.PresentationsPageComponent,
+          ),
+        canActivate: [roleGuard([UserRole.ADMIN])],
+      },
       {
         path: 'products',
         loadComponent: () =>

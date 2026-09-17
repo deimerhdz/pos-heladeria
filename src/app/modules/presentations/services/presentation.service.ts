@@ -7,24 +7,23 @@ import { ApiErrorBody } from '../../../core/auth/auth.models';
 import { Page } from '../../../core/interfaces/page.interface';
 import { injectPagedQuery } from '../../../core/query/paged-query';
 import {
-  Category,
-  CategoryCreatePayload,
-  CategoryForm,
-  CategoryUpdatePayload,
-} from '../interfaces/category.interface';
+  Presentation,
+  PresentationCreatePayload,
+  PresentationForm,
+  PresentationUpdatePayload,
+} from '../interfaces/presentation.interface';
 
 @Injectable({ providedIn: 'root' })
-export class CategoryService {
+export class PresentationService {
   private readonly http = inject(HttpClient);
   private readonly queryClient = inject(QueryClient);
-  private readonly baseUrl = `${environment.apiBaseUrl}/categories`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/presentations`;
 
   readonly isSubmitting = signal(false);
   /** Errores fuera de las dos queries: mutaciones y validaciones de formulario
-   *  (`category-form.component.ts` escribe acá directo para su banner). */
+   *  (`presentation-form` escribe acá directo para su banner). */
   readonly otherError = signal<string | null>(null);
 
-  // Entrada de las queries reactivas (antes: reflejo del `Page<T>` del backend).
   readonly page = signal(1);
   readonly size = signal(20);
   readonly search = signal('');
@@ -32,27 +31,27 @@ export class CategoryService {
   private readonly wantsPage = signal(false);
   private readonly wantsAll = signal(false);
 
-  /** Página actual, para la tabla de Categorías. */
-  private readonly pageQuery = injectPagedQuery<Category>({
+  /** Página actual, para el listado de Presentaciones. */
+  private readonly pageQuery = injectPagedQuery<Presentation>({
     queryKey: () => [
-      'categories',
+      'presentations',
       'page',
       { page: this.page(), size: this.size(), search: this.search().trim(), active: this.activeFilter() },
     ],
-    queryFn: () => this.fetchCategoriesPage(this.page(), this.size(), this.search().trim(), this.activeFilter()),
+    queryFn: () => this.fetchPresentationsPage(this.page(), this.size(), this.search().trim(), this.activeFilter()),
     enabled: () => this.wantsPage(),
   });
 
-  /** Lista completa (tope 100), para pickers/validaciones en otros módulos. */
-  private readonly allQuery = injectPagedQuery<Category>({
-    queryKey: () => ['categories', 'all'],
+  /** Lista completa (tope 100), para el picker de presentaciones de Categorías (US2). */
+  private readonly allQuery = injectPagedQuery<Presentation>({
+    queryKey: () => ['presentations', 'all'],
     queryFn: () =>
-      firstValueFrom(this.http.get<Page<Category>>(this.baseUrl, { params: { size: 100 } })),
+      firstValueFrom(this.http.get<Page<Presentation>>(this.baseUrl, { params: { size: 100 } })),
     enabled: () => this.wantsAll(),
   });
 
-  readonly categories = computed(() => this.pageQuery.data()?.items ?? []);
-  readonly allCategories = computed(() =>
+  readonly presentations = computed(() => this.pageQuery.data()?.items ?? []);
+  readonly allPresentations = computed(() =>
     [...(this.allQuery.data()?.items ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
   );
   readonly total = computed(() => this.pageQuery.data()?.total ?? 0);
@@ -65,28 +64,28 @@ export class CategoryService {
     return null;
   });
 
-  private fetchCategoriesPage(
+  private fetchPresentationsPage(
     page: number,
     size: number,
     search: string,
     activeFilter: '' | 'active' | 'inactive',
-  ): Promise<Page<Category>> {
+  ): Promise<Page<Presentation>> {
     let params = new HttpParams().set('page', page).set('size', size);
     if (search) params = params.set('search', search);
     if (activeFilter === 'active') params = params.set('active', 'true');
     if (activeFilter === 'inactive') params = params.set('active', 'false');
-    return firstValueFrom(this.http.get<Page<Category>>(this.baseUrl, { params }));
+    return firstValueFrom(this.http.get<Page<Presentation>>(this.baseUrl, { params }));
   }
 
-  loadCategories(page: number = this.page(), size: number = this.size()): void {
+  loadPresentations(page: number = this.page(), size: number = this.size()): void {
     this.otherError.set(null);
     this.page.set(page);
     this.size.set(size);
     this.wantsPage.set(true);
   }
 
-  /** Lista completa (tope 100) para pickers/validaciones de otros módulos. */
-  loadAllCategories(): void {
+  /** Lista completa (tope 100) para el picker de presentaciones de Categorías. */
+  loadAllPresentations(): void {
     this.otherError.set(null);
     this.wantsAll.set(true);
   }
@@ -94,32 +93,25 @@ export class CategoryService {
   /** Aplica el término de búsqueda y recarga desde la página 1. */
   setSearch(term: string): void {
     this.search.set(term);
-    this.loadCategories(1);
+    this.loadPresentations(1);
   }
 
   /** Aplica el filtro de estado y recarga desde la página 1. */
   setActiveFilter(filter: '' | 'active' | 'inactive'): void {
     this.activeFilter.set(filter);
-    this.loadCategories(1);
+    this.loadPresentations(1);
   }
 
-  async createCategory(data: CategoryForm): Promise<void> {
+  async createPresentation(data: PresentationForm): Promise<void> {
     this.isSubmitting.set(true);
     this.otherError.set(null);
 
-    const payload: CategoryCreatePayload = {
-      name: data.name,
-      description: data.description || null,
-      display_order: data.display_order,
-      presentation_ids: data.presentation_ids,
-    };
+    const payload: PresentationCreatePayload = { name: data.name };
 
     try {
-      await firstValueFrom(this.http.post<Category>(this.baseUrl, payload));
-      // A diferencia de update/toggle: crear siempre salta a la página 1 (paridad
-      // con el `loadCategories(1)` explícito de antes).
+      await firstValueFrom(this.http.post<Presentation>(this.baseUrl, payload));
       this.page.set(1);
-      await this.queryClient.invalidateQueries({ queryKey: ['categories'] });
+      await this.queryClient.invalidateQueries({ queryKey: ['presentations'] });
     } catch (err) {
       this.otherError.set(this.extractError(err));
     } finally {
@@ -127,20 +119,15 @@ export class CategoryService {
     }
   }
 
-  async updateCategory(id: string, data: CategoryForm): Promise<void> {
+  async updatePresentation(id: string, data: PresentationForm): Promise<void> {
     this.isSubmitting.set(true);
     this.otherError.set(null);
 
-    const payload: CategoryUpdatePayload = {
-      name: data.name,
-      description: data.description || null,
-      display_order: data.display_order,
-      presentation_ids: data.presentation_ids,
-    };
+    const payload: PresentationUpdatePayload = { name: data.name };
 
     try {
-      await firstValueFrom(this.http.patch<Category>(`${this.baseUrl}/${id}`, payload));
-      await this.queryClient.invalidateQueries({ queryKey: ['categories'] });
+      await firstValueFrom(this.http.patch<Presentation>(`${this.baseUrl}/${id}`, payload));
+      await this.queryClient.invalidateQueries({ queryKey: ['presentations'] });
     } catch (err) {
       this.otherError.set(this.extractError(err));
     } finally {
@@ -152,11 +139,11 @@ export class CategoryService {
     this.isSubmitting.set(true);
     this.otherError.set(null);
 
-    const payload: CategoryUpdatePayload = { active: !current, display_order: null };
+    const payload: PresentationUpdatePayload = { active: !current };
 
     try {
-      await firstValueFrom(this.http.patch<Category>(`${this.baseUrl}/${id}`, payload));
-      await this.queryClient.invalidateQueries({ queryKey: ['categories'] });
+      await firstValueFrom(this.http.patch<Presentation>(`${this.baseUrl}/${id}`, payload));
+      await this.queryClient.invalidateQueries({ queryKey: ['presentations'] });
     } catch (err) {
       this.otherError.set(this.extractError(err));
     } finally {
