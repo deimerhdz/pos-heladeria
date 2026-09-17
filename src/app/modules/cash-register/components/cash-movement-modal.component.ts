@@ -2,25 +2,24 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CashSessionStore } from '../services/cash-session.store';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Modal para registrar un movimiento manual (ingreso / egreso / retiro).
- * Cierra solo con ✕ o Cancelar, no al hacer clic en el fondo.
+ * Cierra solo con el botón de cerrar o Cancelar, no al hacer clic en el fondo.
  */
 @Component({
   selector: 'app-cash-movement-modal',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, MoneyInputComponent],
+  imports: [FormsModule, MoneyInputComponent, IconMiComponent],
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div class="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-base font-bold text-gray-900">{{ store.modalTitulo() }}</h2>
           <button type="button" (click)="store.closeModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

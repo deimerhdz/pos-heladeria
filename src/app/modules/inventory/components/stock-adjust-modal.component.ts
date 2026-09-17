@@ -11,11 +11,12 @@ import { DecimalPipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AdjustForm, InventoryItem } from '../interfaces/inventory.interface';
 import { InventoryService } from '../services/inventory.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-stock-adjust-modal',
   standalone: true,
-  imports: [ReactiveFormsModule, DecimalPipe],
+  imports: [ReactiveFormsModule, DecimalPipe, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -23,9 +24,7 @@ import { InventoryService } from '../services/inventory.service';
         <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 class="text-base font-bold text-gray-900">Ajustar stock</h2>
           <button type="button" (click)="close.emit()" class="text-gray-400 hover:text-gray-600 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

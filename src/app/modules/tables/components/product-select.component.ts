@@ -19,6 +19,7 @@ import {
 } from '../../products/interfaces/product.interface';
 import { normalizeText } from '../../../shared/normalize-text';
 import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /** Una opción elegida junto con cuántas unidades de ella (spec 065). Siempre
  *  `quantity: 1` para una opción de un grupo "conteo". */
@@ -49,7 +50,7 @@ export interface ProductSelection {
 @Component({
   selector: 'app-product-select',
   standalone: true,
-  imports: [MoneyPipe],
+  imports: [MoneyPipe, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 sm:p-4">
@@ -63,14 +64,14 @@ export interface ProductSelection {
               <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
               <button type="button" (click)="cancelled.emit()" aria-label="Cerrar ventana"
                 class="absolute top-4 right-4 z-10 w-9 h-9 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 transition-colors">
-                ✕
+                <app-mi-icon name="close" [size]="18" />
               </button>
             </div>
           } @else {
             <div class="flex items-center justify-end px-4 pt-4">
               <button type="button" (click)="cancelled.emit()" aria-label="Cerrar ventana"
                 class="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-                ✕
+                <app-mi-icon name="close" [size]="16" />
               </button>
             </div>
           }

@@ -13,7 +13,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ProductSelectComponent } from '../components/product-select.component';
-import { IconComponent } from '../../../shared/icon/icon.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 import { PosTerminalHeaderComponent } from '../components/pos-terminal-header.component';
 import { BillSummaryComponent } from '../components/bill-summary.component';
 import { CartItemOptionsComponent } from '../components/cart-item-options.component';
@@ -72,7 +72,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
   imports: [
     FormsModule,
     ProductSelectComponent,
-    IconComponent,
+    IconMiComponent,
     SearchableSelectComponent,
     PosTerminalHeaderComponent,
     BillSummaryComponent,
@@ -91,17 +91,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
           (click)="backToTerminal()"
           class="flex items-center gap-1 text-[13px] font-medium text-[#6b7280] hover:text-[#111827] transition-colors"
         >
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            viewBox="0 0 24 24"
-          >
-            <path d="m15 18-6-6 6-6"></path>
-          </svg>
+          <app-mi-icon name="arrow_back" [size]="16" />
           Volver a la Terminal
         </button>
       </div>
@@ -122,17 +112,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
             class="h-11 shrink-0 bg-white border border-[#e5e7eb] rounded-[6px] px-3 flex items-center gap-2"
           >
             <div class="flex-1 flex items-center gap-2 min-w-0 pr-3 border-r border-[#e5e7eb]">
-              <svg
-                class="w-[18px] h-[18px] stroke-[#6b7280] shrink-0"
-                fill="none"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="1.5"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.3-4.3"></path>
-              </svg>
+              <app-mi-icon name="search" [size]="18" class="text-[#6b7280] shrink-0" />
               <input
                 type="text"
                 [value]="store.catalogSearchText()"
@@ -148,23 +128,10 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                 <button
                   type="button"
                   title="Escanear código"
+                  aria-label="Escanear código"
                   class="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#6b7280] hover:text-[#111827] hover:bg-[#f3f4f6] transition-colors"
                 >
-                  <svg
-                    class="w-[17px] h-[17px]"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
-                    <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
-                    <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
-                    <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
-                    <path d="M7 12h10"></path>
-                  </svg>
+                  <app-mi-icon name="qr_code_scanner" [size]="17" />
                 </button>
               </div>
             </div>
@@ -178,36 +145,14 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
               <div
                 class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap"
               >
-                <svg
-                  class="w-[14px] h-[14px] stroke-[#6b7280]"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    d="M4 10h16M4 10a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2M4 10v2M20 10v2M8 12v8M16 12v8"
-                  ></path>
-                </svg>
+                <app-mi-icon name="table_restaurant" [size]="14" class="text-[#6b7280]" />
                 <span class="text-[#111827] font-semibold">{{ store.tableCounts().ocupadas }}</span>
                 <span>Mesas</span>
               </div>
               <div
                 class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap"
               >
-                <svg
-                  class="w-[14px] h-[14px] stroke-[#6b7280]"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
-                  <path d="M3 6h18"></path>
-                  <path d="M16 10a4 4 0 0 1-8 0"></path>
-                </svg>
+                <app-mi-icon name="shopping_bag" [size]="14" class="text-[#6b7280]" />
                 <span class="text-[#111827] font-semibold">{{
                   store.ordersByType('para-llevar').length
                 }}</span>
@@ -216,18 +161,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
               <div
                 class="flex items-center gap-1 px-2 py-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[11px] text-[#4b5563] font-medium whitespace-nowrap"
               >
-                <svg
-                  class="w-[14px] h-[14px] stroke-[#4f46e5]"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <circle cx="5.5" cy="17.5" r="3.5"></circle>
-                  <circle cx="18.5" cy="17.5" r="3.5"></circle>
-                  <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 11.5V14l-3-3 4-3 2 3h2"></path>
-                </svg>
+                <app-mi-icon name="delivery_dining" [size]="14" class="text-[#4f46e5]" />
                 <span class="text-[#111827] font-semibold">{{
                   store.ordersByType('domicilios').length
                 }}</span>
@@ -290,8 +224,8 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                       <img [src]="p.image_url" [alt]="p.name" class="w-full h-full object-cover" />
                     } @else {
                       <span class="w-full h-full flex items-center justify-center text-[#d1d5db]"
-                        ><span class="w-10 h-10"><app-icon name="image-off" /></span
-                      ></span>
+                        ><app-mi-icon name="image-off" [size]="40" ariaLabel="Sin imagen"
+                      /></span>
                     }
                   </div>
                   <div class="flex flex-col justify-between flex-1 min-w-0 w-full">
@@ -313,21 +247,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                         class="w-9 h-9 rounded-[6px] flex items-center justify-center bg-[#4f46e5] text-white shrink-0"
                         aria-hidden="true"
                       >
-                        <svg
-                          class="w-[18px] h-[18px]"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle cx="8" cy="21" r="1"></circle>
-                          <circle cx="19" cy="21" r="1"></circle>
-                          <path
-                            d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 2-1.58l1.65-7.42H5.12"
-                          ></path>
-                        </svg>
+                        <app-mi-icon name="shopping_cart" [size]="18" />
                       </span>
                     </div>
                   </div>
@@ -389,20 +309,11 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                     : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                <svg
-                  class="w-[18px] h-[18px]"
+                <app-mi-icon
+                  name="table_restaurant"
+                  [size]="18"
                   [class]="store.orderTypeTab() === 'mesas' ? 'text-[#4f46e5]' : ''"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    d="M4 10h16M4 10a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2M4 10v2M20 10v2M8 12v8M16 12v8"
-                  ></path>
-                </svg>
+                />
                 Mesa
               </button>
               <button
@@ -415,20 +326,11 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                     : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                <svg
-                  class="w-[18px] h-[18px]"
+                <app-mi-icon
+                  name="shopping_bag"
+                  [size]="18"
                   [class]="store.orderTypeTab() === 'para-llevar' ? 'text-[#4f46e5]' : ''"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path>
-                  <path d="M3 6h18"></path>
-                  <path d="M16 10a4 4 0 0 1-8 0"></path>
-                </svg>
+                />
                 Para llevar
               </button>
               <button
@@ -441,20 +343,11 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                     : 'text-[#4b5563] hover:text-[#111827] font-medium'
                 "
               >
-                <svg
-                  class="w-[18px] h-[18px]"
+                <app-mi-icon
+                  name="delivery_dining"
+                  [size]="18"
                   [class]="store.orderTypeTab() === 'domicilios' ? 'text-[#4f46e5]' : ''"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <circle cx="5.5" cy="17.5" r="3.5"></circle>
-                  <circle cx="18.5" cy="17.5" r="3.5"></circle>
-                  <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 11.5V14l-3-3 4-3 2 3h2"></path>
-                </svg>
+                />
                 Domicilio
               </button>
             </div>
@@ -486,17 +379,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                       title="Editar nombre"
                       class="text-[#6b7280] hover:text-[#4f46e5] transition-colors shrink-0"
                     >
-                      <svg
-                        class="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="1.5"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-                      </svg>
+                      <app-mi-icon name="edit" ariaLabel="Editar nombre" [size]="16" />
                     </button>
                   </div>
                 </div>
@@ -525,18 +408,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                 <div
                   class="flex items-center h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[6px] text-[13px] text-[#111827] focus-within:border-[#111827] focus-within:bg-white"
                 >
-                  <svg
-                    class="w-4 h-4 text-[#4f46e5] mr-1.5 shrink-0"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                  </svg>
+                  <app-mi-icon name="person" [size]="16" class="text-[#4f46e5] mr-1.5 shrink-0" />
                   <input
                     type="text"
                     [value]="store.customerName()"
@@ -552,17 +424,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                     title="Editar nombre"
                     class="text-[#6b7280] hover:text-[#4f46e5] transition-colors shrink-0"
                   >
-                    <svg
-                      class="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="1.5"
-                      viewBox="0 0 24 24"
-                    >
-                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-                    </svg>
+                    <app-mi-icon name="edit" ariaLabel="Editar nombre" [size]="16" />
                   </button>
                 </div>
               </div>
@@ -739,17 +601,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                           title="Ver/Editar Notas"
                           class="p-1 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                         >
-                          <svg
-                            class="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-                          </svg>
+                          <app-mi-icon name="edit" ariaLabel="Ver/Editar Notas" [size]="16" />
                         </button>
                         <button
                           type="button"
@@ -757,20 +609,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                           title="Modificar Toppings"
                           class="p-1 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                         >
-                          <svg
-                            class="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              d="M12 3a4 4 0 0 1 4 4c0 .34-.03.67-.08 1H8.08A4 4 0 0 1 12 3Z"
-                            ></path>
-                            <path d="M7 8h10l-3.5 12a1.5 1.5 0 0 1-3 0L7 8Z"></path>
-                          </svg>
+                          <app-mi-icon name="tune" ariaLabel="Modificar Toppings" [size]="16" />
                         </button>
                       }
                       <button
@@ -778,19 +617,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                         title="Eliminar ítem"
                         class="p-1 text-[#6b7280] hover:text-[#dc2626] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                       >
-                        <svg
-                          class="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="1.5"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M3 6h18"></path>
-                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                        </svg>
+                        <app-mi-icon name="delete" ariaLabel="Eliminar ítem" [size]="16" />
                       </button>
                     </div>
                   </div>
@@ -872,17 +699,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                             title="Ver/Editar Notas"
                             class="p-1.5 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                           >
-                            <svg
-                              class="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="1.5"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-                            </svg>
+                            <app-mi-icon name="edit" ariaLabel="Ver/Editar Notas" [size]="16" />
                           </button>
                           <button
                             type="button"
@@ -890,20 +707,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                             title="Modificar Toppings"
                             class="p-1.5 text-[#6b7280] hover:text-[#4f46e5] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                           >
-                            <svg
-                              class="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-linecap="round"
-                              stroke-linejoin="round"
-                              stroke-width="1.5"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                d="M12 3a4 4 0 0 1 4 4c0 .34-.03.67-.08 1H8.08A4 4 0 0 1 12 3Z"
-                              ></path>
-                              <path d="M7 8h10l-3.5 12a1.5 1.5 0 0 1-3 0L7 8Z"></path>
-                            </svg>
+                            <app-mi-icon name="tune" ariaLabel="Modificar Toppings" [size]="16" />
                           </button>
                         }
                         <button
@@ -911,19 +715,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                           title="Eliminar ítem"
                           class="p-1.5 text-[#6b7280] hover:text-[#dc2626] hover:bg-[#f3f4f6] rounded-[6px] transition-colors"
                         >
-                          <svg
-                            class="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M3 6h18"></path>
-                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                          </svg>
+                          <app-mi-icon name="delete" ariaLabel="Eliminar ítem" [size]="16" />
                         </button>
                       </div>
                     </div>
@@ -988,18 +780,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
                 "
                 class="w-full h-12 bg-[#4f46e5] hover:bg-[#4338ca] active:bg-[#3730a3] text-white font-semibold text-[15px] flex items-center justify-center gap-2 rounded-[6px] disabled:opacity-50 transition-colors"
               >
-                <svg
-                  class="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                  viewBox="0 0 24 24"
-                >
-                  <rect height="14" rx="2" width="20" x="2" y="5"></rect>
-                  <line x1="2" x2="22" y1="10" y2="10"></line>
-                </svg>
+                <app-mi-icon name="credit_card" [size]="20" />
                 <span>{{ store.submitting() ? 'Guardando…' : 'Crear pedido' }}</span>
               </button>
               <button

@@ -17,11 +17,12 @@ import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { OptionGroupService } from '../services/option-group.service';
 import { OptionGroupFormComponent } from '../components/option-group-form.component';
 import { OptionFormComponent } from '../components/option-form.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-option-groups-page',
   standalone: true,
-  imports: [DecimalPipe, OptionGroupFormComponent, OptionFormComponent],
+  imports: [DecimalPipe, OptionGroupFormComponent, OptionFormComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="space-y-6">
@@ -33,9 +34,7 @@ import { OptionFormComponent } from '../components/option-form.component';
         </div>
         <button (click)="openCreateGroup()"
           class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
+          <app-mi-icon name="add" [size]="16" />
           Nuevo grupo
         </button>
       </div>

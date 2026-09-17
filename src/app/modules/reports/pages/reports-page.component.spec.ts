@@ -170,3 +170,42 @@ describe('ReportsPageComponent — tarjeta de Margen (spec 062, FR-007)', () => 
     expect(fixture.nativeElement.textContent).toContain('Margen');
   });
 });
+
+describe('ReportsPageComponent — íconos de las tarjetas (spec 082)', () => {
+  let http: HttpTestingController;
+
+  function crear() {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideTanStackQuery(
+          new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }),
+        ),
+        { provide: PlanSummaryService, useValue: { summary: signal(makeSummary({})) } },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(ReportsPageComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  afterEach(() => {
+    http.match(() => true);
+    http.verify();
+  });
+
+  it('ninguna tarjeta muestra ya su ícono de cabecera como SVG artesanal', () => {
+    const fixture = crear();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon[card-icon] .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['calendar_month', 'emoji_events', 'person', 'sell', 'warning']),
+    );
+  });
+});

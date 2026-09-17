@@ -19,13 +19,14 @@ import {
 } from '@angular/forms';
 import { Category, CategoryForm } from '../interfaces/category.interface';
 import { CategoryService } from '../services/category.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 import { Presentation } from '../../presentations/interfaces/presentation.interface';
 import { PresentationService } from '../../presentations/services/presentation.service';
 
 @Component({
   selector: 'app-category-form',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -39,7 +40,7 @@ import { PresentationService } from '../../presentations/services/presentation.s
             (click)="onCancel()"
             class="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            ✕
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 
@@ -111,7 +112,9 @@ import { PresentationService } from '../../presentations/services/presentation.s
                 Sin presentaciones en el catálogo. Créalas primero desde "Presentaciones".
               </p>
             } @else {
-              <div class="border border-gray-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-gray-50">
+              <div
+                class="border border-gray-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-gray-50"
+              >
                 @for (p of presentationOptions(); track p.id) {
                   <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
                     <input

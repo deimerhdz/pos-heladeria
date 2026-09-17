@@ -4,11 +4,12 @@ import { Category } from '../interfaces/category.interface';
 import { CategoryService } from '../services/category.service';
 import { CategoryFormComponent } from '../components/category-form.component';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-categories-page',
   standalone: true,
-  imports: [FormsModule, CategoryFormComponent, PaginationBarComponent],
+  imports: [FormsModule, CategoryFormComponent, PaginationBarComponent, IconMiComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -21,7 +22,7 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
           (click)="openCreate()"
           class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
         >
-          <span>+</span> Nueva Categoría
+          <app-mi-icon name="add" [size]="16" /> Nueva Categoría
         </button>
       </div>
 
@@ -63,7 +64,7 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
           @if (categoryService.categories().length === 0) {
             <!-- Empty state -->
             <div class="flex flex-col items-center justify-center py-16 text-center px-4">
-              <div class="text-5xl mb-4">📂</div>
+              <app-mi-icon name="category" [size]="48" class="mb-4" />
               @if (searchSignal() || statusFilterValue !== 'all') {
                 <p class="text-gray-600 font-medium">No hay categorías que coincidan</p>
                 <p class="text-gray-400 text-sm mt-1">Intenta cambiar los filtros</p>
@@ -94,7 +95,9 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                   <tr [class.opacity-50]="!cat.active" class="hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-4">
                       <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center text-lg shrink-0">📂</div>
+                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <app-mi-icon name="category" [size]="18" />
+                        </div>
                         <span class="text-sm font-medium" [class.text-gray-400]="!cat.active" [class.text-gray-900]="cat.active">
                           {{ cat.name }}
                         </span>
@@ -124,17 +127,21 @@ import { PaginationBarComponent } from '../../../shared/pagination/pagination-ba
                           title="Editar"
                           class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                         >
-                          ✏️
+                          <app-mi-icon name="edit" ariaLabel="Editar" [size]="18" />
                         </button>
                         <button
                           (click)="onToggle(cat)"
                           [title]="cat.active ? 'Desactivar' : 'Activar'"
                           class="p-2 rounded-lg transition-colors"
                           [class]="cat.active
-                            ? 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                            : 'text-gray-400 hover:text-green-600 hover:bg-green-50'"
+                            ? 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                            : 'text-green-600 hover:text-green-700 hover:bg-green-50'"
                         >
-                          {{ cat.active ? '🔴' : '🟢' }}
+                          <app-mi-icon
+                            name="circle"
+                            [ariaLabel]="cat.active ? 'Desactivar' : 'Activar'"
+                            [size]="14"
+                          />
                         </button>
                       </div>
                     </td>

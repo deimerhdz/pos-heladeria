@@ -55,4 +55,12 @@ describe('OrderDetailComponent', () => {
     expect((fixture.nativeElement.textContent as string)).toContain('Pagada');
     expect((fixture.nativeElement.textContent as string)).not.toContain('Abierta');
   });
+
+  it('el botón de volver ya no es la flecha "←" (spec 082)', () => {
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).not.toContain('←');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('arrow_back');
+  });
 });

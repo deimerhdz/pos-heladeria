@@ -3,6 +3,7 @@ import { DecimalPipe } from '@angular/common';
 import { PosTerminalStore } from '../services/pos-terminal.store';
 import { ProductSelectComponent } from './product-select.component';
 import { effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Catálogo del "+ Agregar producto": buscador por nombre + categorías + grid de
@@ -19,7 +20,7 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
 @Component({
   selector: 'app-pos-catalog-drawer',
   standalone: true,
-  imports: [DecimalPipe, ProductSelectComponent],
+  imports: [DecimalPipe, ProductSelectComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="flex-1 flex flex-col min-h-0">
@@ -69,7 +70,10 @@ import { effectivePrice } from '../../promotions/services/promotion-pricing.util
               >
                 @if (store.cardPromotionText(p.variants); as promo) {
                   <!-- spec 073, FR-016: condición legible del backend (spec 066), no la insignia local. -->
-                  <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700">🏷️ {{ promo }}</span>
+                  <span class="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 inline-flex items-center gap-1">
+                    <app-mi-icon name="sell" [size]="10" />
+                    {{ promo }}
+                  </span>
                 }
                 <div class="font-semibold text-gray-900 text-sm">{{ p.name }}</div>
                 <div class="text-sm font-bold text-gray-900 mt-1">

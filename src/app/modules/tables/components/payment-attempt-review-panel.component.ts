@@ -17,6 +17,7 @@ import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { MoneyInputComponent } from '../../../shared/money-input/money-input.component';
 import { formatMoney } from '../../../shared/money';
 import { BillSummaryComponent } from './bill-summary.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * Revisión de pagos del cajero para una orden (spec 024): aprobar/rechazar el
@@ -36,7 +37,7 @@ import { BillSummaryComponent } from './bill-summary.component';
 @Component({
   selector: 'app-payment-attempt-review-panel',
   standalone: true,
-  imports: [FormsModule, MoneyInputComponent, BillSummaryComponent],
+  imports: [FormsModule, MoneyInputComponent, BillSummaryComponent, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (loading()) {
@@ -44,8 +45,9 @@ import { BillSummaryComponent } from './bill-summary.component';
     } @else if (current(); as attempt) {
       <div class="border border-gray-200 bg-gray-50 rounded-lg p-2.5 space-y-2">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-base font-semibold text-amber-800">
-            💳 {{ attempt.payment_method_name }}
+          <span class="text-base font-semibold text-amber-800 inline-flex items-center gap-1.5">
+            <app-mi-icon name="credit_card" [size]="18" />
+            {{ attempt.payment_method_name }}
           </span>
           <span class="text-sm px-2 py-1 rounded-full font-medium bg-amber-100 text-amber-700">
             Pendiente de revisión
@@ -247,7 +249,10 @@ import { BillSummaryComponent } from './bill-summary.component';
       </div>
     } @else if (lastResolved(); as last) {
       @if (last.status === 'confirmado') {
-        <p class="text-base text-emerald-700 font-medium">✓ Pago confirmado ({{ last.payment_method_name }})</p>
+        <p class="text-base text-emerald-700 font-medium inline-flex items-center gap-1.5">
+          <app-mi-icon name="check" [size]="18" />
+          Pago confirmado ({{ last.payment_method_name }})
+        </p>
         @if (last.is_cash) {
           <p class="text-sm text-emerald-700">
             Recibido: {{ money(last.amount_received) }} · Cambio: {{ money(last.change_amount) }}

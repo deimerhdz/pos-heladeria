@@ -11,6 +11,7 @@ import {
   ShareItem,
 } from '../../../shared/charts/share-bar-chart.component';
 import { StatTileComponent } from '../../../shared/charts/stat-tile.component';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
@@ -26,6 +27,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
     BarsChartComponent,
     RankedBarsChartComponent,
     ShareBarChartComponent,
+    IconMiComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -108,21 +110,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
         [empty]="svc.dailySales().length === 0"
         [height]="240"
       >
-        <svg
-          card-icon
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="text-indigo-600"
-        >
-          <rect x="3" y="4" width="18" height="17" rx="2" />
-          <path d="M3 9h18" />
-          <path d="M8 2v4" />
-          <path d="M16 2v4" />
-        </svg>
+        <app-mi-icon card-icon name="calendar_month" [size]="18" class="text-indigo-600" />
         <app-bars-chart
           [labels]="salesLabels()"
           [values]="salesValues()"
@@ -139,20 +127,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
           [empty]="sortedProducts().length === 0"
           [height]="260"
         >
-          <svg
-            card-icon
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            class="text-indigo-600"
-          >
-            <path d="M8 21h8" />
-            <path d="M12 17v4" />
-            <path d="M6 3h12v4a6 6 0 0 1-12 0z" />
-          </svg>
+          <app-mi-icon card-icon name="emoji_events" [size]="18" class="text-indigo-600" />
 
           <div card-actions class="flex gap-1 bg-gray-100 rounded-lg p-1">
             <button
@@ -194,19 +169,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
           [empty]="svc.cashiersReport().length === 0"
           [height]="260"
         >
-          <svg
-            card-icon
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            class="text-indigo-600"
-          >
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 20a8 8 0 0 1 16 0" />
-          </svg>
+          <app-mi-icon card-icon name="person" [size]="18" class="text-indigo-600" />
           <app-ranked-bars-chart
             [labels]="cashierLabels()"
             [values]="cashierValues()"
@@ -223,19 +186,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
         [empty]="categoryShares().length === 0"
         [height]="140"
       >
-        <svg
-          card-icon
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="text-indigo-600"
-        >
-          <path d="M20.5 12.5l-8 8-9-9 8-8h6a3 3 0 0 1 3 3z" />
-          <circle cx="14.5" cy="8.5" r="1.2" />
-        </svg>
+        <app-mi-icon card-icon name="sell" [size]="18" class="text-indigo-600" />
         <app-share-bar-chart [items]="categoryShares()" kind="money" />
       </app-chart-card>
 
@@ -250,20 +201,7 @@ const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
         [loading]="svc.isLoading()"
         [height]="120"
       >
-        <svg
-          card-icon
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="text-amber-600"
-        >
-          <path d="M12 9v4" />
-          <path d="M12 17h.01" />
-          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-        </svg>
+        <app-mi-icon card-icon name="warning" [size]="18" class="text-amber-600" />
         <a
           card-actions
           routerLink="/dashboard/insumos"

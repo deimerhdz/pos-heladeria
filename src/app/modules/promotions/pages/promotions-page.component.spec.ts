@@ -37,6 +37,36 @@ describe('PromotionsPageComponent', () => {
     http.verify();
   });
 
+  it('los íconos del formulario (volver, ayuda, revisar) ya no son SVG artesanales (spec 082)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.componentInstance.screen.set('form');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['arrow_back', 'help_outline', 'check_circle']),
+    );
+  });
+
+  it('los íconos del formulario (volver, ayuda, revisar) ya no son SVG artesanales (spec 082)', () => {
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.componentInstance.screen.set('form');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(
+      expect.arrayContaining(['arrow_back', 'help_outline', 'check_circle']),
+    );
+  });
+
   function seedGranizados(menu: MenuService): void {
     menu.categories.set([
       {
@@ -75,7 +105,15 @@ describe('PromotionsPageComponent', () => {
             image_url: null,
             option_groups: [],
             available: true,
-            variants: [{ id: 'f', name: 'Presentación única', price: 3000, option_groups: [], available: true }],
+            variants: [
+              {
+                id: 'f',
+                name: 'Presentación única',
+                price: 3000,
+                option_groups: [],
+                available: true,
+              },
+            ],
           },
         ],
       },
@@ -350,8 +388,12 @@ describe('PromotionsPageComponent', () => {
       closed_by_refactor_at: null,
       rules: [
         {
-          id: 'r1', type: 'percent', value: '10', min_qty: 1,
-          condition_text: null, variants: [{ product_variant_id: 'a', description: 'a', unit_price: '8000.00' }],
+          id: 'r1',
+          type: 'percent',
+          value: '10',
+          min_qty: 1,
+          condition_text: null,
+          variants: [{ product_variant_id: 'a', description: 'a', unit_price: '8000.00' }],
         },
       ],
     });
@@ -381,8 +423,12 @@ describe('PromotionsPageComponent', () => {
       closed_by_refactor_at: null,
       rules: [
         {
-          id: 'r1', type: 'percent', value: '10', min_qty: 1,
-          condition_text: null, variants: [{ product_variant_id: 'a', description: 'a', unit_price: '8000.00' }],
+          id: 'r1',
+          type: 'percent',
+          value: '10',
+          min_qty: 1,
+          condition_text: null,
+          variants: [{ product_variant_id: 'a', description: 'a', unit_price: '8000.00' }],
         },
       ],
     });
@@ -487,10 +533,7 @@ describe('PromotionsPageComponent', () => {
       const c = fixture.componentInstance;
 
       const p = {
-        rules: [
-          { type: 'package_price' },
-          { type: 'package_price' },
-        ],
+        rules: [{ type: 'package_price' }, { type: 'package_price' }],
       } as unknown as Promotion;
       expect(c.promotionTypeLabel(p)).toBe('Precio de paquete');
     });

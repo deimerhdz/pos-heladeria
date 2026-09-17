@@ -179,4 +179,18 @@ describe('OrdersPageComponent', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('No hay órdenes con estos filtros');
   });
+
+  it('ningún ícono se renderiza ya como emoji ni con glifos sueltos (spec 082)', () => {
+    svc.orders.set([order('o1', { customer_name: 'Ana' })]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    for (const glifo of ['📋', '🍽️', '👤', '↺']) {
+      expect(el.textContent).not.toContain(glifo);
+    }
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(expect.arrayContaining(['autorenew', 'restaurant', 'person']));
+  });
 });

@@ -10,11 +10,12 @@ import {
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RoleName, TenantUser } from '../interfaces/user-profile.interface';
 import { UsersService } from '../services/users.service';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 @Component({
   selector: 'app-user-role-modal',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, IconMiComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -26,7 +27,7 @@ import { UsersService } from '../services/users.service';
             (click)="cancelled.emit()"
             class="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            ✕
+            <app-mi-icon name="close" ariaLabel="Cerrar" [size]="20" />
           </button>
         </div>
 

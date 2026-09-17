@@ -77,4 +77,19 @@ describe('CategoriesPageComponent', () => {
     ).map((th) => (th as HTMLElement).textContent?.trim() ?? '');
     expect(headers).toContain('Orden');
   });
+
+  it('ningún ícono se renderiza ya como emoji ni SVG artesanal (spec 082)', () => {
+    categoryService.categories.set([makeCategory()]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('svg')).toBeNull();
+    for (const emoji of ['📂', '✏️', '🔴', '🟢']) {
+      expect(el.textContent).not.toContain(emoji);
+    }
+    const ligaduras = Array.from(el.querySelectorAll('app-mi-icon .material-icons-outlined')).map(
+      (n) => n.textContent?.trim(),
+    );
+    expect(ligaduras).toEqual(expect.arrayContaining(['add', 'category', 'edit', 'circle']));
+  });
 });

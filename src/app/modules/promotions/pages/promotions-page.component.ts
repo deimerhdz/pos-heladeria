@@ -26,6 +26,7 @@ import {
 import { PromotionService } from '../services/promotion.service';
 import { PromoDisplay, getPromoDisplay } from '../services/promotion-pricing.util';
 import { setDescriptor } from '../services/promotion-condition.util';
+import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
 
 /**
  * spec 083 (US3): tres pantallas fieles a los prototipos
@@ -121,25 +122,36 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
 @Component({
   selector: 'app-promotions-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PaginationBarComponent, MoneyInputComponent],
+  imports: [FormsModule, PaginationBarComponent, MoneyInputComponent, IconMiComponent],
   template: `
     <div>
       @if (showMigrationBanner()) {
-        <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div
+          class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
           <div class="flex items-start justify-between gap-3">
             <div>
-              <p class="font-semibold">Algunas promociones se finalizaron con la última actualización</p>
+              <p class="font-semibold">
+                Algunas promociones se finalizaron con la última actualización
+              </p>
               <p class="mt-1 text-amber-700">
                 El modelo de promociones cambió a "conjunto de variantes". Estas quedaron en
                 <strong>Finalizada</strong> — recréalas si siguen vigentes:
               </p>
               <ul class="mt-2 list-disc pl-5">
                 @for (p of svc.closedByRefactor(); track p.id) {
-                  <li>{{ p.name }} <span class="text-amber-500">({{ typeLabel(p.rules[0]?.type ?? '') }})</span></li>
+                  <li>
+                    {{ p.name }}
+                    <span class="text-amber-500">({{ typeLabel(p.rules[0]?.type ?? '') }})</span>
+                  </li>
                 }
               </ul>
             </div>
-            <button type="button" (click)="dismissBanner()" class="text-amber-500 hover:text-amber-700 text-xs font-semibold">
+            <button
+              type="button"
+              (click)="dismissBanner()"
+              class="text-amber-500 hover:text-amber-700 text-xs font-semibold"
+            >
               Descartar
             </button>
           </div>
@@ -150,10 +162,13 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
         @case ('list') {
           <div class="flex items-start justify-between gap-4 flex-wrap mb-5">
             <div>
-              <p class="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">Catálogo</p>
+              <p class="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-1">
+                Catálogo
+              </p>
               <h1 class="text-2xl font-bold text-gray-900 leading-none mb-1.5">Promociones</h1>
               <p class="text-[13px] text-gray-400">
-                Descuento por porcentaje o precio de paquete sobre uno o varios conjuntos de variantes
+                Descuento por porcentaje o precio de paquete sobre uno o varios conjuntos de
+                variantes
               </p>
             </div>
             <button
@@ -161,7 +176,15 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               (click)="openNew()"
               class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-colors"
             >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              <svg
+                class="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
               Nueva promoción
             </button>
           </div>
@@ -193,20 +216,25 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           </div>
 
           @if (svc.error()) {
-            <div class="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+            <div
+              class="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+            >
               {{ svc.error() }}
             </div>
           }
 
           @if (svc.loading() && svc.promotions().length === 0) {
             <div class="flex justify-center py-16">
-              <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+              <div
+                class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"
+              ></div>
             </div>
           } @else if (svc.promotions().length === 0) {
             <div class="bg-white rounded-2xl border border-gray-100 px-5 py-16 text-center">
               <h3 class="text-base font-semibold text-gray-900 mb-2">Sin promociones</h3>
               <p class="text-sm text-gray-500 max-w-md mx-auto mb-5">
-                Crea un descuento por porcentaje o un precio de paquete sobre las variantes que elijas.
+                Crea un descuento por porcentaje o un precio de paquete sobre las variantes que
+                elijas.
               </p>
               <button
                 type="button"
@@ -221,12 +249,16 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               <div class="overflow-x-auto">
                 <table class="w-full min-w-[860px] text-left border-collapse">
                   <thead>
-                    <tr class="border-b border-gray-100 bg-gray-50 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                    <tr
+                      class="border-b border-gray-100 bg-gray-50 text-[11px] font-bold text-gray-400 uppercase tracking-wider"
+                    >
                       <th class="py-3 px-5 w-[22%]">Promoción</th>
                       <th class="py-3 px-5 w-[33%]">Reglas</th>
                       <th class="py-3 px-5 w-[25%]">Vigencia</th>
                       <th class="py-3 px-5 w-[10%]">Estado</th>
-                      <th class="py-3 px-5 text-right w-[10%]"><span class="sr-only">Acciones</span></th>
+                      <th class="py-3 px-5 text-right w-[10%]">
+                        <span class="sr-only">Acciones</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-50 text-xs">
@@ -234,7 +266,9 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                       <tr class="hover:bg-gray-50/50 transition align-top">
                         <td class="py-4 px-5 font-bold text-gray-900">{{ p.name }}</td>
                         <td class="py-4 px-5 text-gray-600">
-                          <span class="inline-block text-[10px] font-bold tracking-tight px-1.5 py-0.5 rounded uppercase bg-indigo-50 text-indigo-600">
+                          <span
+                            class="inline-block text-[10px] font-bold tracking-tight px-1.5 py-0.5 rounded uppercase bg-indigo-50 text-indigo-600"
+                          >
                             {{ promotionTypeLabel(p) }}
                           </span>
                         </td>
@@ -256,29 +290,62 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                               (click)="toggleActionsMenu(p.id, $event)"
                               class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-indigo-400"
                             >
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                              <svg
+                                class="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                                />
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                />
+                              </svg>
                             </button>
                             @if (openActionsId() === p.id) {
                               <div
                                 (click)="$event.stopPropagation()"
                                 class="absolute right-0 mt-1 w-44 bg-white rounded-lg border border-gray-100 shadow-lg py-1 z-30 text-left"
                               >
-                                <button type="button" (click)="openEdit(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors">
+                                <button
+                                  type="button"
+                                  (click)="openEdit(p); closeActionsMenu()"
+                                  class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors"
+                                >
                                   Configurar
                                 </button>
-                                <button type="button" (click)="startDuplicate(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors">
+                                <button
+                                  type="button"
+                                  (click)="startDuplicate(p); closeActionsMenu()"
+                                  class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+                                >
                                   Duplicar
                                 </button>
                                 @if (transitionsOf(p).length > 0 || canDelete(p)) {
                                   <div class="border-b border-gray-100 my-1"></div>
                                 }
                                 @for (to of transitionsOf(p); track to) {
-                                  <button type="button" (click)="changeStatus(p, to); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors">
+                                  <button
+                                    type="button"
+                                    (click)="changeStatus(p, to); closeActionsMenu()"
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+                                  >
                                     {{ statusVerb(to) }}
                                   </button>
                                 }
                                 @if (canDelete(p)) {
-                                  <button type="button" (click)="removePromotion(p); closeActionsMenu()" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors">
+                                  <button
+                                    type="button"
+                                    (click)="removePromotion(p); closeActionsMenu()"
+                                    class="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                                  >
                                     Eliminar
                                   </button>
                                 }
@@ -305,21 +372,38 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           }
         }
 
-        @case ('create') {
-          <div class="flex items-center gap-3 pb-4 border-b border-gray-100 mb-6">
-            <button type="button" (click)="backToList()" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-              Volver
+        @case ('form') {
+          <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                (click)="backToList()"
+                class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+              >
+                <app-mi-icon name="arrow_back" [size]="16" />
+                Volver
+              </button>
+              <span class="text-gray-200">|</span>
+              <h1 class="text-lg font-bold text-gray-900">
+                {{ editingId() ? 'Editar promoción' : 'Nueva promoción' }}
+              </h1>
+            </div>
+            <button
+              type="button"
+              class="w-7 h-7 flex items-center justify-center rounded-full border border-gray-200 text-gray-400 hover:text-gray-600"
+              title="Ayuda"
+            >
+              <app-mi-icon name="help_outline" ariaLabel="Ayuda" [size]="16" />
             </button>
-            <span class="text-gray-200">|</span>
-            <h1 class="text-lg font-bold text-gray-900">Nueva promoción</h1>
           </div>
 
           <div class="max-w-6xl w-full space-y-6">
             <section class="bg-white rounded-xl border border-gray-200/80 shadow-sm p-6">
               <h2 class="text-base font-semibold text-gray-800 mb-4">Información general</h2>
               <label class="block">
-                <span class="block text-xs font-bold text-gray-500 tracking-wider uppercase mb-2">Nombre</span>
+                <span class="block text-xs font-bold text-gray-500 tracking-wider uppercase mb-2"
+                  >Nombre</span
+                >
                 <input
                   [ngModel]="createName()"
                   (ngModelChange)="createName.set($event)"
@@ -332,34 +416,68 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             <section class="bg-white rounded-xl border border-gray-200/80 shadow-sm p-6">
               <h2 class="text-base font-semibold text-gray-800">Tipo de promoción</h2>
               <p class="text-xs text-gray-500 mt-0.5 mb-4">
-                Elige si esta promoción aplicará un porcentaje de descuento o un precio fijo de paquete para conjuntos de productos.
+                Elige si esta promoción aplicará un porcentaje de descuento o un precio fijo de
+                paquete para conjuntos de productos.
               </p>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 @for (t of typeOptions; track t.value) {
                   <label
                     class="relative flex flex-col p-5 rounded-xl border-2 cursor-pointer transition-all select-none"
-                    [class]="createType() === t.value ? 'border-indigo-500 bg-indigo-50/30' : 'border-gray-200 hover:border-gray-300 bg-white'"
+                    [class]="
+                      createType() === t.value
+                        ? 'border-indigo-500 bg-indigo-50/30'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    "
                   >
-                    <input type="radio" class="sr-only" name="promo_type" [checked]="createType() === t.value" (change)="createType.set(t.value)" />
+                    <input
+                      type="radio"
+                      class="sr-only"
+                      name="promo_type"
+                      [checked]="createType() === t.value"
+                      (change)="createType.set(t.value)"
+                    />
                     <div class="flex items-start justify-between mb-3">
                       <div class="flex items-center gap-3">
                         <div
                           class="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg"
-                          [class]="createType() === t.value ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'"
+                          [class]="
+                            createType() === t.value
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-indigo-50 text-indigo-600'
+                          "
                         >
                           {{ t.value === 'percent' ? '%' : '📦' }}
                         </div>
                         <div>
                           <span class="text-sm font-bold text-gray-800 block">{{ t.label }}</span>
-                          <span class="inline-block text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md mt-0.5">{{ t.badge }}</span>
+                          <span
+                            class="inline-block text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md mt-0.5"
+                            >{{ t.badge }}</span
+                          >
                         </div>
                       </div>
                       <div
                         class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
-                        [class]="createType() === t.value ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'"
+                        [class]="
+                          createType() === t.value
+                            ? 'border-indigo-600 bg-indigo-600'
+                            : 'border-gray-300'
+                        "
                       >
                         @if (createType() === t.value) {
-                          <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                          <svg
+                            class="w-3 h-3 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="3"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
                         }
                       </div>
                     </div>
@@ -370,11 +488,21 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             </section>
 
             @if (formError()) {
-              <div class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ formError() }}</div>
+              <div
+                class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+              >
+                {{ formError() }}
+              </div>
             }
 
-            <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pb-8">
-              <button type="button" (click)="backToList()" class="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 shadow-sm transition-colors">
+            <div
+              class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pb-8"
+            >
+              <button
+                type="button"
+                (click)="backToList()"
+                class="inline-flex justify-center items-center px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 shadow-sm transition-colors"
+              >
                 Cancelar
               </button>
               <button
@@ -392,8 +520,19 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
         @case ('configure') {
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
             <div class="flex items-center gap-3">
-              <button type="button" (click)="backToList()" class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+              <button
+                type="button"
+                (click)="backToList()"
+                class="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                  />
+                </svg>
                 Volver
               </button>
               <span class="text-gray-200">|</span>
@@ -408,35 +547,75 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 (click)="saveConfigure()"
                 class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
                 {{ svc.isSubmitting() ? 'Guardando…' : 'Guardar y sincronizar' }}
               </button>
             }
           </div>
 
           @if (isReadOnly()) {
-            <p class="text-sm text-amber-600 mb-4">Esta promoción está finalizada — solo lectura.</p>
+            <p class="text-sm text-amber-600 mb-4">
+              Esta promoción está finalizada — solo lectura.
+            </p>
           }
 
           <!-- Card informativa: tipo bloqueado (FR-018) -->
-          <div class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5">
+          <div
+            class="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-5"
+          >
             <div class="flex items-start gap-3">
               <div class="p-2 bg-indigo-600 text-white rounded-lg shadow-sm mt-0.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                  />
+                </svg>
               </div>
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-xs font-bold text-indigo-950 uppercase tracking-wider">Tipo seleccionado: {{ typeLabel(form.type) }}</span>
-                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-900">Fijado en creación</span>
+                  <span class="text-xs font-bold text-indigo-950 uppercase tracking-wider"
+                    >Tipo seleccionado: {{ typeLabel(form.type) }}</span
+                  >
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-900"
+                    >Fijado en creación</span
+                  >
                 </div>
                 <p class="text-xs text-indigo-800 mt-0.5">
-                  El tipo de regla no es modificable — aplica a todas las filas que agregues en esta promoción.
+                  El tipo de regla no es modificable — aplica a todas las filas que agregues en esta
+                  promoción.
                 </p>
               </div>
             </div>
-            <div class="text-xs bg-white border border-indigo-200 px-3.5 py-1.5 rounded-lg text-indigo-900 font-semibold whitespace-nowrap shadow-sm flex items-center gap-2">
-              <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              <span>Vigencia: <strong class="text-indigo-700">{{ vigenciaPreview() }}</strong></span>
+            <div
+              class="text-xs bg-white border border-indigo-200 px-3.5 py-1.5 rounded-lg text-indigo-900 font-semibold whitespace-nowrap shadow-sm flex items-center gap-2"
+            >
+              <svg
+                class="w-4 h-4 text-indigo-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <span
+                >Vigencia: <strong class="text-indigo-700">{{ vigenciaPreview() }}</strong></span
+              >
             </div>
           </div>
 
@@ -444,25 +623,47 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-5">
             <h2 class="text-base font-semibold text-gray-800 mb-4">Información general</h2>
             <label class="block">
-              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre</span>
-              <input [(ngModel)]="form.name" [disabled]="isReadOnly()" class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+              <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                >Nombre</span
+              >
+              <input
+                [(ngModel)]="form.name"
+                [disabled]="isReadOnly()"
+                class="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
             </label>
           </div>
 
           <!-- Configuración de Vigencia y Horarios -->
           <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-5">
             <div class="flex items-center gap-2.5 mb-4">
-              <span class="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <span
+                class="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
               </span>
               <div>
-                <h2 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Configuración de Vigencia y Horarios</h2>
-                <p class="text-[11px] text-gray-500">Define el periodo, días activos de la semana y franja horaria para el descuento en el POS.</p>
+                <h2 class="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                  Configuración de Vigencia y Horarios
+                </h2>
+                <p class="text-[11px] text-gray-500">
+                  Define el periodo, días activos de la semana y franja horaria para el descuento en
+                  el POS.
+                </p>
               </div>
             </div>
             <div class="space-y-1.5 mb-4">
               <div class="flex items-center justify-between">
-                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600">Días de la semana aplicables</span>
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600"
+                  >Días de la semana aplicables</span
+                >
                 <span class="text-[11px] text-gray-400">Vacío = todos los días</span>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -472,48 +673,123 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                     [disabled]="isReadOnly()"
                     (click)="toggleDay(d.idx)"
                     class="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
-                    [class]="form.days_of_week.includes(d.idx) ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'"
+                    [class]="
+                      form.days_of_week.includes(d.idx)
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                    "
                   >
-                    @if (form.days_of_week.includes(d.idx)) { ✓ }{{ d.label }}
+                    @if (form.days_of_week.includes(d.idx)) {
+                      ✓
+                    }
+                    {{ d.label }}
                   </button>
                 }
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <label class="block">
-                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Fecha inicio</span>
+                <span
+                  class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                  >Fecha inicio</span
+                >
                 <div class="relative rounded-lg shadow-xs">
-                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  <div
+                    class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
                   </div>
-                  <input type="date" [(ngModel)]="form.starts_at" [disabled]="isReadOnly() || !isDraft()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                  <input
+                    type="date"
+                    [(ngModel)]="form.starts_at"
+                    [disabled]="isReadOnly() || !isDraft()"
+                    class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium"
+                  />
                 </div>
               </label>
               <label class="block">
-                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Fecha fin</span>
+                <span
+                  class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                  >Fecha fin</span
+                >
                 <div class="relative rounded-lg shadow-xs">
-                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  <div
+                    class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
                   </div>
-                  <input type="date" [(ngModel)]="form.ends_at" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                  <input
+                    type="date"
+                    [(ngModel)]="form.ends_at"
+                    [disabled]="isReadOnly()"
+                    class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium"
+                  />
                 </div>
               </label>
               <label class="block">
-                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Hora desde</span>
+                <span
+                  class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                  >Hora desde</span
+                >
                 <div class="relative rounded-lg shadow-xs">
-                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <div
+                    class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                   </div>
-                  <input type="time" [(ngModel)]="form.start_time" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                  <input
+                    type="time"
+                    [(ngModel)]="form.start_time"
+                    [disabled]="isReadOnly()"
+                    class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium"
+                  />
                 </div>
               </label>
               <label class="block">
-                <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Hora hasta</span>
+                <span
+                  class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                  >Hora hasta</span
+                >
                 <div class="relative rounded-lg shadow-xs">
-                  <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  <div
+                    class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-gray-400"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                   </div>
-                  <input type="time" [(ngModel)]="form.end_time" [disabled]="isReadOnly()" class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium" />
+                  <input
+                    type="time"
+                    [(ngModel)]="form.end_time"
+                    [disabled]="isReadOnly()"
+                    class="w-full pl-8 pr-2.5 py-2 border border-gray-300 rounded-lg text-xs font-medium"
+                  />
                 </div>
               </label>
             </div>
@@ -524,42 +800,85 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             <div class="bg-gray-50/80 border border-gray-200/80 rounded-xl p-5 mb-5">
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div class="flex items-center gap-2.5">
-                  <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+                  <span
+                    class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0"
+                    >1</span
+                  >
                   <div>
-                    <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">¿Qué productos participan?</h3>
-                    <p class="text-[11px] text-gray-500">Elige los sabores o productos base que combinan en esta promoción</p>
+                    <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                      ¿Qué productos participan?
+                    </h3>
+                    <p class="text-[11px] text-gray-500">
+                      Elige los sabores o productos base que combinan en esta promoción
+                    </p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
-                  <select [(ngModel)]="stepOneFilter.category" class="text-xs border-gray-300 rounded-lg py-1.5 pl-2.5 pr-8 text-gray-700 bg-white">
+                  <select
+                    [(ngModel)]="stepOneFilter.category"
+                    class="text-xs border-gray-300 rounded-lg py-1.5 pl-2.5 pr-8 text-gray-700 bg-white"
+                  >
                     <option value="">Todas las categorías</option>
                     @for (c of categoryFilterOptions(); track c.id) {
                       <option [value]="c.id">{{ c.name }}</option>
                     }
                   </select>
-                  <input [(ngModel)]="stepOneFilter.text" type="search" placeholder="Buscar producto o sabor..." class="w-48 sm:w-56 text-xs border border-gray-300 rounded-lg py-1.5 px-2.5 text-gray-700" />
+                  <input
+                    [(ngModel)]="stepOneFilter.text"
+                    type="search"
+                    placeholder="Buscar producto o sabor..."
+                    class="w-48 sm:w-56 text-xs border border-gray-300 rounded-lg py-1.5 px-2.5 text-gray-700"
+                  />
                 </div>
               </div>
 
               @if (stepOneResults().length > 0) {
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                <div
+                  class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[320px] overflow-y-auto pr-1"
+                >
                   @for (p of stepOneResults(); track p.id) {
                     <div
                       (click)="toggleProductCandidate(p.id)"
                       class="relative border-2 rounded-xl p-3.5 cursor-pointer transition-all"
-                      [class]="isProductSelected(p.id) ? 'border-indigo-500 bg-indigo-50/30' : 'border-gray-200 bg-white hover:border-gray-300'"
+                      [class]="
+                        isProductSelected(p.id)
+                          ? 'border-indigo-500 bg-indigo-50/30'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      "
                     >
                       @if (isProductSelected(p.id)) {
-                        <span class="absolute top-2 right-2 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
-                          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        <span
+                          class="absolute top-2 right-2 w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center"
+                        >
+                          <svg
+                            class="w-3 h-3"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
                         </span>
                       }
                       <div class="text-2xl mb-1">🍨</div>
                       <div class="font-bold text-xs text-gray-800 leading-tight">{{ p.name }}</div>
                       <div class="text-[10px] text-gray-500 mt-0.5">{{ p.categoryName }}</div>
-                      <div class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400">
+                      <div
+                        class="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400"
+                      >
                         <span>Desde {{ money(p.minPrice) }}</span>
-                        <span [class]="isProductSelected(p.id) ? 'font-medium text-indigo-700' : 'text-indigo-600'">
+                        <span
+                          [class]="
+                            isProductSelected(p.id)
+                              ? 'font-medium text-indigo-700'
+                              : 'text-indigo-600'
+                          "
+                        >
                           {{ isProductSelected(p.id) ? 'Incluido' : '+ Seleccionar' }}
                         </span>
                       </div>
@@ -569,7 +888,9 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               } @else if (stepOneFilter.category || stepOneFilter.text) {
                 <p class="text-xs text-gray-400">Sin productos que coincidan con el filtro.</p>
               } @else {
-                <p class="text-xs text-gray-400">Elige una categoría o busca un producto para empezar.</p>
+                <p class="text-xs text-gray-400">
+                  Elige una categoría o busca un producto para empezar.
+                </p>
               }
 
               <div class="flex items-center gap-2 pt-3 flex-wrap">
@@ -578,12 +899,22 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 </span>
                 <div class="flex flex-wrap gap-1.5">
                   @for (p of selectedCandidateProducts(); track p.id) {
-                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                    <span
+                      class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200/60"
+                    >
                       {{ p.name }}
-                      <button type="button" (click)="toggleProductCandidate(p.id)" class="text-indigo-400 hover:text-indigo-600 ml-0.5">×</button>
+                      <button
+                        type="button"
+                        (click)="toggleProductCandidate(p.id)"
+                        class="text-indigo-400 hover:text-indigo-600 ml-0.5"
+                      >
+                        ×
+                      </button>
                     </span>
                   } @empty {
-                    <span class="text-gray-400 text-[11px] italic">Sin productos seleccionados.</span>
+                    <span class="text-gray-400 text-[11px] italic"
+                      >Sin productos seleccionados.</span
+                    >
                   }
                 </div>
               </div>
@@ -592,17 +923,33 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             <!-- Paso 2: presentación y regla de precio -->
             <div class="bg-white border border-gray-200 rounded-xl p-5 mb-5">
               <div class="flex items-center gap-2.5 mb-4">
-                <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
+                <span
+                  class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0"
+                  >2</span
+                >
                 <div>
-                  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">Presentación y Regla de Precio</h3>
-                  <p class="text-[11px] text-gray-500">Define el tamaño aplicable y las condiciones de cobro fijo en el POS</p>
+                  <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                    Presentación y Regla de Precio
+                  </h3>
+                  <p class="text-[11px] text-gray-500">
+                    Define el tamaño aplicable y las condiciones de cobro fijo en el POS
+                  </p>
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-gray-50/80 p-3.5 rounded-xl border border-gray-200/80">
+              <div
+                class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end bg-gray-50/80 p-3.5 rounded-xl border border-gray-200/80"
+              >
                 <label class="block">
-                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Presentación / Tamaño</span>
-                  <select [ngModel]="pickerLabel()" (ngModelChange)="pickerLabel.set($event)" class="w-full text-xs border-gray-300 rounded-lg py-2 pl-2.5 pr-8 text-gray-700 bg-white font-medium">
+                  <span
+                    class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                    >Presentación / Tamaño</span
+                  >
+                  <select
+                    [ngModel]="pickerLabel()"
+                    (ngModelChange)="pickerLabel.set($event)"
+                    class="w-full text-xs border-gray-300 rounded-lg py-2 pl-2.5 pr-8 text-gray-700 bg-white font-medium"
+                  >
                     <option [ngValue]="null">Elige una presentación</option>
                     @for (l of availableLabels(); track l) {
                       <option [ngValue]="l">{{ l }}</option>
@@ -610,17 +957,39 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                   </select>
                 </label>
                 <label class="block">
-                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">Unidades</span>
-                  <input type="number" [attr.min]="minPickerQty()" [ngModel]="pickerQty()" (ngModelChange)="onPickerQtyChange($event)" class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800" />
+                  <span
+                    class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                    >Unidades</span
+                  >
+                  <input
+                    type="number"
+                    [attr.min]="minPickerQty()"
+                    [ngModel]="pickerQty()"
+                    (ngModelChange)="onPickerQtyChange($event)"
+                    class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800"
+                  />
                 </label>
                 <label class="block">
-                  <span class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5">
+                  <span
+                    class="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1.5"
+                  >
                     {{ form.type === 'percent' ? 'Porcentaje (%)' : 'Precio promocional ($ COP)' }}
                   </span>
                   @if (form.type === 'percent') {
-                    <input type="number" min="0" max="100" [ngModel]="pickerValue()" (ngModelChange)="pickerValue.set($event)" class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800" />
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      [ngModel]="pickerValue()"
+                      (ngModelChange)="pickerValue.set($event)"
+                      class="w-full rounded-lg border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800"
+                    />
                   } @else {
-                    <app-money-input [ngModel]="pickerValue()" (ngModelChange)="pickerValue.set($event)" class="block" />
+                    <app-money-input
+                      [ngModel]="pickerValue()"
+                      (ngModelChange)="pickerValue.set($event)"
+                      class="block"
+                    />
                   }
                 </label>
                 <button
@@ -629,7 +998,15 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                   (click)="addRuleRow()"
                   class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1.5 h-[38px] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                  <svg
+                    class="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
                   Agregar a la lista
                 </button>
               </div>
@@ -639,22 +1016,33 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               }
 
               @if (sharedVariantConflict(); as sc) {
-                <div class="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-                  La variante <strong>{{ sc.variantLabel }}</strong> está repetida entre dos reglas — cada variante solo
-                  puede pertenecer a una regla de esta promoción.
+                <div
+                  class="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600"
+                >
+                  La variante <strong>{{ sc.variantLabel }}</strong> está repetida entre dos reglas
+                  — cada variante solo puede pertenecer a una regla de esta promoción.
                 </div>
               }
 
               <div class="mt-4 space-y-2">
                 <div class="flex items-center justify-between">
-                  <span class="text-[11px] font-bold uppercase tracking-wider text-gray-600">Reglas de precio configuradas</span>
-                  <span class="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60">
-                    {{ form.rules.length }} regla{{ form.rules.length === 1 ? '' : 's' }} configurada{{ form.rules.length === 1 ? '' : 's' }}
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-gray-600"
+                    >Reglas de precio configuradas</span
+                  >
+                  <span
+                    class="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60"
+                  >
+                    {{ form.rules.length }} regla{{
+                      form.rules.length === 1 ? '' : 's'
+                    }}
+                    configurada{{ form.rules.length === 1 ? '' : 's' }}
                   </span>
                 </div>
                 <div class="overflow-hidden border border-gray-200 rounded-xl">
                   <table class="w-full text-left text-xs">
-                    <thead class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                    <thead
+                      class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider"
+                    >
                       <tr>
                         <th class="p-3">Presentación</th>
                         <th class="p-3">Unidades mínimas</th>
@@ -668,17 +1056,26 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                       @for (rule of form.rules; track $index) {
                         <tr class="hover:bg-gray-50/50 transition-colors">
                           <td class="p-3 font-bold text-gray-800">
-                            <span class="w-2 h-2 rounded-full bg-indigo-600 inline-block mr-1.5"></span>{{ ruleProductsLabel(rule) }}
+                            <span
+                              class="w-2 h-2 rounded-full bg-indigo-600 inline-block mr-1.5"
+                            ></span
+                            >{{ ruleProductsLabel(rule) }}
                           </td>
-                          <td class="p-3 text-gray-600 font-medium">{{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}</td>
+                          <td class="p-3 text-gray-600 font-medium">
+                            {{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}
+                          </td>
                           @if (previewSavings(rule); as pv) {
                             <td class="p-3 text-gray-400 line-through">{{ money(pv.regular) }}</td>
                             <td class="p-3 font-bold text-indigo-700">
-                              {{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}
+                              {{
+                                rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
+                              }}
                             </td>
                             <td class="p-3">
                               @if (pv.amountOff > 0) {
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span
+                                  class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                >
                                   Ahorro {{ money(pv.amountOff) }}
                                 </span>
                               } @else {
@@ -687,18 +1084,41 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                             </td>
                           } @else {
                             <td class="p-3 text-gray-400">—</td>
-                            <td class="p-3 font-bold text-indigo-700">{{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}</td>
+                            <td class="p-3 font-bold text-indigo-700">
+                              {{
+                                rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
+                              }}
+                            </td>
                             <td class="p-3 text-gray-400">—</td>
                           }
                           <td class="p-3 text-right">
-                            <button type="button" (click)="removeRuleRow($index)" title="Eliminar regla" class="text-gray-400 hover:text-red-500 p-1 rounded transition-colors">
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            <button
+                              type="button"
+                              (click)="removeRuleRow($index)"
+                              title="Eliminar regla"
+                              class="text-gray-400 hover:text-red-500 p-1 rounded transition-colors"
+                            >
+                              <svg
+                                class="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
                             </button>
                           </td>
                         </tr>
                       } @empty {
                         <tr>
-                          <td colspan="6" class="p-4 text-center text-gray-400">Sin reglas configuradas todavía.</td>
+                          <td colspan="6" class="p-4 text-center text-gray-400">
+                            Sin reglas configuradas todavía.
+                          </td>
                         </tr>
                       }
                     </tbody>
@@ -709,10 +1129,14 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           } @else {
             <!-- Solo lectura: Activa o Finalizada (FR-018) -->
             <div class="bg-white border border-gray-200 rounded-xl p-5 mb-5">
-              <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">Reglas configuradas</h3>
+              <h3 class="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3">
+                Reglas configuradas
+              </h3>
               <div class="overflow-hidden border border-gray-200 rounded-xl">
                 <table class="w-full text-left text-xs">
-                  <thead class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  <thead
+                    class="bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider"
+                  >
                     <tr>
                       <th class="p-3">Presentación</th>
                       <th class="p-3">Unidades mínimas</th>
@@ -723,11 +1147,17 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                     @for (rule of form.rules; track $index) {
                       <tr>
                         <td class="p-3 font-bold text-gray-800">{{ ruleProductsLabel(rule) }}</td>
-                        <td class="p-3 text-gray-600 font-medium">{{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}</td>
-                        <td class="p-3 font-bold text-indigo-700">{{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}</td>
+                        <td class="p-3 text-gray-600 font-medium">
+                          {{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}
+                        </td>
+                        <td class="p-3 font-bold text-indigo-700">
+                          {{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}
+                        </td>
                       </tr>
                     } @empty {
-                      <tr><td colspan="3" class="p-4 text-center text-gray-400">Sin reglas.</td></tr>
+                      <tr>
+                        <td colspan="3" class="p-4 text-center text-gray-400">Sin reglas.</td>
+                      </tr>
                     }
                   </tbody>
                 </table>
@@ -736,26 +1166,41 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           }
 
           @if (formError()) {
-            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{{ formError() }}</div>
+            <div
+              class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600"
+            >
+              {{ formError() }}
+            </div>
           }
           @if (svc.overlapConflict(); as oc) {
-            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
+            <div
+              class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700"
+            >
               <p class="font-semibold">{{ oc.error }}</p>
               <ul class="mt-1 list-disc pl-5">
                 @for (c of oc.conflicts; track c.rule_id) {
-                  <li>{{ c.promotion_name }} — {{ c.variant_ids.length }} variante(s) compartida(s)</li>
+                  <li>
+                    {{ c.promotion_name }} — {{ c.variant_ids.length }} variante(s) compartida(s)
+                  </li>
                 }
               </ul>
             </div>
           }
           @if (svc.ruleVariantConflict(); as rc) {
-            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
+            <div
+              class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700"
+            >
               <p class="font-semibold">{{ rc.error }}</p>
-              <p class="mt-1">Regla {{ rc.rule_index_a + 1 }} y regla {{ rc.rule_index_b + 1 }} comparten {{ rc.variant_ids.length }} variante(s).</p>
+              <p class="mt-1">
+                Regla {{ rc.rule_index_a + 1 }} y regla {{ rc.rule_index_b + 1 }} comparten
+                {{ rc.variant_ids.length }} variante(s).
+              </p>
             </div>
           }
           @if (svc.packageNotDiscount(); as pk) {
-            <div class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700">
+            <div
+              class="mb-5 bg-red-50 border border-red-200 rounded-lg px-3 py-3 text-sm text-red-700"
+            >
               <p class="font-semibold">{{ pk.error }}</p>
             </div>
           }
@@ -767,10 +1212,22 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
       <div class="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl p-5 w-full max-w-sm">
           <h3 class="text-base font-semibold text-gray-900 mb-2">Duplicar "{{ src.name }}"</h3>
-          <p class="text-xs text-gray-500 mb-3">La copia nace en Borrador con las mismas reglas y la misma vigencia.</p>
-          <input [(ngModel)]="duplicateName" placeholder="Nombre de la copia" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+          <p class="text-xs text-gray-500 mb-3">
+            La copia nace en Borrador con las mismas reglas y la misma vigencia.
+          </p>
+          <input
+            [(ngModel)]="duplicateName"
+            placeholder="Nombre de la copia"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
           <div class="mt-4 flex justify-end gap-2">
-            <button type="button" (click)="duplicating.set(null)" class="px-3 py-1.5 text-sm text-gray-500">Cancelar</button>
+            <button
+              type="button"
+              (click)="duplicating.set(null)"
+              class="px-3 py-1.5 text-sm text-gray-500"
+            >
+              Cancelar
+            </button>
             <button
               type="button"
               [disabled]="svc.isSubmitting() || !duplicateName().trim()"
@@ -868,7 +1325,14 @@ export class PromotionsPageComponent implements OnInit {
     for (const v of this.catalogVariants()) {
       let p = map.get(v.productId);
       if (!p) {
-        p = { id: v.productId, name: v.productName, categoryId: v.categoryId, categoryName: v.categoryName, minPrice: v.price, variants: [] };
+        p = {
+          id: v.productId,
+          name: v.productName,
+          categoryId: v.categoryId,
+          categoryName: v.categoryName,
+          minPrice: v.price,
+          variants: [],
+        };
         map.set(v.productId, p);
       }
       p.variants.push(v);
@@ -905,21 +1369,23 @@ export class PromotionsPageComponent implements OnInit {
   /** spec 063 (revisión 2026-09-01, FR-001a): variante repetida entre dos
    *  reglas del formulario — validación de cliente, antes de enviar
    *  (el servidor la revalida siempre). */
-  readonly sharedVariantConflict = computed<{ a: number; b: number; variantLabel: string } | null>(() => {
-    const rules = this.form.rules;
-    const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
-    for (let i = 0; i < rules.length; i++) {
-      const setI = new Set(rules[i].variantIds);
-      for (let j = i + 1; j < rules.length; j++) {
-        const shared = rules[j].variantIds.find((id) => setI.has(id));
-        if (shared) {
-          const v = byId.get(shared);
-          return { a: i, b: j, variantLabel: v ? `${v.productName} - ${v.variantName}` : shared };
+  readonly sharedVariantConflict = computed<{ a: number; b: number; variantLabel: string } | null>(
+    () => {
+      const rules = this.form.rules;
+      const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
+      for (let i = 0; i < rules.length; i++) {
+        const setI = new Set(rules[i].variantIds);
+        for (let j = i + 1; j < rules.length; j++) {
+          const shared = rules[j].variantIds.find((id) => setI.has(id));
+          if (shared) {
+            const v = byId.get(shared);
+            return { a: i, b: j, variantLabel: v ? `${v.productName} - ${v.variantName}` : shared };
+          }
         }
       }
-    }
-    return null;
-  });
+      return null;
+    },
+  );
 
   /** FR-025 (spec 083, sesión 2026-09-17): unidades mínimas de la fila en
    *  construcción — 2 para precio de paquete, 1 para porcentaje. Método (no
@@ -1064,7 +1530,8 @@ export class PromotionsPageComponent implements OnInit {
     this.editingSource.set(p);
     this.formError.set(null);
     const legacyType = p.rules[0]?.type;
-    const type: PromotionType = legacyType === 'percent' || legacyType === 'package_price' ? legacyType : 'package_price';
+    const type: PromotionType =
+      legacyType === 'percent' || legacyType === 'package_price' ? legacyType : 'package_price';
     this.form = {
       name: p.name,
       starts_at: p.starts_at ? p.starts_at.slice(0, 10) : null,
@@ -1164,13 +1631,20 @@ export class PromotionsPageComponent implements OnInit {
 
   private cheapestPrice(variantIds: string[]): number | null {
     const set = new Set(variantIds);
-    const prices = this.catalogVariants().filter((v) => set.has(v.id)).map((v) => v.price);
+    const prices = this.catalogVariants()
+      .filter((v) => set.has(v.id))
+      .map((v) => v.price);
     return prices.length ? Math.min(...prices) : null;
   }
 
   canAddRuleRow(): boolean {
     const minQty = this.minPickerQty();
-    if (!this.pickerLabel() || this.pickerQty() < minQty || this.pickerValue() <= 0 || this.candidateProductIds().size === 0) {
+    if (
+      !this.pickerLabel() ||
+      this.pickerQty() < minQty ||
+      this.pickerValue() <= 0 ||
+      this.candidateProductIds().size === 0
+    ) {
       return false;
     }
     return !(this.form.type === 'package_price' && this.packagePriceExceedsRegularSum());
@@ -1321,7 +1795,11 @@ export class PromotionsPageComponent implements OnInit {
       this.toast.success('Promoción actualizada');
       this.screen.set('list');
       this.svc.load();
-    } else if (this.svc.overlapConflict() || this.svc.packageNotDiscount() || this.svc.ruleVariantConflict()) {
+    } else if (
+      this.svc.overlapConflict() ||
+      this.svc.packageNotDiscount() ||
+      this.svc.ruleVariantConflict()
+    ) {
       // Se muestran inline, debajo de las reglas.
     } else {
       this.formError.set(this.svc.otherError() ?? 'No se pudo guardar.');
@@ -1409,9 +1887,16 @@ export class PromotionsPageComponent implements OnInit {
   vigencia(p: Promotion): string {
     const parts: string[] = [];
     if (p.days_of_week) {
-      parts.push('los ' + p.days_of_week.split(',').map((d) => DAY_FULL[Number(d)]).join(', '));
+      parts.push(
+        'los ' +
+          p.days_of_week
+            .split(',')
+            .map((d) => DAY_FULL[Number(d)])
+            .join(', '),
+      );
     }
-    if (p.start_time && p.end_time) parts.push(`de ${fmtTime(p.start_time)} a ${fmtTime(p.end_time)}`);
+    if (p.start_time && p.end_time)
+      parts.push(`de ${fmtTime(p.start_time)} a ${fmtTime(p.end_time)}`);
     if (p.ends_at) parts.push(`hasta el ${fmtDate(p.ends_at)}`);
     return parts.length ? parts.join(', ') : 'Todos los días';
   }

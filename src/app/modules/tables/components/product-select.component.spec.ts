@@ -667,4 +667,12 @@ describe('ProductSelectComponent — [fromPromotions]/[existingQtyFor] (spec 081
     expect(headerPriceText()).toContain('7.000');
     expect(fixture.nativeElement.querySelector('.line-through')?.textContent).toContain('15.000');
   });
+
+  it('el botón de cerrar ya no usa el emoji ✕ (spec 082)', () => {
+    create(makeProduct());
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).not.toContain('✕');
+    const icon = el.querySelector('app-mi-icon .material-icons-outlined');
+    expect(icon?.textContent?.trim()).toBe('close');
+  });
 });
