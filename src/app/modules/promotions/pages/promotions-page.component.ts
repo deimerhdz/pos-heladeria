@@ -372,7 +372,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
           }
         }
 
-        @case ('form') {
+        @case ('create') {
           <div class="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
             <div class="flex items-center gap-3">
               <button
