@@ -231,9 +231,9 @@ export class PromotionService {
         err.status === 409 &&
         detail &&
         typeof detail === 'object' &&
-        'cheapest_unit_price' in detail
+        'regular_price_sum' in detail
       ) {
-        this.packageNotDiscount.set(detail as PackageNotDiscountError); // FR-016
+        this.packageNotDiscount.set(detail as PackageNotDiscountError); // FR-016/FR-026
       } else if (
         err instanceof HttpErrorResponse &&
         err.status === 409 &&
@@ -265,7 +265,6 @@ export class PromotionService {
   private toScalars(form: PromotionForm) {
     return {
       name: form.name.trim(),
-      description: form.description.trim() || null,
       ends_at: form.ends_at || null,
       days_of_week: this.daysToStr(form.days_of_week),
       start_time: form.start_time || null,

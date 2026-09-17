@@ -4,7 +4,9 @@ import {
   EventEmitter,
   Input,
   OnChanges,
+  OnInit,
   Output,
+  computed,
   inject,
 } from '@angular/core';
 import {
@@ -18,6 +20,8 @@ import {
 import { Category, CategoryForm } from '../interfaces/category.interface';
 import { CategoryService } from '../services/category.service';
 import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
+import { Presentation } from '../../presentations/interfaces/presentation.interface';
+import { PresentationService } from '../../presentations/services/presentation.service';
 
 @Component({
   selector: 'app-category-form',
@@ -94,6 +98,42 @@ import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
             </p>
           </div>
 
+          <!-- Presentaciones asociadas (spec 083, FR-004) -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Presentaciones <span class="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <p class="text-gray-400 text-xs mb-2">
+              Todo producto nuevo creado en esta categoría nacerá con una variante por cada
+              presentación marcada aquí.
+            </p>
+            @if (presentationOptions().length === 0) {
+              <p class="text-xs text-gray-400 border border-gray-200 rounded-lg px-3 py-2">
+                Sin presentaciones en el catálogo. Créalas primero desde "Presentaciones".
+              </p>
+            } @else {
+              <div
+                class="border border-gray-200 rounded-lg max-h-[180px] overflow-y-auto divide-y divide-gray-50"
+              >
+                @for (p of presentationOptions(); track p.id) {
+                  <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedPresentationIds.has(p.id)"
+                      (change)="togglePresentation(p.id)"
+                    />
+                    <span class="flex-1" [class.text-gray-400]="!p.active">
+                      {{ p.name }}
+                    </span>
+                    @if (!p.active) {
+                      <span class="text-xs text-gray-400">inactiva</span>
+                    }
+                  </label>
+                }
+              </div>
+            }
+          </div>
+
           <!-- Service error -->
           @if (categoryService.error()) {
             <p class="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">
@@ -123,12 +163,13 @@ import { IconMiComponent } from '../../../shared/icon-mi/icon-mi.component';
     </div>
   `,
 })
-export class CategoryFormComponent implements OnChanges {
+export class CategoryFormComponent implements OnChanges, OnInit {
   @Input() category: Category | null = null;
   @Output() saved = new EventEmitter<void>();
   @Output() cancelled = new EventEmitter<void>();
 
   readonly categoryService = inject(CategoryService);
+  readonly presentationService = inject(PresentationService);
 
   readonly form = new FormGroup({
     name: new FormControl('', {
@@ -143,6 +184,24 @@ export class CategoryFormComponent implements OnChanges {
     return this.form.controls.name;
   }
 
+  /** spec 083 (FR-004): ids seleccionados fuera del FormGroup, mismo patrón que el
+   *  checkbox-list de variantes de `promotions-page.component.ts` (arrays planos). */
+  selectedPresentationIds = new Set<string>();
+
+  /** Opciones del picker: presentaciones activas + cualquiera ya asociada (aunque esté
+   *  inactiva), para no perderla al guardar sin querer (contracts/categoria-herencia-producto.md). */
+  readonly presentationOptions = computed<Presentation[]>(() => {
+    const all = this.presentationService.allPresentations();
+    const options = all.filter((p) => p.active || this.selectedPresentationIds.has(p.id));
+    return [...options].sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  ngOnInit(): void {
+    if (this.presentationService.allPresentations().length === 0) {
+      this.presentationService.loadAllPresentations();
+    }
+  }
+
   ngOnChanges(): void {
     this.categoryService.otherError.set(null);
     if (this.category) {
@@ -151,11 +210,21 @@ export class CategoryFormComponent implements OnChanges {
         description: this.category.description ?? '',
         display_order: this.category.display_order,
       });
+      this.selectedPresentationIds = new Set(this.category.presentations.map((p) => p.id));
     } else {
       this.form.reset();
+      this.selectedPresentationIds = new Set();
     }
     this.nameControl.setValidators([Validators.required, this.uniqueNameValidator()]);
     this.nameControl.updateValueAndValidity();
+  }
+
+  togglePresentation(id: string): void {
+    if (this.selectedPresentationIds.has(id)) {
+      this.selectedPresentationIds.delete(id);
+    } else {
+      this.selectedPresentationIds.add(id);
+    }
   }
 
   private uniqueNameValidator() {
@@ -176,6 +245,7 @@ export class CategoryFormComponent implements OnChanges {
       name: this.form.controls.name.value.trim(),
       description: this.form.controls.description.value.trim(),
       display_order: this.form.controls.display_order.value,
+      presentation_ids: [...this.selectedPresentationIds],
     };
 
     if (this.category) {

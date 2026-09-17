@@ -64,6 +64,15 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [UserRole.ADMIN],
   },
   {
+    label: 'Presentaciones',
+    icon: 'presentations',
+    route: '/dashboard/presentations',
+    group: 'CATÁLOGO',
+    roles: [UserRole.ADMIN],
+    // spec 083 (research.md D3): sin moduleKey -- catálogo base, mismo criterio
+    // que Categorías/Productos, no un módulo pago como Promociones.
+  },
+  {
     label: 'Promociones',
     icon: 'promotions',
     route: '/dashboard/promotions',
@@ -71,8 +80,6 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [UserRole.ADMIN],
     moduleKey: 'promociones',
   },
-  // spec 063 (A-63): "Presentaciones" se elimina — la entidad `Presentation` y
-  // su modelo de datos (spec 040) se revierten.
 
   // ── ADMINISTRACIÓN ─────────────────────────────────────────────────────
   {
