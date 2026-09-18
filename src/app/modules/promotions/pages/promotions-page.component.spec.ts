@@ -802,4 +802,89 @@ describe('PromotionsPageComponent', () => {
       expect(c.blockedReason('p1')).toBeNull();
     });
   });
+
+  describe('spec 084 FR-026 a FR-028 (bug 5): menú de acciones sin recortar ni mover el scroll', () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const promo = {
+      id: 'p1', name: 'Promo X', description: null, status: 'draft',
+      starts_at: null, ends_at: null, days_of_week: null, start_time: null, end_time: null,
+      closed_by_refactor_at: null, rules: [],
+    } as unknown as Promotion;
+
+    async function renderOneRow(
+      fixture: ReturnType<typeof TestBed.createComponent<PromotionsPageComponent>>,
+    ): Promise<void> {
+      await tick();
+      const req = http.expectOne(
+        (r) =>
+          r.url.endsWith('/promotions') &&
+          r.params.get('page') === '1' &&
+          !r.params.has('status') &&
+          !r.params.has('closed_by_refactor'),
+      );
+      req.flush({ items: [promo], total: 1, page: 1, size: 20, pages: 1 });
+      const start = Date.now();
+      while (
+        fixture.componentInstance.svc.promotions().length === 0 &&
+        Date.now() - start < 500
+      ) {
+        await tick();
+        fixture.detectChanges();
+      }
+    }
+
+    it('el menú se renderiza fuera del contenedor con scroll de la tabla (CDK Overlay, no recortado)', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      await renderOneRow(fixture);
+      const c = fixture.componentInstance;
+
+      c.toggleActionsMenu('p1', new MouseEvent('click'));
+      fixture.detectChanges();
+
+      const overlayPane = document.querySelector('.cdk-overlay-pane');
+      expect(overlayPane).not.toBeNull();
+      expect(overlayPane!.textContent).toContain('Configurar');
+      expect(overlayPane!.textContent).toContain('Duplicar');
+      // El overlay NO cuelga del contenedor con scroll de la tabla.
+      const scrollContainer = fixture.nativeElement.querySelector('.overflow-x-auto');
+      expect(scrollContainer?.contains(overlayPane)).toBe(false);
+
+      c.closeActionsMenu();
+      fixture.detectChanges();
+    });
+
+    it('cerrar el menú (clic fuera / seleccionar una opción) no deja nada en el overlay', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      await renderOneRow(fixture);
+      const c = fixture.componentInstance;
+
+      c.toggleActionsMenu('p1', new MouseEvent('click'));
+      fixture.detectChanges();
+      expect(c.openActionsId()).toBe('p1');
+
+      c.closeActionsMenu();
+      fixture.detectChanges();
+
+      expect(c.openActionsId()).toBeNull();
+      expect(document.querySelector('.cdk-overlay-pane')).toBeNull();
+    });
+
+    it('redimensionar la ventana cierra el menú abierto (FR-028, edge case de layout)', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      await renderOneRow(fixture);
+      const c = fixture.componentInstance;
+
+      c.toggleActionsMenu('p1', new MouseEvent('click'));
+      fixture.detectChanges();
+      expect(c.openActionsId()).toBe('p1');
+
+      window.dispatchEvent(new Event('resize'));
+      fixture.detectChanges();
+
+      expect(c.openActionsId()).toBeNull();
+    });
+  });
 });

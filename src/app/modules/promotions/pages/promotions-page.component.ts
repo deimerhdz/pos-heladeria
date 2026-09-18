@@ -8,6 +8,12 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import {
+  CdkConnectedOverlay,
+  CdkOverlayOrigin,
+  ConnectionPositionPair,
+  Overlay,
+} from '@angular/cdk/overlay';
 import { CategoryService } from '../../categories/services/category.service';
 import { MenuService } from '../../../core/services/menu.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
@@ -132,7 +138,14 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
 @Component({
   selector: 'app-promotions-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PaginationBarComponent, MoneyInputComponent, IconMiComponent],
+  imports: [
+    FormsModule,
+    PaginationBarComponent,
+    MoneyInputComponent,
+    IconMiComponent,
+    CdkConnectedOverlay,
+    CdkOverlayOrigin,
+  ],
   template: `
     <div>
       @if (showMigrationBanner()) {
@@ -294,6 +307,8 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                         <td class="py-4 px-5 text-right whitespace-nowrap relative">
                           <div class="relative inline-block text-left">
                             <button
+                              #actionsOrigin="cdkOverlayOrigin"
+                              cdkOverlayOrigin
                               type="button"
                               aria-haspopup="true"
                               aria-label="Opciones de promoción"
@@ -319,10 +334,22 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                                 />
                               </svg>
                             </button>
-                            @if (openActionsId() === p.id) {
+                            <!-- spec 084 (FR-026 a FR-028, bug 5): CDK Overlay en vez del
+                                 div absoluto anterior -- se renderiza en el contenedor
+                                 overlay global, fuera del contenedor con scroll de la
+                                 tabla (línea ~259), así que ya no se recorta ni fuerza
+                                 una barra de scroll dentro de ella (research.md D5). -->
+                            <ng-template
+                              cdkConnectedOverlay
+                              [cdkConnectedOverlayOrigin]="actionsOrigin"
+                              [cdkConnectedOverlayOpen]="openActionsId() === p.id"
+                              [cdkConnectedOverlayPositions]="actionsMenuPositions"
+                              [cdkConnectedOverlayScrollStrategy]="actionsMenuScrollStrategy"
+                              (detach)="closeActionsMenu()"
+                            >
                               <div
                                 (click)="$event.stopPropagation()"
-                                class="absolute right-0 mt-1 w-44 bg-white rounded-lg border border-gray-100 shadow-lg py-1 z-30 text-left"
+                                class="w-44 bg-white rounded-lg border border-gray-100 shadow-lg py-1 text-left"
                               >
                                 <button
                                   type="button"
@@ -362,7 +389,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                                   </button>
                                 }
                               </div>
-                            }
+                            </ng-template>
                           </div>
                         </td>
                       </tr>
@@ -1314,6 +1341,19 @@ export class PromotionsPageComponent implements OnInit {
   private readonly menu = inject(MenuService);
   private readonly confirm = inject(ConfirmService);
   private readonly toast = inject(ToastService);
+  private readonly overlay = inject(Overlay);
+
+  /** spec 084 (FR-026 a FR-028, bug 5): el menú de acciones se conecta al
+   *  botón que lo abre, alineado por su borde derecho y abriendo hacia abajo
+   *  (mismo lugar visual que el `<div class="absolute right-0 mt-1">`
+   *  anterior) -- con una posición de respaldo hacia arriba si no cabe abajo. */
+  readonly actionsMenuPositions: ConnectionPositionPair[] = [
+    { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 4 },
+    { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom', offsetY: -4 },
+  ];
+  /** Cierra el menú al hacer scroll de la tabla (o de cualquier ancestro con
+   *  scroll) en vez de recalcular su posición -- FR-028. */
+  readonly actionsMenuScrollStrategy = this.overlay.scrollStrategies.close();
 
   readonly screen = signal<Screen>('list');
   readonly editingId = signal<string | null>(null);
@@ -1529,6 +1569,7 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   @HostListener('document:click')
+  @HostListener('window:resize')
   closeActionsMenu(): void {
     this.openActionsId.set(null);
   }
