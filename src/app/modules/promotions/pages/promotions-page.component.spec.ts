@@ -523,6 +523,49 @@ describe('PromotionsPageComponent', () => {
     });
   });
 
+  describe('spec 084 FR-008/FR-009/FR-010 (A-76): "Configurar" deshabilitado en Activa', () => {
+    const base = { id: 'p1', name: 'x', rules: [] } as unknown as Promotion;
+
+    it('canConfigure: habilitado para Borrador, En pausa y Finalizada; bloqueado solo para Activa, sin importar el badge', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      expect(c.canConfigure({ ...base, status: 'draft' } as Promotion)).toBe(true);
+      expect(c.canConfigure({ ...base, status: 'paused' } as Promotion)).toBe(true);
+      expect(c.canConfigure({ ...base, status: 'finished' } as Promotion)).toBe(true);
+      expect(c.canConfigure({ ...base, status: 'active' } as Promotion)).toBe(false);
+      // Estado real, no el badge -- una vigencia ya vencida sigue bloqueada si status=active.
+      expect(
+        c.canConfigure({
+          ...base, status: 'active',
+          starts_at: '2020-01-01', ends_at: '2020-01-02',
+        } as Promotion),
+      ).toBe(false);
+    });
+
+    it('openEdit no abre la pantalla de configuración para una promoción active (defensa en profundidad)', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openEdit({ ...base, status: 'active' } as Promotion);
+
+      expect(c.editingId()).toBeNull();
+      expect(c.screen()).toBe('list');
+    });
+
+    it('openEdit sí abre la pantalla para draft/paused/finished', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openEdit({ ...base, status: 'paused' } as Promotion);
+
+      expect(c.editingId()).toBe('p1');
+    });
+  });
+
   describe('FR-017: promotionTypeLabel (columna "Reglas" simplificada)', () => {
     it('muestra únicamente el tipo cuando todas las reglas comparten uno', () => {
       const fixture = TestBed.createComponent(PromotionsPageComponent);

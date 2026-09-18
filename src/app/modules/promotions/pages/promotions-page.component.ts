@@ -316,8 +316,10 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                               >
                                 <button
                                   type="button"
+                                  [disabled]="!canConfigure(p)"
+                                  [title]="!canConfigure(p) ? 'Pausa la promoción para poder configurarla' : ''"
                                   (click)="openEdit(p); closeActionsMenu()"
-                                  class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors"
+                                  class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-50/50"
                                 >
                                   Configurar
                                 </button>
@@ -1459,6 +1461,13 @@ export class PromotionsPageComponent implements OnInit {
     return p.status !== 'active';
   }
 
+  /** spec 084 (FR-008/FR-009, A-76): mismo criterio que `canDelete` -- estado real,
+   *  no el badge visual. Solo `active` bloquea "Configurar"; `draft`/`paused`/
+   *  `finished` siguen abriendo la pantalla con todos los campos editables. */
+  canConfigure(p: Promotion): boolean {
+    return p.status !== 'active';
+  }
+
   async changeStatus(p: Promotion, to: PromotionStatus): Promise<void> {
     const ok = await this.confirm.ask({
       title: `${this.statusVerb(to)} "${p.name}"`,
@@ -1526,6 +1535,10 @@ export class PromotionsPageComponent implements OnInit {
   // ───────────────────────── Pantalla 3: configuración ────────────────────
 
   openEdit(p: Promotion): void {
+    // spec 084 (FR-008, A-76): defensa en profundidad -- el botón del listado ya
+    // queda deshabilitado, pero esto cubre cualquier otra vía de llegar aquí
+    // (p. ej. navegación directa) mientras la promoción siga `active`.
+    if (!this.canConfigure(p)) return;
     this.editingId.set(p.id);
     this.editingSource.set(p);
     this.formError.set(null);
