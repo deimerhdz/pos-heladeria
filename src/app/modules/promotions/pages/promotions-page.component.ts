@@ -851,11 +851,18 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                   @for (p of stepOneResults(); track p.id) {
                     <div
                       (click)="toggleProductCandidate(p.id)"
-                      class="relative border-2 rounded-xl p-3.5 cursor-pointer transition-all"
+                      [title]="
+                        blockedReason(p.id)
+                          ? 'Ya hace parte de la promoción activa «' + blockedReason(p.id) + '»'
+                          : ''
+                      "
+                      class="relative border-2 rounded-xl p-3.5 transition-all"
                       [class]="
-                        isProductSelected(p.id)
-                          ? 'border-indigo-500 bg-indigo-50/30'
-                          : 'border-gray-200 bg-white hover:border-gray-300'
+                        blockedReason(p.id)
+                          ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                          : isProductSelected(p.id)
+                            ? 'border-indigo-500 bg-indigo-50/30 cursor-pointer'
+                            : 'border-gray-200 bg-white hover:border-gray-300 cursor-pointer'
                       "
                     >
                       @if (isProductSelected(p.id)) {
@@ -886,12 +893,18 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                         <span>Desde {{ money(p.minPrice) }}</span>
                         <span
                           [class]="
-                            isProductSelected(p.id)
-                              ? 'font-medium text-indigo-700'
-                              : 'text-indigo-600'
+                            blockedReason(p.id)
+                              ? 'font-medium text-gray-400'
+                              : isProductSelected(p.id)
+                                ? 'font-medium text-indigo-700'
+                                : 'text-indigo-600'
                           "
                         >
-                          {{ isProductSelected(p.id) ? 'Incluido' : '+ Seleccionar' }}
+                          {{
+                            blockedReason(p.id)
+                              ? 'Ya en otra promo'
+                              : isProductSelected(p.id) ? 'Incluido' : '+ Seleccionar'
+                          }}
                         </span>
                       </div>
                     </div>
@@ -1399,6 +1412,35 @@ export class PromotionsPageComponent implements OnInit {
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   });
 
+  /**
+   * spec 084 (FR-021/FR-022, A-78): productos ya cubiertos por alguna variante
+   * de OTRA promoción `active` -- `productId -> nombre de esa promoción`. Sin
+   * endpoint nuevo: `PromotionService.activePromotions` ya trae, para el POS
+   * (spec 063), las promociones `active` con sus reglas y variantes completas
+   * (tope 100); acá solo se cruza contra `catalogVariants()` para resolver el
+   * producto de cada variante. La promoción en edición (`editingId()`) se
+   * excluye siempre -- FR-024, dentro de la misma promoción no hay bloqueo.
+   */
+  readonly blockedByPromotion = computed<Map<string, string>>(() => {
+    const variantToProduct = new Map(this.catalogVariants().map((v) => [v.id, v.productId]));
+    const blocked = new Map<string, string>();
+    for (const p of this.svc.activePromotions()) {
+      if (p.id === this.editingId()) continue;
+      for (const rule of p.rules) {
+        for (const rv of rule.variants) {
+          const productId = variantToProduct.get(rv.product_variant_id);
+          if (productId && !blocked.has(productId)) blocked.set(productId, p.name);
+        }
+      }
+    }
+    return blocked;
+  });
+
+  /** Nombre de la promoción activa que ya cubre `productId`, o `null` si está libre. */
+  blockedReason(productId: string): string | null {
+    return this.blockedByPromotion().get(productId) ?? null;
+  }
+
   readonly categoryFilterOptions = computed(() => {
     const seen = new Map<string, string>();
     for (const v of this.catalogVariants()) seen.set(v.categoryId, v.categoryName);
@@ -1481,6 +1523,9 @@ export class PromotionsPageComponent implements OnInit {
     this.categories.loadAllCategories();
     void this.menu.loadMenu();
     this.svc.loadClosedByRefactor();
+    // spec 084 (FR-021, A-78): promociones `active` para resolver
+    // `blockedByPromotion()` en el Paso 1 -- mismo dato que ya consume el POS.
+    this.svc.loadActive();
   }
 
   @HostListener('document:click')
@@ -1669,8 +1714,19 @@ export class PromotionsPageComponent implements OnInit {
 
   toggleProductCandidate(id: string): void {
     const next = new Set(this.candidateProductIds());
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      // spec 084 (FR-021/FR-022, A-78): no se puede seleccionar un producto
+      // que ya hace parte de otra promoción activa -- defensa en profundidad
+      // además del estado visual deshabilitado de la tarjeta.
+      const reason = this.blockedReason(id);
+      if (reason) {
+        this.pickerError.set(`Ese producto ya hace parte de la promoción activa «${reason}».`);
+        return;
+      }
+      next.add(id);
+    }
     this.candidateProductIds.set(next);
     this.pickerLabel.set(null);
     this.pickerError.set(null);

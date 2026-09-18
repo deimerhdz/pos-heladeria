@@ -703,4 +703,103 @@ describe('PromotionsPageComponent', () => {
       expect(c.promotionTypeLabel({ rules: [] } as unknown as Promotion)).toBe('Sin reglas');
     });
   });
+
+  describe('spec 084 FR-021/FR-022 (A-78): exclusividad de producto en el Paso 1', () => {
+    /** El query de `activePromotions` (TanStack Query) no despacha su petición
+     *  de forma síncrona dentro de `detectChanges()` -- hace falta drenar un
+     *  microtask antes de que `http.expectOne` la vea (mismo patrón que
+     *  `product-form.component.spec.ts::tick`). */
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+
+    /** Responde la petición de `?status=active` que alimenta
+     *  `blockedByPromotion()`; las demás peticiones en vuelo (`GET /menu`,
+     *  `?page=1`, `?closed_by_refactor=true`) las drena `afterEach` al final. */
+    async function flushActivePromotions(
+      fixture: ReturnType<typeof TestBed.createComponent<PromotionsPageComponent>>,
+      items: unknown[],
+    ): Promise<void> {
+      await tick();
+      const req = http.expectOne(
+        (r) => r.url.endsWith('/promotions') && r.params.get('status') === 'active',
+      );
+      req.flush({ items, total: items.length, page: 1, size: 100, pages: 1 });
+      // TanStack Query propaga su cache al signal `data()` en su propia ronda
+      // de microtareas, aparte de la del Observable HTTP -- un solo tick no
+      // siempre alcanza (mismo ajuste de fondo que
+      // `public-menu.component.spec.ts::createComponent`, sin `whenStable()`
+      // acá: rompe con "ApplicationRef ya destruido" en este archivo).
+      const start = Date.now();
+      while (
+        fixture.componentInstance.svc.activePromotions().length === 0 &&
+        Date.now() - start < 500
+      ) {
+        await tick();
+        fixture.detectChanges();
+      }
+    }
+
+    const otraPromoActiva = {
+      id: 'other', name: 'Ya activa', status: 'active',
+      rules: [
+        {
+          id: 'r1', type: 'percent', value: '10', min_qty: 1, condition_text: null,
+          variants: [{ product_variant_id: 'a', description: '', unit_price: '8000' }],
+        },
+      ],
+    };
+
+    it('blockedReason() devuelve el nombre de la promoción activa que ya cubre el producto (por cualquiera de sus variantes)', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await flushActivePromotions(fixture, [otraPromoActiva]);
+
+      // 'a' (8oz) pertenece a p1 (café) -- FR-021: todo el producto queda bloqueado.
+      expect(c.blockedReason('p1')).toBe('Ya activa');
+      expect(c.blockedReason('p2')).toBeNull();
+    });
+
+    it('toggleProductCandidate() rechaza seleccionar un producto bloqueado (defensa en profundidad)', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await flushActivePromotions(fixture, [otraPromoActiva]);
+
+      c.toggleProductCandidate('p1');
+
+      expect(c.isProductSelected('p1')).toBe(false);
+      expect(c.pickerError()).toContain('Ya activa');
+    });
+
+    it('un producto sin ninguna promoción activa en conflicto se puede seleccionar con normalidad', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await flushActivePromotions(fixture, [otraPromoActiva]);
+
+      c.toggleProductCandidate('p2');
+
+      expect(c.isProductSelected('p2')).toBe(true);
+      expect(c.pickerError()).toBeNull();
+    });
+
+    it('FR-024: la promoción en edición (editingId) se excluye de su propio bloqueo', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      // "other" es la misma promoción que se está editando ahora.
+      c.editingId.set('other');
+      await flushActivePromotions(fixture, [otraPromoActiva]);
+
+      expect(c.blockedReason('p1')).toBeNull();
+    });
+  });
 });
