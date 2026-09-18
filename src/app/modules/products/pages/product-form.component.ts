@@ -24,6 +24,8 @@ import { OptionGroupService } from '../../option-groups/services/option-group.se
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { PresentationService } from '../../presentations/services/presentation.service';
+import type { Presentation } from '../../presentations/interfaces/presentation.interface';
 import {
   DeactivatedVariant,
   PreparationType,
@@ -209,10 +211,11 @@ interface SlotBreakdown {
 
           @if (draft().hasSizes) {
             <div class="mt-4 rounded-xl border border-gray-200 overflow-hidden">
-              <div class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
+              <div class="grid grid-cols-[28px_28px_1fr_150px_140px_88px] gap-x-3 items-center px-3 py-2 bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
                 <span></span>
                 <span class="text-center">#</span>
                 <span>Nombre</span>
+                <span>Presentación</span>
                 <span>Precio</span>
                 <span></span>
               </div>
@@ -220,13 +223,25 @@ interface SlotBreakdown {
                 class="divide-y divide-gray-100">
                 @for (v of draft().variants; track v.localId; let i = $index) {
                   <div cdkDrag (click)="activeLocalId.set(v.localId)"
-                    class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 cursor-pointer transition-colors"
+                    class="grid grid-cols-[28px_28px_1fr_150px_140px_88px] gap-x-3 items-center px-3 py-2 cursor-pointer transition-colors"
                     [class]="v.localId === activeLocalId() ? 'bg-indigo-50' : 'hover:bg-gray-50'">
                     <span cdkDragHandle (click)="$event.stopPropagation()"
                       class="text-center text-gray-300 hover:text-gray-500 cursor-move">⠿</span>
                     <span class="text-center text-xs text-gray-400">{{ i + 1 }}</span>
-                    <input [value]="v.name" (input)="setVariantField(v.localId, 'name', $any($event.target).value)"
-                      class="min-w-0 px-2 py-1.5 border border-transparent rounded-lg text-sm font-semibold text-gray-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-gray-200" />
+                    <input [value]="v.name" [readOnly]="!!v.presentationId"
+                      [title]="v.presentationId ? 'El nombre viene de la presentación elegida' : ''"
+                      (input)="setVariantField(v.localId, 'name', $any($event.target).value)"
+                      [class]="v.presentationId ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : 'bg-transparent text-gray-800 hover:border-gray-200'"
+                      class="min-w-0 px-2 py-1.5 border border-transparent rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <select [ngModel]="v.presentationId ?? ''"
+                      (ngModelChange)="setVariantPresentation(v.localId, $event || null)"
+                      (click)="$event.stopPropagation()"
+                      class="min-w-0 px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">Sin presentación</option>
+                      @for (p of presentationOptionsFor(v); track p.id) {
+                        <option [value]="p.id">{{ p.name }}</option>
+                      }
+                    </select>
                     <div class="flex items-center gap-1 border border-gray-200 rounded-lg px-2 py-1 bg-white">
                       <span class="text-gray-400 text-sm">$</span>
                       <app-money-input [ngModel]="v.price"
@@ -471,6 +486,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   readonly service = inject(ProductService);
   readonly categoryService = inject(CategoryService);
   readonly inventoryService = inject(InventoryService);
+  readonly presentationService = inject(PresentationService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly unitMeasureService = inject(UnitMeasureService);
   private readonly confirm = inject(ConfirmService);
@@ -534,6 +550,38 @@ export class ProductFormComponent implements OnInit, OnDestroy {
    * Grupos elegibles en una fila: los activos, menos los que ya usa **esta misma
    * presentación** (salvo el de la propia fila, que debe seguir seleccionable).
    */
+  /**
+   * Opciones del selector de presentación de una fila (spec 084, FR-001): activas, más la
+   * que esta fila ya tenga elegida aunque se haya desactivado después (mismo criterio que
+   * `presentationOptions` en `category-form.component.ts`, para no perder de vista una
+   * asociación existente).
+   */
+  presentationOptionsFor(v: VariantDraft): Presentation[] {
+    const all = this.presentationService.allPresentations();
+    const options = all.filter((p) => p.active || p.id === v.presentationId);
+    return [...options].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Asocia (o quita, con `presentationId = null`) la presentación de una fila (FR-001). Al
+   * elegir una, el nombre se autocompleta con el suyo y queda derivado, no editable (FR-002/
+   * 003) -- el backend hace cumplir esto igual, así que esto es solo reflejo en el draft. Al
+   * quitarla ("Sin presentación"), el nombre actual se conserva tal cual (FR-005).
+   */
+  setVariantPresentation(localId: string, presentationId: string | null): void {
+    const chosen = presentationId
+      ? this.presentationService.allPresentations().find((p) => p.id === presentationId)
+      : null;
+    this.draft.update((d) => ({
+      ...d,
+      variants: d.variants.map((v) =>
+        v.localId === localId
+          ? { ...v, presentationId, name: chosen ? chosen.name : v.name }
+          : v,
+      ),
+    }));
+  }
+
   groupOptionsFor(localId: string, index: number) {
     const variant = this.draft().variants.find((v) => v.localId === localId);
     const usados = new Set(
@@ -776,6 +824,9 @@ export class ProductFormComponent implements OnInit, OnDestroy {
         ? this.unitMeasureService.loadUnitMeasures()
         : null,
       this.optionGroupService.groups().length === 0 ? this.optionGroupService.loadGroups() : null,
+      this.presentationService.allPresentations().length === 0
+        ? this.presentationService.loadAllPresentations()
+        : null,
     ]);
 
     const id = this.route.snapshot.paramMap.get('id');
@@ -819,6 +870,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: this.nextLid(),
       name,
       price,
+      presentationId: null,
       recipe: [],
       optionGroups: [],
     };
@@ -883,11 +935,18 @@ export class ProductFormComponent implements OnInit, OnDestroy {
           recipe: base.recipe.map((r) => ({ ...r })),
           optionGroups: base.optionGroups.map((g) => ({ ...g })),
         });
-        const variants = [{ ...base, name: 'Grande' }, copy('Mediana'), copy('Pequeña')];
+        // spec 084: al renombrar de "Único" a "Grande" se suelta la presentación que
+        // tuviera asociada -- si no, el nombre visible ("Grande") y la presentación
+        // (con otro nombre) quedarían desalineados hasta el próximo guardado.
+        const variants = [
+          { ...base, name: 'Grande', presentationId: null },
+          copy('Mediana'),
+          copy('Pequeña'),
+        ];
         this.activeLocalId.set(variants[0].localId);
         return { ...d, hasSizes: true, variants };
       }
-      const only = { ...d.variants[0], name: 'Único' };
+      const only = { ...d.variants[0], name: 'Único', presentationId: null };
       this.activeLocalId.set(only.localId);
       return { ...d, hasSizes: false, variants: [only] };
     });
@@ -993,6 +1052,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       localId: dv.id,
       name: dv.name,
       price: dv.price,
+      presentationId: dv.presentationId,
       recipe,
       optionGroups,
     };

@@ -19,6 +19,8 @@ import { UnitMeasureService } from '../../../core/services/unit-measure.service'
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
 import { PlanSummary } from '../../plan/interfaces/plan-summary.interface';
+import { PresentationService } from '../../presentations/services/presentation.service';
+import type { Presentation } from '../../presentations/interfaces/presentation.interface';
 
 const API = environment.apiBaseUrl;
 const PRODUCTS = `${API}/products`;
@@ -68,6 +70,14 @@ class FakeOptionGroupService {
   groups = signal<unknown[]>([]);
   async loadGroups(): Promise<void> {}
 }
+/** spec 084 (US1): presentaciones activas de prueba para el `<select>` de cada fila. */
+class FakePresentationService {
+  allPresentations = signal<Presentation[]>([
+    { id: 'p-grande', name: 'Grande', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'p-mediana', name: 'Mediana', active: true, created_at: '2026-01-01T00:00:00' },
+  ]);
+  loadAllPresentations(): void {}
+}
 
 describe('ProductFormComponent', () => {
   let fixture: ComponentFixture<ProductFormComponent>;
@@ -91,6 +101,7 @@ describe('ProductFormComponent', () => {
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        { provide: PresentationService, useClass: FakePresentationService },
         { provide: PlanSummaryService, useValue: { summary: planSummary } },
         {
           provide: ActivatedRoute,
@@ -299,7 +310,7 @@ describe('ProductFormComponent', () => {
     expect(created.request.method).toBe('POST');
     expect(created.request.body.tracks_inventory).toBe(false);
     expect(created.request.body.variants).toEqual([
-      { name: 'Único', price: 0, recipe: [], option_groups: [] },
+      { name: 'Único', price: 0, presentation_id: null, recipe: [], option_groups: [] },
     ]);
     created.flush({
       id: 'p1',
@@ -339,6 +350,7 @@ describe('ProductFormComponent', () => {
         { provide: InventoryService, useClass: FakeInventoryService },
         { provide: UnitMeasureService, useClass: FakeUnitMeasureService },
         { provide: OptionGroupService, useClass: FakeOptionGroupService },
+        { provide: PresentationService, useClass: FakePresentationService },
         { provide: PlanSummaryService, useValue: { summary: planSummary } },
         {
           provide: ActivatedRoute,
@@ -506,10 +518,12 @@ describe('ProductFormComponent', () => {
     await createEdit('p9', true);
     component.draft.update((d) => ({
       ...d,
-      deactivated: [{ id: 'v3', name: 'Mediana', price: 4000 }],
+      deactivated: [{ id: 'v3', name: 'Mediana', price: 4000, presentationId: null }],
     }));
 
-    const restorePromise = component.restoreVariant({ id: 'v3', name: 'Mediana', price: 4000 });
+    const restorePromise = component.restoreVariant({
+      id: 'v3', name: 'Mediana', price: 4000, presentationId: null,
+    });
 
     // Solo lectura (sin cambios, spec 043 no toca los GET) -- research.md Decisión 4:
     // ya no hay ningún PATCH /variants/v3 disparado por el solo hecho de restaurar.
@@ -563,5 +577,107 @@ describe('ProductFormComponent', () => {
     switchButton().click();
     fixture.detectChanges();
     expect(component.draft().tracks_inventory).toBe(true);
+  });
+
+  // ── Asociar variante con presentación del catálogo (spec 084, US1) ───────
+
+  /** La fila `<div cdkDrag>` de una variante -- para no confundir su `<select>`/`<input>`
+   *  de nombre con los de `category_id`/`preparation_type` (arriba del todo) ni con el
+   *  `<input>` interno de `app-money-input` (mismo `<div cdkDrag>`, después del nombre). */
+  const variantRow = (localId: string): HTMLElement =>
+    (Array.from(fixture.nativeElement.querySelectorAll('[cdkDrag]')) as HTMLElement[])[
+      component.draft().variants.findIndex((v) => v.localId === localId)
+    ];
+
+  const variantRowSelect = (localId: string): HTMLSelectElement =>
+    variantRow(localId).querySelector('select')!;
+
+  const variantRowNameInput = (localId: string): HTMLInputElement =>
+    variantRow(localId).querySelector('input')!;
+
+  it('elegir una presentación en el select de una fila autocompleta el nombre y lo bloquea (FR-001/002)', async () => {
+    await createEdit('p9', true); // v1 Grande, v2 Pequeña
+    const v2 = component.draft().variants[1];
+    expect(v2.presentationId).toBeNull();
+
+    component.setVariantPresentation(v2.localId, 'p-mediana');
+    fixture.detectChanges();
+
+    expect(component.draft().variants[1].name).toBe('Mediana');
+    expect(component.draft().variants[1].presentationId).toBe('p-mediana');
+    expect(variantRowNameInput(v2.localId).readOnly).toBe(true);
+  });
+
+  it('elegir otra presentación para una variante ya asociada actualiza el nombre (FR-003)', async () => {
+    await createEdit('p9', true);
+    const v1 = component.draft().variants[0];
+    component.setVariantPresentation(v1.localId, 'p-grande');
+    fixture.detectChanges();
+    expect(component.draft().variants[0].name).toBe('Grande');
+
+    component.setVariantPresentation(v1.localId, 'p-mediana');
+    fixture.detectChanges();
+
+    expect(component.draft().variants[0].name).toBe('Mediana');
+  });
+
+  it('"Sin presentación" deja el nombre editable, conservando el texto que tenía (FR-005)', async () => {
+    await createEdit('p9', true);
+    const v1 = component.draft().variants[0];
+    component.setVariantPresentation(v1.localId, 'p-grande');
+    fixture.detectChanges();
+    expect(variantRowNameInput(v1.localId).readOnly).toBe(true);
+
+    component.setVariantPresentation(v1.localId, null);
+    fixture.detectChanges();
+
+    expect(component.draft().variants[0].presentationId).toBeNull();
+    expect(component.draft().variants[0].name).toBe('Grande'); // conserva el texto, no lo borra
+    expect(variantRowNameInput(v1.localId).readOnly).toBe(false);
+  });
+
+  it('el select de la fila refleja la elección al cambiarlo desde el DOM', async () => {
+    await createEdit('p9', true);
+    const v1 = component.draft().variants[0];
+    const select = variantRowSelect(v1.localId);
+
+    select.value = 'p-grande';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(component.draft().variants[0].presentationId).toBe('p-grande');
+    expect(component.draft().variants[0].name).toBe('Grande');
+  });
+
+  it('el guardado envía presentation_id en el payload de cada variante', async () => {
+    await createEdit('p9', true);
+    const [v1, v2] = component.draft().variants;
+    component.setVariantPresentation(v1.localId, 'p-grande');
+    fixture.detectChanges();
+
+    const savePromise = component.save();
+
+    const req = http.expectOne(`${PRODUCTS}/p9`);
+    const variants = req.request.body.variants as Array<{ id?: string; presentation_id: string | null }>;
+    expect(variants.find((v) => v.id === v1.id)?.presentation_id).toBe('p-grande');
+    expect(variants.find((v) => v.id === v2.id)?.presentation_id).toBeNull();
+    req.flush({
+      id: 'p9', category_id: 'c1', name: 'Cono doble', description: null,
+      preparation_type: 'prepared', image_url: null, active: true, available: true,
+      tracks_inventory: true, created_at: '2026-08-19T00:00:00', variants: [],
+    });
+    await savePromise;
+  });
+
+  it('cambiar de "con tamaños" a "único" suelta la presentación asociada, para no dejar nombre y presentación desalineados', async () => {
+    await createEdit('p9', true);
+    const v1 = component.draft().variants[0];
+    component.setVariantPresentation(v1.localId, 'p-grande');
+    fixture.detectChanges();
+
+    component.toggleHasSizes(); // colapsa a una sola variante "Único" (la primera)
+    fixture.detectChanges();
+
+    expect(component.draft().variants[0].presentationId).toBeNull();
   });
 });

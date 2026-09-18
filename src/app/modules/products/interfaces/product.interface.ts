@@ -101,6 +101,10 @@ export interface VariantSavePayload {
   active?: boolean;
   recipe: RecipeItem[];
   option_groups: VariantOptionGroup[];
+  /** spec 084 (FR-001): presentación del catálogo elegida, o `null` para "Sin
+   *  presentación" (FR-005). Cuando no es `null`, el backend ignora `name` y usa
+   *  el de la presentación (FR-002/003). */
+  presentation_id: string | null;
 }
 
 // --- Variants ---
@@ -113,7 +117,8 @@ export interface Variant {
   sku: string | null;
   price: number;
   active: boolean;
-  /** spec 040: presentación de catálogo a la que apunta, o null. */
+  /** spec 084 (FR-001): presentación del catálogo a la que apunta, o `null`. */
+  presentation_id: string | null;
 }
 
 /** Editable fields captured by the variant form. */
@@ -319,8 +324,10 @@ export interface VariantDraft {
   localId: string;
   name: string;
   price: number;
-  /** spec 040: presentación de catálogo asignada, o null (no participa de
-   *  promociones por presentación). */
+  /** spec 084 (FR-001): presentación del catálogo elegida, o `null` para "Sin
+   *  presentación" (FR-005). Mientras no sea `null`, `name` queda derivado de
+   *  ella y no es editable a mano (FR-002/003). */
+  presentationId: string | null;
   recipe: RecipeLineDraft[];
   optionGroups: VariantOptionGroupDraft[];
 }
@@ -334,6 +341,7 @@ export interface DeactivatedVariant {
   id: string;
   name: string;
   price: number;
+  presentationId: string | null;
 }
 
 /** Draft completo del producto para la página unificada de crear/editar. */
