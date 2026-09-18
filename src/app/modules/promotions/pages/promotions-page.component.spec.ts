@@ -238,7 +238,39 @@ describe('PromotionsPageComponent', () => {
   });
 
   describe('addRuleRow / removeRuleRow (Paso 1 + Paso 2)', () => {
-    it('agrega una fila con el type fijado en creación, y la limpia del picker', async () => {
+    it('con un solo producto coincidente, agrega la fila directo y limpia el picker', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openNew();
+      c.createName.set('2x1');
+      c.createType.set('package_price');
+      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
+      await c.continueToConfigure();
+
+      c.toggleProductCandidate('p1'); // solo un candidato -- sin confirmación pendiente
+      c.pickerLabel.set('8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000); // menor a 2 * 8000 -- sí es descuento.
+
+      c.addRuleRow();
+
+      expect(c.pendingBulkApply()).toBeNull();
+      expect(c.form.rules.length).toBe(1);
+      expect(c.form.rules[0]).toEqual({
+        type: 'package_price', value: 12000, min_qty: 2, variantIds: ['a'],
+      });
+      expect(c.pickerLabel()).toBeNull();
+      expect(c.pickerError()).toBeNull();
+    });
+
+    // spec 084 (bug 3, FR-016 a FR-019, A-77): con más de un producto candidato,
+    // addRuleRow() ya NO agrega una sola regla combinada -- queda pendiente de
+    // confirmación con una casilla por producto, premarcadas.
+    it('con varios productos coincidentes, queda pendiente de confirmación con todos premarcados (FR-016)', async () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
@@ -255,19 +287,104 @@ describe('PromotionsPageComponent', () => {
       c.toggleProductCandidate('p2');
       c.pickerLabel.set('8oz');
       c.pickerQty.set(2);
-      c.pickerValue.set(12000); // menor a 2 * 8000 (la más barata) -- sí es descuento.
+      c.pickerValue.set(12000);
 
       c.addRuleRow();
 
+      expect(c.form.rules.length).toBe(0); // todavía no se generó ninguna fila
+      const pending = c.pendingBulkApply();
+      expect(pending).not.toBeNull();
+      expect(pending!.map((p) => p.productId).sort()).toEqual(['p1', 'p2']);
+      expect(pending!.every((p) => p.checked)).toBe(true);
+    });
+
+    it('confirmar la aplicación masiva genera una fila INDEPENDIENTE por cada producto marcado (FR-017/FR-019)', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openNew();
+      c.createName.set('2x1');
+      c.createType.set('package_price');
+      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
+      await c.continueToConfigure();
+
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+      c.pickerLabel.set('8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      c.addRuleRow();
+
+      c.confirmBulkApply();
+
+      expect(c.pendingBulkApply()).toBeNull();
+      expect(c.form.rules.length).toBe(2); // una fila por producto, no una combinada
+      const byVariant = c.form.rules.map((r) => r.variantIds).sort();
+      expect(byVariant).toEqual([['a'], ['d']]);
+      for (const r of c.form.rules) {
+        expect(r.type).toBe('package_price');
+        expect(r.value).toBe(12000);
+        expect(r.min_qty).toBe(2);
+      }
+      // Cada fila se puede quitar sin afectar a la otra.
+      c.removeRuleRow(0);
       expect(c.form.rules.length).toBe(1);
-      expect(c.form.rules[0]).toEqual({
-        type: 'package_price',
-        value: 12000,
-        min_qty: 2,
-        variantIds: expect.arrayContaining(['a', 'd']),
-      });
-      expect(c.pickerLabel()).toBeNull();
-      expect(c.pickerError()).toBeNull();
+    });
+
+    it('desmarcar un candidato antes de confirmar lo excluye — no se le genera fila (FR-017)', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openNew();
+      c.createName.set('2x1');
+      c.createType.set('package_price');
+      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
+      await c.continueToConfigure();
+
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+      c.pickerLabel.set('8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      c.addRuleRow();
+      c.toggleBulkApplyCandidate('p2');
+
+      c.confirmBulkApply();
+
+      expect(c.form.rules.length).toBe(1);
+      expect(c.form.rules[0].variantIds).toEqual(['a']); // solo p1 (café)
+    });
+
+    it('cancelar la aplicación masiva no genera ninguna fila y limpia la confirmación pendiente', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.openNew();
+      c.createName.set('2x1');
+      c.createType.set('package_price');
+      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
+      await c.continueToConfigure();
+
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+      c.pickerLabel.set('8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      c.addRuleRow();
+
+      c.cancelBulkApply();
+
+      expect(c.pendingBulkApply()).toBeNull();
+      expect(c.form.rules.length).toBe(0);
     });
 
     it('FR-026: rechaza un precio de paquete que no representa ahorro frente a la suma regular (espejo del guard del backend)', async () => {

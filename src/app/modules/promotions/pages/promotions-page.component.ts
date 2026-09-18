@@ -85,6 +85,16 @@ interface CatalogProduct {
   variants: CatalogVariant[];
 }
 
+/** spec 084 (FR-016 a FR-019, A-77): una fila de la lista de confirmación de
+ *  aplicación masiva -- un producto candidato, su variante para la presentación
+ *  elegida, y si quedará marcado al confirmar (premarcado por defecto). */
+interface BulkApplyCandidate {
+  productId: string;
+  productName: string;
+  variantId: string;
+  checked: boolean;
+}
+
 /** Filtro de ayuda para poblar el Paso 1 — nunca se guarda (FR-012). */
 interface StepOneFilter {
   category: string;
@@ -1017,6 +1027,47 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 <p class="mt-2 text-xs text-red-600">{{ pickerError() }}</p>
               }
 
+              <!-- spec 084 (FR-016 a FR-019, A-77): confirmación de aplicación masiva --
+                   más de un producto coincidente, casilla por producto, premarcadas. -->
+              @if (pendingBulkApply(); as candidates) {
+                <div class="mt-3 bg-indigo-50/60 border border-indigo-200 rounded-lg p-3">
+                  <p class="text-xs font-semibold text-indigo-900 mb-2">
+                    {{ candidates.length }} productos seleccionados comparten esta presentación
+                    — se agregará una fila de regla independiente por cada uno que quede marcado.
+                  </p>
+                  <ul class="space-y-1 max-h-40 overflow-y-auto">
+                    @for (c of candidates; track c.productId) {
+                      <li class="flex items-center gap-2 text-xs text-gray-700">
+                        <input
+                          type="checkbox"
+                          [checked]="c.checked"
+                          (change)="toggleBulkApplyCandidate(c.productId)"
+                          class="rounded border-gray-300"
+                        />
+                        {{ c.productName }}
+                      </li>
+                    }
+                  </ul>
+                  <div class="mt-3 flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      (click)="cancelBulkApply()"
+                      class="px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      [disabled]="!candidates.some(c => c.checked)"
+                      (click)="confirmBulkApply()"
+                      class="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Confirmar y agregar
+                    </button>
+                  </div>
+                </div>
+              }
+
               @if (sharedVariantConflict(); as sc) {
                 <div
                   class="mt-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600"
@@ -1283,6 +1334,11 @@ export class PromotionsPageComponent implements OnInit {
   readonly pickerLabel = signal<string | null>(null);
   readonly pickerQty = signal(1);
   readonly pickerValue = signal(0);
+
+  /** spec 084 (FR-016, A-77): cuando `addRuleRow()` encuentra más de un producto
+   *  coincidente, la aplicación masiva queda pendiente de confirmación acá en vez
+   *  de generarse de una — `null` cuando no hay ninguna aplicación en curso. */
+  readonly pendingBulkApply = signal<BulkApplyCandidate[] | null>(null);
   readonly pickerError = signal<string | null>(null);
 
   readonly statusTabs = STATUS_TABS;
@@ -1631,15 +1687,27 @@ export class PromotionsPageComponent implements OnInit {
     return v.variantName;
   }
 
-  resolvedVariantIdsForLabel(label: string): string[] {
+  /**
+   * spec 084 (FR-016 a FR-019, A-77): productos ya seleccionados en el Paso 1 que
+   * tienen una variante cuyo nombre coincide con `label`, cada uno con SU PROPIA
+   * variante — reemplaza el conjunto plano que `addRuleRow()` combinaba antes en
+   * una sola regla compartida entre varios productos.
+   */
+  private matchingProductsForLabel(
+    label: string,
+  ): { productId: string; productName: string; variantId: string }[] {
     const ids = this.candidateProductIds();
-    const out: string[] = [];
+    const out: { productId: string; productName: string; variantId: string }[] = [];
     for (const p of this.catalogProducts()) {
       if (!ids.has(p.id)) continue;
       const match = p.variants.find((v) => this.variantLabel(v) === label);
-      if (match) out.push(match.id);
+      if (match) out.push({ productId: p.id, productName: p.name, variantId: match.id });
     }
     return out;
+  }
+
+  resolvedVariantIdsForLabel(label: string): string[] {
+    return this.matchingProductsForLabel(label).map((m) => m.variantId);
   }
 
   private cheapestPrice(variantIds: string[]): number | null {
@@ -1651,6 +1719,7 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   canAddRuleRow(): boolean {
+    if (this.pendingBulkApply()) return false;
     const minQty = this.minPickerQty();
     if (
       !this.pickerLabel() ||
@@ -1665,7 +1734,14 @@ export class PromotionsPageComponent implements OnInit {
 
   /** FR-016/FR-025/FR-026: validación local — feedback inmediato antes de
    *  enviar; la autoritativa sigue siendo el 409 del backend
-   *  (`_guard_package_is_discount`/`PromotionRuleIn`). */
+   *  (`_guard_package_is_discount`/`PromotionRuleIn`).
+   *
+   *  spec 084 (FR-016 a FR-019, A-77): cuando más de un producto ya seleccionado
+   *  tiene una variante para la presentación elegida, ya NO se genera una sola
+   *  regla combinada con todas esas variantes -- queda pendiente de confirmación
+   *  en `pendingBulkApply` (lista con casilla por producto, premarcadas) y
+   *  `confirmBulkApply()` genera una fila independiente por cada uno que quede
+   *  marcado. Con un solo producto coincidente se agrega directo, como siempre. */
   addRuleRow(): void {
     this.pickerError.set(null);
     const label = this.pickerLabel();
@@ -1673,8 +1749,8 @@ export class PromotionsPageComponent implements OnInit {
       this.pickerError.set('Elige una presentación.');
       return;
     }
-    const variantIds = this.resolvedVariantIdsForLabel(label);
-    if (variantIds.length === 0) {
+    const matches = this.matchingProductsForLabel(label);
+    if (matches.length === 0) {
       this.pickerError.set('Ningún producto seleccionado tiene esa presentación.');
       return;
     }
@@ -1706,16 +1782,59 @@ export class PromotionsPageComponent implements OnInit {
       }
     }
 
-    const rule: PromotionRuleForm = {
-      type: this.form.type,
-      value: this.pickerValue(),
-      min_qty: this.pickerQty(),
-      variantIds,
-    };
-    this.form.rules.push(rule);
+    if (matches.length > 1) {
+      this.pendingBulkApply.set(matches.map((m) => ({ ...m, checked: true })));
+      return;
+    }
+    this.pushRuleRows(matches);
+    this.resetPicker();
+  }
+
+  /** Una `PromotionRuleForm` independiente por cada candidato, con el mismo
+   *  tipo/unidades/precio ya elegidos en el picker y SU PROPIA variante
+   *  (spec 084 FR-017/FR-019 — nunca variantes de más de un producto en la
+   *  misma fila). */
+  private pushRuleRows(matches: { variantId: string }[]): void {
+    for (const m of matches) {
+      const rule: PromotionRuleForm = {
+        type: this.form.type,
+        value: this.pickerValue(),
+        min_qty: this.pickerQty(),
+        variantIds: [m.variantId],
+      };
+      this.form.rules.push(rule);
+    }
+  }
+
+  private resetPicker(): void {
     this.pickerLabel.set(null);
     this.pickerQty.set(this.minPickerQty());
     this.pickerValue.set(0);
+  }
+
+  /** Confirma la aplicación masiva pendiente: genera una fila por cada
+   *  candidato que quedó marcado, descarta los demás sin crearles nada
+   *  (FR-017/FR-018). */
+  confirmBulkApply(): void {
+    const candidates = this.pendingBulkApply();
+    if (!candidates) return;
+    this.pushRuleRows(candidates.filter((c) => c.checked));
+    this.pendingBulkApply.set(null);
+    this.resetPicker();
+  }
+
+  /** Descarta la aplicación masiva pendiente sin generar ninguna fila —
+   *  el picker (presentación/unidades/precio) queda tal como estaba. */
+  cancelBulkApply(): void {
+    this.pendingBulkApply.set(null);
+  }
+
+  toggleBulkApplyCandidate(productId: string): void {
+    const current = this.pendingBulkApply();
+    if (!current) return;
+    this.pendingBulkApply.set(
+      current.map((c) => (c.productId === productId ? { ...c, checked: !c.checked } : c)),
+    );
   }
 
   /** FR-025: clamp del input de unidades — nunca por debajo del mínimo del
