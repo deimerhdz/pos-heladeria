@@ -1,4 +1,5 @@
 import { Promotion } from '../interfaces/promotion.interface';
+import { MenuVariant } from '../../products/interfaces/product.interface';
 
 /**
  * spec 063 — modelo por conjunto explícito de variantes, partición
@@ -112,6 +113,39 @@ export type PromoDisplay =
   | 'expired'
   | 'paused'
   | 'finished';
+
+export interface MinPromoPrice {
+  /** `2 x $15.000 · $7.500 c/u` de la regla más barata por unidad, tal cual la
+   *  renderizó el backend (`MenuVariantPromotion.display_text`). */
+  displayText: string;
+  /** `true` cuando el precio viene de la más barata entre 2+ variantes cubiertas
+   *  del mismo producto -- el llamador antepone "Desde " en ese caso (FR-013). */
+  isMinimum: boolean;
+}
+
+/**
+ * spec 084 (bug 1, FR-012/013): precio (o precio mínimo) para la tarjeta de un
+ * producto, a partir de `variant.promotion` -- dato que el backend ya calcula
+ * para cualquier `min_qty` (spec 066/`menu_variant_promotion`), no solo
+ * `min_qty = 1` (que es todo lo que hoy usa `discountInfo`). Sin esto, un
+ * producto cuya única regla vigente es de paquete con `min_qty >= 2` (la norma
+ * desde spec 083 FR-025) no mostraba ningún precio en la tarjeta, solo la
+ * insignia genérica -- research.md D0/D6.
+ */
+export function minPromoPriceForProduct(variants: MenuVariant[]): MinPromoPrice | null {
+  const covered = variants.filter(
+    (v): v is MenuVariant & { promotion: NonNullable<MenuVariant['promotion']> } =>
+      v.promotion != null,
+  );
+  if (covered.length === 0) return null;
+  const cheapest = covered.reduce((a, b) =>
+    a.promotion.unit_equivalent <= b.promotion.unit_equivalent ? a : b,
+  );
+  return {
+    displayText: cheapest.promotion.display_text,
+    isMinimum: covered.length > 1,
+  };
+}
 
 export function getPromoDisplay(promo: Promotion, now: Date): PromoDisplay {
   if (promo.status === 'draft') return 'draft';
