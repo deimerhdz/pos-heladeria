@@ -93,7 +93,6 @@ export interface ProductUpdatePayload {
  */
 export interface VariantSavePayload {
   id?: string;
-  name: string;
   price: number;
   sku?: string | null;
   /** `false` explícito desactiva la presentación en el mismo guardado (equivalente a un
@@ -101,6 +100,9 @@ export interface VariantSavePayload {
   active?: boolean;
   recipe: RecipeItem[];
   option_groups: VariantOptionGroup[];
+  /** spec 084 (A-79): la variante no tiene nombre propio; lo da su presentación del
+   *  catálogo. `null` = "Presentación única" (productos sin tamaños). */
+  presentation_id: string | null;
 }
 
 // --- Variants ---
@@ -109,30 +111,33 @@ export interface VariantSavePayload {
 export interface Variant {
   id: string;
   product_id: string;
-  name: string;
   sku: string | null;
   price: number;
   active: boolean;
-  /** spec 040: presentación de catálogo a la que apunta, o null. */
+  /** spec 084 (A-79): presentación del catálogo que nombra a la variante (siempre presente). */
+  presentation_id: string;
+  presentation_name: string;
 }
 
 /** Editable fields captured by the variant form. */
 export interface VariantForm {
-  name: string;
+  /** `null` = "Presentación única". */
+  presentation_id: string | null;
   price: number;
   sku: string | null;
 }
 
 /** `POST /products/{id}/variants` (`VariantCreate`). */
 export interface VariantCreatePayload {
-  name: string;
+  /** `null` = "Presentación única". */
+  presentation_id: string | null;
   price: number;
   sku?: string | null;
 }
 
 /** `PATCH /variants/{id}` (`VariantUpdate`) — all optional. */
 export interface VariantUpdatePayload {
-  name?: string;
+  presentation_id?: string;
   price?: number;
   sku?: string | null;
   active?: boolean;
@@ -317,10 +322,14 @@ export interface VariantDraft {
   id: string | null;
   /** Clave local estable para `@for` mientras no hay id. */
   localId: string;
-  name: string;
   price: number;
-  /** spec 040: presentación de catálogo asignada, o null (no participa de
-   *  promociones por presentación). */
+  /** spec 084 (A-79): presentación del catálogo que nombra a la variante. `null` solo en
+   *  una fila nueva que aún no eligió (con tamaños) o en la variante única (sin tamaños, el
+   *  backend usa "Presentación única"). */
+  presentationId: string | null;
+  /** Nombre de esa presentación, para pintar la fila sin esperar al catálogo. `''` si aún
+   *  no eligió. */
+  presentationName: string;
   recipe: RecipeLineDraft[];
   optionGroups: VariantOptionGroupDraft[];
 }
@@ -332,8 +341,9 @@ export interface VariantDraft {
  */
 export interface DeactivatedVariant {
   id: string;
-  name: string;
   price: number;
+  presentationId: string;
+  presentationName: string;
 }
 
 /** Draft completo del producto para la página unificada de crear/editar. */
@@ -421,7 +431,12 @@ export interface MenuVariantPromotion {
 
 export interface MenuVariant {
   id: string;
+  /** Nombre de la variante = el de su presentación (spec 084, A-79). */
   name: string;
+  /** Presentación del catálogo que nombra a la variante (spec 084, A-79/A-80). Opcional: solo
+   *  lo necesita el emparejamiento de reglas de promoción; algunos armadores del menú
+   *  (modo diner) no lo pueblan. */
+  presentation_id?: string;
   price: number;
   /** Precio ya con el mejor descuento vigente aplicado, o `null`/ausente si no hay. */
   discounted_price?: number | null;
@@ -463,3 +478,7 @@ export interface MenuCategory {
   name: string;
   products: MenuProduct[];
 }
+
+/** Nombre de la presentación del catálogo que nombra la variante de un producto sin tamaños
+ *  (A-74/A-79). El backend la crea si el tenant no la tiene. */
+export const DEFAULT_PRESENTATION_NAME = 'Presentación única';

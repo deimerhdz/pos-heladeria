@@ -193,8 +193,10 @@ export class PromotionService {
     return this.submit(() => this.http.patch<Promotion>(`${this.baseUrl}/${id}/status`, payload));
   }
 
-  duplicate(id: string, name: string): Promise<Promotion | null> {
-    const payload: PromotionDuplicatePayload = { name };
+  duplicate(id: string, name: string, replaceExisting = false): Promise<Promotion | null> {
+    const payload: PromotionDuplicatePayload = replaceExisting
+      ? { name, replace_existing: true }
+      : { name };
     return this.submit(() => this.http.post<Promotion>(`${this.baseUrl}/${id}/duplicate`, payload));
   }
 

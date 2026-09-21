@@ -12,7 +12,13 @@ import { DiningCartService } from '../services/dining-cart.service';
 import { buildMenuLookup, splitVariantLabel } from '../services/menu-lookup';
 import { CartItemOptionsComponent } from '../components/cart-item-options.component';
 import { CartOptionLine } from '../services/pos-terminal.store';
-import { DiscountInfo, discountInfo, effectivePrice } from '../../promotions/services/promotion-pricing.util';
+import {
+  DiscountInfo,
+  discountInfo,
+  effectivePrice,
+  MinPromoPrice,
+  minPromoPriceForProduct,
+} from '../../promotions/services/promotion-pricing.util';
 import { DiningOrder, DiningOrderItem } from '../interfaces/dining.interface';
 import { DinerPaymentAttempt, DinerPaymentMethod } from '../interfaces/diner.interface';
 import { VisibleInterval, startVisibleInterval } from '../../../core/realtime/visible-interval';
@@ -501,6 +507,10 @@ const REFRESH_DEBOUNCE_MS = 250;
                           <span class="text-gray-400 text-xs line-through">{{ priceWithPrefix(product, disc.original) }}</span>
                           <span class="text-indigo-600 font-bold text-sm">{{ priceWithPrefix(product, disc.discounted) }}</span>
                         </p>
+                      } @else if (minPromoPrice(product); as promo) {
+                        <p class="text-indigo-600 font-bold text-sm mt-1.5">
+                          {{ promo.isMinimum ? 'Desde ' : '' }}{{ promo.displayText }}
+                        </p>
                       } @else {
                         <p class="text-indigo-600 font-bold text-sm mt-1.5">{{ priceLabel(product) }}</p>
                       }
@@ -911,6 +921,17 @@ export class PublicMenuComponent implements OnInit, OnDestroy {
       product.variants[0],
     );
     return discountInfo(cheapest.price, cheapest.discounted_price, cheapest.discount_kind);
+  }
+
+  /**
+   * spec 084 (bug 1, FR-012/013): precio (o precio mínimo, "Desde $X") de la
+   * regla vigente que cubre alguna variante del producto, para el caso que
+   * `productDiscount()` no cubre -- precio de paquete (o porcentaje) con
+   * `min_qty >= 2`, la norma desde spec 083 FR-025, donde antes la tarjeta no
+   * mostraba ningún precio de promoción, solo la insignia genérica.
+   */
+  minPromoPrice(product: MenuProduct): MinPromoPrice | null {
+    return minPromoPriceForProduct(product.variants);
   }
 
   /**

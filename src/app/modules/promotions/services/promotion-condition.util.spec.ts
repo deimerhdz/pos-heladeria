@@ -17,13 +17,13 @@ describe('conditionText — tabla normativa de contracts/texto-condicion.md §5'
         Array<string>(8).fill('Pequeño 8oz'),
         8,
       ),
-    ).toBe('Llevando 2 Pequeño 8oz pagas $12.000');
+    ).toBe('Llevando Pequeño 8oz x 2 pagas $12.000'); // spec 084, A-82
   });
 
   it('2. paquete, conjunto de UNA variante -> nunca "de estas 1 variantes"', () => {
     expect(
       conditionText({ type: 'package_price', value: 12000, min_qty: 2 }, ['Pequeño 8oz'], 1),
-    ).toBe('Llevando 2 Pequeño 8oz pagas $12.000');
+    ).toBe('Llevando Pequeño 8oz x 2 pagas $12.000'); // spec 084, A-82
   });
 
   it('3. paquete, 3 nombres -> orden alfabético (Grande primero), con "entre"', () => {
@@ -56,6 +56,12 @@ describe('conditionText — tabla normativa de contracts/texto-condicion.md §5'
     expect(
       conditionText({ type: 'percent', value: 15, min_qty: 3 }, ['Mediano 12oz', 'Grande 16oz'], 2),
     ).toBe('15% llevando 3 entre Grande 16oz y Mediano 12oz');
+  });
+
+  it('6b. percent con cantidad mínima > 1 y UN nombre -> "{nombre} x {n}" (spec 084, A-82)', () => {
+    expect(
+      conditionText({ type: 'percent', value: 15, min_qty: 3 }, ['Pequeño 8oz'], 1),
+    ).toBe('15% llevando Pequeño 8oz x 3');
   });
 
   it('7. paquete con cantidad mínima 1 -> "Cada {nombre} a {valor}"', () => {
