@@ -1,10 +1,12 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { QueryClient, provideTanStackQuery } from '@tanstack/angular-query-experimental';
+import { ChangeDetectorRef, signal } from '@angular/core';
 import { vi } from 'vitest';
 import { PromotionsPageComponent } from './promotions-page.component';
 import { MenuService } from '../../../core/services/menu.service';
+import { PresentationService } from '../../presentations/services/presentation.service';
 import type { Promotion } from '../interfaces/promotion.interface';
 
 /**
@@ -16,12 +18,26 @@ import type { Promotion } from '../interfaces/promotion.interface';
  * la misma intención bajo la API anterior; el motor de evaluación y el
  * bloqueo de solape los sigue probando el backend.
  */
+/** Catálogo de presentaciones (spec 084, A-80): independiente de los productos del menú. */
+class FakePresentationService {
+  allPresentations = signal([
+    { id: 'pr-8oz', name: '8oz', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'pr-12oz', name: '12oz', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'pr-16oz', name: '16oz', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'pr-unica', name: 'Presentación única', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'pr-24oz', name: '24oz', active: true, created_at: '2026-01-01T00:00:00' }, // sin ningún producto
+    { id: 'pr-vieja', name: '4oz', active: false, created_at: '2026-01-01T00:00:00' },
+  ]);
+  loadAllPresentations(): void {}
+}
+
 describe('PromotionsPageComponent', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
+        { provide: PresentationService, useClass: FakePresentationService },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTanStackQuery(
@@ -78,9 +94,9 @@ describe('PromotionsPageComponent', () => {
             option_groups: [],
             available: true,
             variants: [
-              { id: 'a', name: '8oz', price: 8000, option_groups: [], available: true },
-              { id: 'b', name: '12oz', price: 10000, option_groups: [], available: true },
-              { id: 'c', name: '16oz', price: 12000, option_groups: [], available: true },
+              { id: 'a', name: '8oz', presentation_id: 'pr-8oz', price: 8000, option_groups: [], available: true },
+              { id: 'b', name: '12oz', presentation_id: 'pr-12oz', price: 10000, option_groups: [], available: true },
+              { id: 'c', name: '16oz', presentation_id: 'pr-16oz', price: 12000, option_groups: [], available: true },
             ],
           },
           {
@@ -91,8 +107,8 @@ describe('PromotionsPageComponent', () => {
             option_groups: [],
             available: true,
             variants: [
-              { id: 'd', name: '8oz', price: 8500, option_groups: [], available: true },
-              { id: 'e', name: '12oz', price: 10500, option_groups: [], available: true },
+              { id: 'd', name: '8oz', presentation_id: 'pr-8oz', price: 8500, option_groups: [], available: true },
+              { id: 'e', name: '12oz', presentation_id: 'pr-12oz', price: 10500, option_groups: [], available: true },
             ],
           },
           {
@@ -106,6 +122,7 @@ describe('PromotionsPageComponent', () => {
               {
                 id: 'f',
                 name: 'Presentación única',
+                presentation_id: 'pr-unica',
                 price: 3000,
                 option_groups: [],
                 available: true,
@@ -186,8 +203,8 @@ describe('PromotionsPageComponent', () => {
     });
   });
 
-  describe('FR-013: variantLabel / availableLabels (etiqueta de presentación)', () => {
-    it('un producto con una sola variante se etiqueta "Presentación única"', () => {
+  describe('presentaciones del Paso 2 (spec 084, A-80: independientes de los productos)', () => {
+    it('la etiqueta de una variante es el nombre de su presentación, aun con una sola variante', () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
@@ -196,32 +213,37 @@ describe('PromotionsPageComponent', () => {
 
       const agua = c.catalogVariants().find((v) => v.id === 'f')!;
       expect(c.variantLabel(agua)).toBe('Presentación única');
-    });
-
-    it('un producto con varias variantes usa el nombre propio de cada una', () => {
-      const menu = TestBed.inject(MenuService);
-      seedGranizados(menu);
-      const fixture = TestBed.createComponent(PromotionsPageComponent);
-      fixture.detectChanges();
-      const c = fixture.componentInstance;
-
       const ocho = c.catalogVariants().find((v) => v.id === 'a')!;
       expect(c.variantLabel(ocho)).toBe('8oz');
     });
 
-    it('availableLabels es la unión de etiquetas de los productos candidatos', () => {
+    it('availablePresentations lista todas las activas del catálogo, sin productos seleccionados', () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
       fixture.detectChanges();
       const c = fixture.componentInstance;
 
-      c.toggleProductCandidate('p1'); // café: 8oz/12oz/16oz
-      c.toggleProductCandidate('p2'); // mora: 8oz/12oz
-      expect(c.availableLabels()).toEqual(['12oz', '16oz', '8oz']);
+      expect(c.candidateProductIds().size).toBe(0);
+      // Incluye "24oz" (ningún producto la usa) y excluye "4oz" (inactiva); ordenadas por nombre.
+      expect(c.availablePresentations().map((p) => p.name)).toEqual([
+        '12oz', '16oz', '24oz', '8oz', 'Presentación única',
+      ]);
     });
 
-    it('resolvedVariantIdsForLabel junta la variante de cada producto candidato que coincide', () => {
+    it('la lista no cambia al seleccionar productos', () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      const before = c.availablePresentations().map((p) => p.id);
+
+      c.toggleProductCandidate('p2');
+      expect(c.availablePresentations().map((p) => p.id)).toEqual(before);
+    });
+
+    it('resolvedVariantIdsForPresentation junta la variante de cada producto candidato que la tiene', () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
@@ -231,14 +253,57 @@ describe('PromotionsPageComponent', () => {
       c.toggleProductCandidate('p1');
       c.toggleProductCandidate('p2');
       // "16oz" solo existe en café (p1) -- mora (p2) no aporta variante.
-      expect(c.resolvedVariantIdsForLabel('16oz')).toEqual(['c']);
+      expect(c.resolvedVariantIdsForPresentation('pr-16oz')).toEqual(['c']);
       // "8oz" existe en ambos.
-      expect(new Set(c.resolvedVariantIdsForLabel('8oz'))).toEqual(new Set(['a', 'd']));
+      expect(new Set(c.resolvedVariantIdsForPresentation('pr-8oz'))).toEqual(new Set(['a', 'd']));
+      // Una presentación que ningún producto seleccionado tiene no resuelve nada.
+      expect(c.resolvedVariantIdsForPresentation('pr-24oz')).toEqual([]);
     });
-  });
 
-  describe('addRuleRow / removeRuleRow (Paso 1 + Paso 2)', () => {
-    it('con un solo producto coincidente, agrega la fila directo y limpia el picker', async () => {
+    it('un producto de una sola variante se empareja por su presentación real', () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.toggleProductCandidate('p3'); // Agua: única variante, presentación "Presentación única"
+      expect(c.resolvedVariantIdsForPresentation('pr-unica')).toEqual(['f']);
+      expect(c.resolvedVariantIdsForPresentation('pr-8oz')).toEqual([]);
+    });
+
+    it('pickerMatchSummary avisa a cuántos de los productos seleccionados se aplicaría', () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      expect(c.pickerMatchSummary()).toBeNull(); // sin presentación elegida
+
+      c.pickerPresentationId.set('pr-16oz');
+      expect(c.pickerMatchSummary()).toEqual({ matching: 0, selected: 0 });
+
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+      expect(c.pickerMatchSummary()).toEqual({ matching: 1, selected: 2 });
+    });
+
+    it('cambiar los productos seleccionados no reinicia la presentación elegida', () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+
+      c.pickerPresentationId.set('pr-8oz');
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+
+      expect(c.pickerPresentationId()).toBe('pr-8oz');
+    });
+
+    it('agregar una presentación que ningún producto seleccionado tiene se acepta, pero queda marcada como sin aplicar (A-81)', async () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
@@ -250,141 +315,231 @@ describe('PromotionsPageComponent', () => {
       c.createType.set('package_price');
       vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
       await c.continueToConfigure();
+      c.toggleProductCandidate('p2');
+      c.pickerPresentationId.set('pr-24oz'); // ningún producto la tiene
+      c.pickerQty.set(2);
+      c.pickerValue.set(1000);
 
-      c.toggleProductCandidate('p1'); // solo un candidato -- sin confirmación pendiente
-      c.pickerLabel.set('8oz');
+      c.addRuleRow();
+
+      expect(c.presentationRules().length).toBe(1);
+      expect(c.form.rules.length).toBe(0);
+      expect(c.unresolvedRuleCount()).toBe(1);
+    });
+  });
+
+  describe('addRuleRow / removeRuleRow (Paso 1 + Paso 2)', () => {
+    /** Promoción en Borrador ya abierta en la pantalla de configuración. */
+    async function abrirConfiguracion(c: PromotionsPageComponent): Promise<void> {
+      c.openNew();
+      c.createName.set('2x1');
+      c.createType.set('package_price');
+      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
+      await c.continueToConfigure();
+    }
+
+    it('con un solo producto, agrega la regla de la presentación y limpia el picker', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await abrirConfiguracion(c);
+
+      c.toggleProductCandidate('p1');
+      c.pickerPresentationId.set('pr-8oz');
       c.pickerQty.set(2);
       c.pickerValue.set(12000); // menor a 2 * 8000 -- sí es descuento.
 
       c.addRuleRow();
 
-      expect(c.pendingBulkApply()).toBeNull();
-      expect(c.form.rules.length).toBe(1);
-      expect(c.form.rules[0]).toEqual({
-        type: 'package_price', value: 12000, min_qty: 2, variantIds: ['a'],
-      });
-      expect(c.pickerLabel()).toBeNull();
+      expect(c.presentationRules()).toEqual([{ presentationId: 'pr-8oz', min_qty: 2, value: 12000 }]);
+      expect(c.form.rules).toEqual([
+        { type: 'package_price', value: 12000, min_qty: 2, variantIds: ['a'] },
+      ]);
+      expect(c.pickerPresentationId()).toBeNull();
       expect(c.pickerError()).toBeNull();
     });
 
-    // spec 084 (bug 3, FR-016 a FR-019, A-77): con más de un producto candidato,
-    // addRuleRow() ya NO agrega una sola regla combinada -- queda pendiente de
-    // confirmación con una casilla por producto, premarcadas.
-    it('con varios productos coincidentes, queda pendiente de confirmación con todos premarcados (FR-016)', async () => {
+    // spec 084 (A-81): la regla es POR PRESENTACIÓN. Con varios productos seleccionados sigue
+    // siendo una sola fila en la lista; al guardar se expande a una regla de backend por producto.
+    it('con varios productos, la lista tiene UNA regla por presentación y form.rules una por producto (A-81)', async () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
       fixture.detectChanges();
       const c = fixture.componentInstance;
-
-      c.openNew();
-      c.createName.set('2x1');
-      c.createType.set('package_price');
-      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
-      await c.continueToConfigure();
+      await abrirConfiguracion(c);
 
       c.toggleProductCandidate('p1');
       c.toggleProductCandidate('p2');
-      c.pickerLabel.set('8oz');
+      c.pickerPresentationId.set('pr-8oz');
       c.pickerQty.set(2);
       c.pickerValue.set(12000);
-
+      c.addRuleRow();
+      c.pickerPresentationId.set('pr-12oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(17000);
       c.addRuleRow();
 
-      expect(c.form.rules.length).toBe(0); // todavía no se generó ninguna fila
-      const pending = c.pendingBulkApply();
-      expect(pending).not.toBeNull();
-      expect(pending!.map((p) => p.productId).sort()).toEqual(['p1', 'p2']);
-      expect(pending!.every((p) => p.checked)).toBe(true);
+      expect(c.presentationRules().length).toBe(2); // 8oz x2 y 12oz x2, sin duplicar por producto
+      expect(c.form.rules.map((r) => r.variantIds[0])).toEqual(['a', 'd', 'b', 'e']);
+      for (const r of c.form.rules) expect(r.variantIds.length).toBe(1);
     });
 
-    it('confirmar la aplicación masiva genera una fila INDEPENDIENTE por cada producto marcado (FR-017/FR-019)', async () => {
+    it('cambiar los productos seleccionados no obliga a rehacer las reglas (A-81)', async () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
       fixture.detectChanges();
       const c = fixture.componentInstance;
-
-      c.openNew();
-      c.createName.set('2x1');
-      c.createType.set('package_price');
-      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
-      await c.continueToConfigure();
-
+      await abrirConfiguracion(c);
       c.toggleProductCandidate('p1');
-      c.toggleProductCandidate('p2');
-      c.pickerLabel.set('8oz');
+      c.pickerPresentationId.set('pr-8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      c.addRuleRow();
+      c.pickerPresentationId.set('pr-12oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(17000);
+      c.addRuleRow();
+      const reglas = c.presentationRules();
+
+      c.toggleProductCandidate('p2'); // se suma mora: hereda las dos reglas
+      expect(c.presentationRules()).toEqual(reglas);
+      expect(c.form.rules.map((r) => r.variantIds[0])).toEqual(['a', 'd', 'b', 'e']);
+
+      c.toggleProductCandidate('p1'); // se quita café: las reglas siguen, solo mora
+      expect(c.presentationRules()).toEqual(reglas);
+      expect(c.form.rules.map((r) => r.variantIds[0])).toEqual(['d', 'e']);
+    });
+
+    it('una presentación solo admite una regla por promoción', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await abrirConfiguracion(c);
+      c.toggleProductCandidate('p1');
+      c.pickerPresentationId.set('pr-8oz');
       c.pickerQty.set(2);
       c.pickerValue.set(12000);
       c.addRuleRow();
 
-      c.confirmBulkApply();
+      c.pickerPresentationId.set('pr-8oz');
+      c.pickerQty.set(3);
+      c.pickerValue.set(15000);
+      c.addRuleRow();
 
-      expect(c.pendingBulkApply()).toBeNull();
-      expect(c.form.rules.length).toBe(2); // una fila por producto, no una combinada
-      const byVariant = c.form.rules.map((r) => r.variantIds).sort();
-      expect(byVariant).toEqual([['a'], ['d']]);
-      for (const r of c.form.rules) {
-        expect(r.type).toBe('package_price');
-        expect(r.value).toBe(12000);
-        expect(r.min_qty).toBe(2);
-      }
-      // Cada fila se puede quitar sin afectar a la otra.
+      expect(c.presentationRules().length).toBe(1);
+      expect(c.presentationRules()[0].min_qty).toBe(2);
+      expect(c.pickerError()).toContain('Ya hay una regla para esta presentación');
+    });
+
+    it('se puede definir la regla antes de elegir productos: no genera reglas de backend hasta que haya un producto que la tenga', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await abrirConfiguracion(c);
+
+      c.pickerPresentationId.set('pr-8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      expect(c.canAddRuleRow()).toBe(true);
+      c.addRuleRow();
+
+      expect(c.presentationRules().length).toBe(1);
+      expect(c.form.rules).toEqual([]);
+      expect(c.unresolvedRuleCount()).toBe(1);
+      expect(c.formValid()).toBe(false);
+
+      c.toggleProductCandidate('p3'); // Agua no tiene 8oz
+      expect(c.unresolvedRuleCount()).toBe(1);
+      c.toggleProductCandidate('p2'); // mora sí
+      expect(c.unresolvedRuleCount()).toBe(0);
+      expect(c.form.rules.map((r) => r.variantIds[0])).toEqual(['d']);
+    });
+
+    it('quitar una regla de la lista quita todas sus reglas de backend', async () => {
+      const menu = TestBed.inject(MenuService);
+      seedGranizados(menu);
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      await abrirConfiguracion(c);
+      c.toggleProductCandidate('p1');
+      c.toggleProductCandidate('p2');
+      c.pickerPresentationId.set('pr-8oz');
+      c.pickerQty.set(2);
+      c.pickerValue.set(12000);
+      c.addRuleRow();
+      expect(c.form.rules.length).toBe(2);
+
       c.removeRuleRow(0);
-      expect(c.form.rules.length).toBe(1);
+
+      expect(c.presentationRules()).toEqual([]);
+      expect(c.form.rules).toEqual([]);
     });
 
-    it('desmarcar un candidato antes de confirmar lo excluye — no se le genera fila (FR-017)', async () => {
+    it('al abrir una promoción guardada, agrupa sus reglas por presentación y recupera los productos (A-81)', () => {
       const menu = TestBed.inject(MenuService);
       seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
       fixture.detectChanges();
       const c = fixture.componentInstance;
+      const regla = (id: string, variant: string, qty: number, value: string) => ({
+        id, type: 'package_price', value, min_qty: qty, condition_text: null,
+        variants: [{ product_variant_id: variant, description: variant, unit_price: '0' }],
+      });
 
-      c.openNew();
-      c.createName.set('2x1');
-      c.createType.set('package_price');
-      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
-      await c.continueToConfigure();
+      c.openEdit({
+        id: 'p1', name: 'guardada', description: null, status: 'draft',
+        starts_at: '2026-08-01', ends_at: null, days_of_week: null, start_time: null,
+        end_time: null, closed_by_refactor_at: null,
+        rules: [
+          regla('r1', 'a', 2, '12000'), regla('r2', 'd', 2, '12000'),
+          regla('r3', 'b', 2, '17000'), regla('r4', 'e', 2, '17000'),
+        ],
+      } as unknown as Promotion);
 
-      c.toggleProductCandidate('p1');
-      c.toggleProductCandidate('p2');
-      c.pickerLabel.set('8oz');
-      c.pickerQty.set(2);
-      c.pickerValue.set(12000);
-      c.addRuleRow();
-      c.toggleBulkApplyCandidate('p2');
+      expect(c.presentationRules()).toEqual([
+        { presentationId: 'pr-8oz', min_qty: 2, value: 12000 },
+        { presentationId: 'pr-12oz', min_qty: 2, value: 17000 },
+      ]);
+      expect([...c.candidateProductIds()].sort()).toEqual(['p1', 'p2']);
+      expect(c.form.rules.length).toBe(4);
+      expect(c.hasChanges()).toBe(false);
 
-      c.confirmBulkApply();
-
-      expect(c.form.rules.length).toBe(1);
-      expect(c.form.rules[0].variantIds).toEqual(['a']); // solo p1 (café)
+      c.toggleProductCandidate('p1'); // quitar un producto ya es un cambio
+      expect(c.hasChanges()).toBe(true);
     });
 
-    it('cancelar la aplicación masiva no genera ninguna fila y limpia la confirmación pendiente', async () => {
+    it('si el menú aún no cargó al abrir la promoción, agrupa las reglas cuando llegue', () => {
       const menu = TestBed.inject(MenuService);
-      seedGranizados(menu);
       const fixture = TestBed.createComponent(PromotionsPageComponent);
       fixture.detectChanges();
       const c = fixture.componentInstance;
 
-      c.openNew();
-      c.createName.set('2x1');
-      c.createType.set('package_price');
-      vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
-      await c.continueToConfigure();
+      c.openEdit({
+        id: 'p1', name: 'guardada', description: null, status: 'draft',
+        starts_at: '2026-08-01', ends_at: null, days_of_week: null, start_time: null,
+        end_time: null, closed_by_refactor_at: null,
+        rules: [
+          { id: 'r1', type: 'package_price', value: '12000', min_qty: 2, condition_text: null,
+            variants: [{ product_variant_id: 'a', description: 'a', unit_price: '0' }] },
+        ],
+      } as unknown as Promotion);
+      expect(c.presentationRules()).toEqual([]);
 
-      c.toggleProductCandidate('p1');
-      c.toggleProductCandidate('p2');
-      c.pickerLabel.set('8oz');
-      c.pickerQty.set(2);
-      c.pickerValue.set(12000);
-      c.addRuleRow();
+      seedGranizados(menu); // llega el menú
+      fixture.detectChanges(); // corre el effect del constructor
 
-      c.cancelBulkApply();
-
-      expect(c.pendingBulkApply()).toBeNull();
-      expect(c.form.rules.length).toBe(0);
+      expect(c.presentationRules()).toEqual([{ presentationId: 'pr-8oz', min_qty: 2, value: 12000 }]);
+      expect([...c.candidateProductIds()]).toEqual(['p1']);
+      expect(c.hasChanges()).toBe(false);
     });
 
     it('FR-026: rechaza un precio de paquete que no representa ahorro frente a la suma regular (espejo del guard del backend)', async () => {
@@ -401,7 +556,7 @@ describe('PromotionsPageComponent', () => {
       await c.continueToConfigure();
 
       c.toggleProductCandidate('p1'); // 8oz cuesta 8000
-      c.pickerLabel.set('8oz');
+      c.pickerPresentationId.set('pr-8oz');
       c.pickerQty.set(2);
       c.pickerValue.set(20000); // 2 * 8000 = 16000 < 20000 -- no es descuento.
 
@@ -427,7 +582,7 @@ describe('PromotionsPageComponent', () => {
       expect(c.pickerQty()).toBe(2); // arranca en 2 para precio de paquete (FR-025)
 
       c.toggleProductCandidate('p1');
-      c.pickerLabel.set('8oz');
+      c.pickerPresentationId.set('pr-8oz');
       c.onPickerQtyChange(1);
       expect(c.pickerQty()).toBe(2); // no baja de 2
       expect(c.pickerError()).toContain('mínimo es de 2 unidades');
@@ -449,7 +604,7 @@ describe('PromotionsPageComponent', () => {
       vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'p1', rules: [] } as unknown as Promotion);
       await c.continueToConfigure();
       c.toggleProductCandidate('p1');
-      c.pickerLabel.set('8oz');
+      c.pickerPresentationId.set('pr-8oz');
       c.pickerQty.set(2);
       c.pickerValue.set(12000);
       c.addRuleRow();
@@ -624,6 +779,258 @@ describe('PromotionsPageComponent', () => {
     expect(conflict?.a).toBe(0);
     expect(conflict?.b).toBe(1);
     expect(c.formValid()).toBe(false);
+  });
+
+  describe('"Guardar y sincronizar" al final del formulario, solo con cambios', () => {
+    const pausada = (): Promotion =>
+      ({
+        id: 'p1',
+        name: 'pausada',
+        description: null,
+        status: 'paused',
+        starts_at: '2026-08-01',
+        ends_at: null,
+        days_of_week: '0,1',
+        start_time: null,
+        end_time: null,
+        closed_by_refactor_at: null,
+        rules: [
+          {
+            id: 'r1',
+            type: 'percent',
+            value: '10',
+            min_qty: 1,
+            condition_text: null,
+            variants: [{ product_variant_id: 'a', description: 'a', unit_price: '8000.00' }],
+          },
+        ],
+      }) as unknown as Promotion;
+
+    /** El componente es OnPush y el formulario un objeto plano: en la app real cada evento del
+     *  template (ngModel, clic) marca la vista; aquí, que muta `form` directo, se marca a mano. */
+    const refresh = (fixture: ComponentFixture<PromotionsPageComponent>) => {
+      fixture.componentRef.injector.get(ChangeDetectorRef).markForCheck();
+      fixture.detectChanges();
+    };
+
+    const saveButton = (root: HTMLElement): HTMLButtonElement | undefined =>
+      (Array.from(root.querySelectorAll('button')) as HTMLButtonElement[]).find((b) =>
+        b.textContent?.includes('Guardar y sincronizar'),
+      );
+
+    it('al abrir la configuración no hay cambios y el botón está deshabilitado', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit(pausada());
+      fixture.detectChanges();
+
+      expect(c.hasChanges()).toBe(false);
+      expect(c.formValid()).toBe(true);
+      expect(saveButton(fixture.nativeElement)?.disabled).toBe(true);
+      expect(fixture.nativeElement.textContent).toContain('No hay cambios por guardar');
+    });
+
+    it('cualquier cambio (nombre, fecha, días, horas, reglas) habilita el botón', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit(pausada());
+      fixture.detectChanges();
+
+      c.form.name = 'pausada renombrada';
+      refresh(fixture);
+      expect(c.hasChanges()).toBe(true);
+      expect(saveButton(fixture.nativeElement)?.disabled).toBe(false);
+      expect(fixture.nativeElement.textContent).not.toContain('No hay cambios por guardar');
+
+      c.form.name = 'pausada'; // deshacer el cambio lo vuelve a deshabilitar
+      refresh(fixture);
+      expect(c.hasChanges()).toBe(false);
+      expect(saveButton(fixture.nativeElement)?.disabled).toBe(true);
+
+      c.form.days_of_week.push(4);
+      expect(c.hasChanges()).toBe(true);
+      c.form.days_of_week.pop();
+
+      c.form.ends_at = '2026-12-31';
+      expect(c.hasChanges()).toBe(true);
+      c.form.ends_at = null;
+
+      c.form.rules[0].value = 15;
+      expect(c.hasChanges()).toBe(true);
+      c.form.rules[0].value = 10;
+      expect(c.hasChanges()).toBe(false);
+    });
+
+    it('reordenar días o variantes sin cambiar su contenido no cuenta como cambio', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit(pausada());
+
+      c.form.days_of_week = [1, 0];
+      expect(c.hasChanges()).toBe(false);
+    });
+
+    it('un cambio inválido no habilita el botón (sigue exigiendo formValid)', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit(pausada());
+      c.form.name = '';
+      refresh(fixture);
+
+      expect(c.hasChanges()).toBe(true);
+      expect(c.formValid()).toBe(false);
+      expect(saveButton(fixture.nativeElement)?.disabled).toBe(true);
+    });
+
+    it('el botón ya no está en la cabecera: es lo último del formulario', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit(pausada());
+      fixture.detectChanges();
+
+      const root = fixture.nativeElement as HTMLElement;
+      const buttons = Array.from(root.querySelectorAll('button')) as HTMLButtonElement[];
+      const save = saveButton(root)!;
+      const volver = buttons.find((b) => b.textContent?.includes('Volver'))!;
+
+      expect(save).toBeDefined();
+      // Sigue al botón "Volver" (cabecera) y no le sigue ningún otro botón de la pantalla.
+      expect(volver.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(buttons.indexOf(save)).toBe(buttons.length - 1);
+    });
+
+    it('una promoción finalizada (solo lectura) no muestra el botón', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.openEdit({ ...pausada(), status: 'finished' });
+      fixture.detectChanges();
+
+      expect(saveButton(fixture.nativeElement)).toBeUndefined();
+    });
+  });
+
+  it('un conflicto de variante repetida de una promoción abierta antes no bloquea el guardado de la siguiente', async () => {
+    const menu = TestBed.inject(MenuService);
+    seedGranizados(menu);
+    const fixture = TestBed.createComponent(PromotionsPageComponent);
+    fixture.detectChanges();
+    const c = fixture.componentInstance;
+
+    // 1) Una promoción antigua con la misma variante en dos reglas: hay conflicto.
+    c.openNew();
+    c.createName.set('vieja');
+    vi.spyOn(c.svc, 'create').mockResolvedValue({ id: 'v1', rules: [] } as unknown as Promotion);
+    await c.continueToConfigure();
+    c.form.rules.push({ type: 'package_price', value: 10, min_qty: 2, variantIds: ['a'] });
+    c.form.rules.push({ type: 'package_price', value: 12, min_qty: 3, variantIds: ['a'] });
+    expect(c.sharedVariantConflict()).not.toBeNull();
+    fixture.detectChanges(); // la plantilla lo evalúa
+
+    // 2) Otra promoción, con reglas correctas: no debe arrastrar el conflicto anterior.
+    c.backToList();
+    c.openNew();
+    c.createName.set('nueva');
+    await c.continueToConfigure();
+    c.toggleProductCandidate('p1');
+    c.pickerPresentationId.set('pr-8oz');
+    c.pickerQty.set(2);
+    c.pickerValue.set(12000);
+    c.addRuleRow();
+    c.pickerPresentationId.set('pr-12oz');
+    c.pickerQty.set(2);
+    c.pickerValue.set(17000);
+    c.addRuleRow();
+    fixture.detectChanges();
+
+    expect(c.sharedVariantConflict()).toBeNull();
+    expect(c.formValid()).toBe(true);
+  });
+
+  describe('duplicar con un nombre que ya existe (spec 084, A-83)', () => {
+    const fuente = { id: 's1', name: 'promo lunes', status: 'finished', rules: [] } as unknown as Promotion;
+
+    it('el primer intento solo avisa en el diálogo: no reemplaza nada ni muestra el error en la lista', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.startDuplicate(fuente);
+      const spy = vi.spyOn(c.svc, 'duplicate').mockImplementation(async () => {
+        c.svc.otherError.set('Ya existe una promoción con ese nombre');
+        return null;
+      });
+
+      await c.confirmDuplicate();
+
+      expect(spy).toHaveBeenCalledWith('s1', 'promo lunes (copia)', false);
+      expect(c.duplicateNameTaken()).toBe(true);
+      expect(c.svc.otherError()).toBeNull();
+      expect(c.duplicating()).not.toBeNull(); // el diálogo sigue abierto
+    });
+
+    it('el segundo intento pide reemplazar, y al éxito cierra el diálogo y abre la copia', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.startDuplicate(fuente);
+      c.duplicateNameTaken.set(true);
+      const copia = { id: 'c1', name: 'promo lunes (copia)', status: 'draft', rules: [] } as unknown as Promotion;
+      const spy = vi.spyOn(c.svc, 'duplicate').mockResolvedValue(copia);
+      const abrir = vi.spyOn(c, 'openEdit').mockImplementation(() => {});
+
+      await c.confirmDuplicate();
+
+      expect(spy).toHaveBeenCalledWith('s1', 'promo lunes (copia)', true);
+      expect(c.duplicating()).toBeNull();
+      expect(c.duplicateNameTaken()).toBe(false);
+      expect(abrir).toHaveBeenCalledWith(copia);
+    });
+
+    it('cambiar el nombre quita el aviso de reemplazo', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.startDuplicate(fuente);
+      c.duplicateNameTaken.set(true);
+
+      c.onDuplicateNameChange('otro nombre');
+
+      expect(c.duplicateNameTaken()).toBe(false);
+      expect(c.duplicateName()).toBe('otro nombre');
+    });
+
+    it('el diálogo muestra el aviso y cambia el texto del botón', () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.startDuplicate(fuente);
+      c.duplicateNameTaken.set(true);
+      fixture.detectChanges();
+
+      const texto = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(texto).toContain('se eliminará con todas sus reglas');
+      expect(texto).toContain('Reemplazar y duplicar');
+    });
+
+    it('otro error distinto al de nombre repetido se muestra como error normal', async () => {
+      const fixture = TestBed.createComponent(PromotionsPageComponent);
+      fixture.detectChanges();
+      const c = fixture.componentInstance;
+      c.startDuplicate(fuente);
+      vi.spyOn(c.svc, 'duplicate').mockImplementation(async () => {
+        c.svc.otherError.set('Algo más falló');
+        return null;
+      });
+
+      await c.confirmDuplicate();
+
+      expect(c.duplicateNameTaken()).toBe(false);
+    });
   });
 
   describe('FR-021: canDelete (habilitación de "Eliminar")', () => {

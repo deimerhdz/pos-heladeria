@@ -115,8 +115,9 @@ export type PromoDisplay =
   | 'finished';
 
 export interface MinPromoPrice {
-  /** `2 x $15.000 · $7.500 c/u` de la regla más barata por unidad, tal cual la
-   *  renderizó el backend (`MenuVariantPromotion.display_text`). */
+  /** `2 x $15.000` de la regla más barata por unidad, tal cual la renderizó el backend
+   *  (`MenuVariantPromotion.short_condition`). Sin el equivalente por unidad (`· $7.500 c/u`):
+   *  la tarjeta solo dice la condición (spec 084, A-82). */
   displayText: string;
   /** `true` cuando el precio viene de la más barata entre 2+ variantes cubiertas
    *  del mismo producto -- el llamador antepone "Desde " en ese caso (FR-013). */
@@ -142,7 +143,7 @@ export function minPromoPriceForProduct(variants: MenuVariant[]): MinPromoPrice 
     a.promotion.unit_equivalent <= b.promotion.unit_equivalent ? a : b,
   );
   return {
-    displayText: cheapest.promotion.display_text,
+    displayText: cheapest.promotion.short_condition,
     isMinimum: covered.length > 1,
   };
 }

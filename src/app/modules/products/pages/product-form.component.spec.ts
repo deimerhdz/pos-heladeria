@@ -75,6 +75,7 @@ class FakePresentationService {
   allPresentations = signal<Presentation[]>([
     { id: 'p-grande', name: 'Grande', active: true, created_at: '2026-01-01T00:00:00' },
     { id: 'p-mediana', name: 'Mediana', active: true, created_at: '2026-01-01T00:00:00' },
+    { id: 'p-pequena', name: 'Pequeña', active: true, created_at: '2026-01-01T00:00:00' },
   ]);
   loadAllPresentations(): void {}
 }
@@ -304,13 +305,14 @@ describe('ProductFormComponent', () => {
 
     const savePromise = component.save();
 
-    // Spec 043: una sola petición trae el producto y la presentación "Único" por
-    // defecto (con su receta/grupos vacíos) — ya no hace falta ningún paso aparte.
+    // Spec 043: una sola petición trae el producto y su única variante (con su receta/
+    // grupos vacíos). Spec 084 (A-79): sin `name`; `presentation_id: null` = "Presentación
+    // única", que el backend resuelve.
     const created = http.expectOne(PRODUCTS);
     expect(created.request.method).toBe('POST');
     expect(created.request.body.tracks_inventory).toBe(false);
     expect(created.request.body.variants).toEqual([
-      { name: 'Único', price: 0, presentation_id: null, recipe: [], option_groups: [] },
+      { price: 0, presentation_id: null, recipe: [], option_groups: [] },
     ]);
     created.flush({
       id: 'p1',
@@ -380,8 +382,8 @@ describe('ProductFormComponent', () => {
     await tick();
 
     http.expectOne(`${PRODUCTS}/${id}/variants`).flush([
-      { id: 'v1', product_id: id, name: 'Grande', sku: null, price: '8000', active: true },
-      { id: 'v2', product_id: id, name: 'Pequeña', sku: null, price: '5000', active: true },
+      { id: 'v1', product_id: id, sku: null, price: '8000', active: true, presentation_id: 'p-grande', presentation_name: 'Grande' },
+      { id: 'v2', product_id: id, sku: null, price: '5000', active: true, presentation_id: 'p-pequena', presentation_name: 'Pequeña' },
     ]);
     await tick();
 
@@ -467,24 +469,24 @@ describe('ProductFormComponent', () => {
   it('arrastrar reordena draft().variants de inmediato, sin ninguna llamada al backend', async () => {
     await createEdit('p9', true); // v1 Grande, v2 Pequeña (ese orden)
 
-    expect(component.draft().variants.map((v) => v.name)).toEqual(['Grande', 'Pequeña']);
+    expect(component.draft().variants.map((v) => v.presentationName)).toEqual(['Grande', 'Pequeña']);
 
     component.onVariantDrop(drop(0, 1));
     fixture.detectChanges();
 
-    expect(component.draft().variants.map((v) => v.name)).toEqual(['Pequeña', 'Grande']);
+    expect(component.draft().variants.map((v) => v.presentationName)).toEqual(['Pequeña', 'Grande']);
     // Puramente local: ninguna petición pendiente por el solo hecho de arrastrar.
     http.expectNone((r) => r.url.endsWith('/variants/reorder'));
   });
 
   it('soltar en la misma posición no cambia nada', async () => {
     await createEdit('p9', true);
-    const before = component.draft().variants.map((v) => v.name);
+    const before = component.draft().variants.map((v) => v.presentationName);
 
     component.onVariantDrop(drop(1, 1));
     fixture.detectChanges();
 
-    expect(component.draft().variants.map((v) => v.name)).toEqual(before);
+    expect(component.draft().variants.map((v) => v.presentationName)).toEqual(before);
   });
 
   it('guardar tras arrastrar persiste el nuevo orden en una sola llamada atómica', async () => {
@@ -518,11 +520,11 @@ describe('ProductFormComponent', () => {
     await createEdit('p9', true);
     component.draft.update((d) => ({
       ...d,
-      deactivated: [{ id: 'v3', name: 'Mediana', price: 4000, presentationId: null }],
+      deactivated: [{ id: 'v3', price: 4000, presentationId: 'p-mediana', presentationName: 'Mediana' }],
     }));
 
     const restorePromise = component.restoreVariant({
-      id: 'v3', name: 'Mediana', price: 4000, presentationId: null,
+      id: 'v3', price: 4000, presentationId: 'p-mediana', presentationName: 'Mediana',
     });
 
     // Solo lectura (sin cambios, spec 043 no toca los GET) -- research.md Decisión 4:
@@ -533,7 +535,7 @@ describe('ProductFormComponent', () => {
 
     await restorePromise;
 
-    expect(component.draft().variants.map((v) => v.name)).toContain('Mediana');
+    expect(component.draft().variants.map((v) => v.presentationName)).toContain('Mediana');
     expect(component.draft().deactivated).toEqual([]);
   });
 
@@ -579,11 +581,10 @@ describe('ProductFormComponent', () => {
     expect(component.draft().tracks_inventory).toBe(true);
   });
 
-  // ── Asociar variante con presentación del catálogo (spec 084, US1) ───────
+  // ── Variante sin nombre: la presentación la nombra (spec 084, US7, A-79) ──
 
-  /** La fila `<div cdkDrag>` de una variante -- para no confundir su `<select>`/`<input>`
-   *  de nombre con los de `category_id`/`preparation_type` (arriba del todo) ni con el
-   *  `<input>` interno de `app-money-input` (mismo `<div cdkDrag>`, después del nombre). */
+  /** La fila `<div cdkDrag>` de una variante -- para no confundir su `<select>` con los de
+   *  `category_id`/`preparation_type` (arriba del todo). */
   const variantRow = (localId: string): HTMLElement =>
     (Array.from(fixture.nativeElement.querySelectorAll('[cdkDrag]')) as HTMLElement[])[
       component.draft().variants.findIndex((v) => v.localId === localId)
@@ -592,75 +593,90 @@ describe('ProductFormComponent', () => {
   const variantRowSelect = (localId: string): HTMLSelectElement =>
     variantRow(localId).querySelector('select')!;
 
-  const variantRowNameInput = (localId: string): HTMLInputElement =>
-    variantRow(localId).querySelector('input')!;
+  /** Texto de la tarjeta a partir de un ancla, para comparar el orden vertical. */
+  const position = (needle: string): number => fixture.nativeElement.innerHTML.indexOf(needle);
 
-  it('elegir una presentación en el select de una fila autocompleta el nombre y lo bloquea (FR-001/002)', async () => {
+  it('la tabla de tamaños no tiene columna ni campo "Nombre"', async () => {
+    await createEdit('p9', true);
+    const row = variantRow(component.draft().variants[0].localId);
+
+    // Solo queda el input del precio (app-money-input); ningún input de nombre.
+    expect(row.querySelectorAll('input').length).toBe(1);
+    expect(row.querySelector('select')).not.toBeNull();
+    expect(text()).not.toMatch(/\bNombre\s+Presentación\b/);
+  });
+
+  it('el select no ofrece "Sin presentación"', async () => {
+    await createEdit('p9', true);
+    const options = Array.from(
+      variantRowSelect(component.draft().variants[0].localId).options,
+    ).map((o) => o.textContent?.trim());
+
+    expect(options).not.toContain('Sin presentación');
+  });
+
+  it('el select excluye las presentaciones ya elegidas en otras filas, pero conserva la propia', async () => {
     await createEdit('p9', true); // v1 Grande, v2 Pequeña
+    const [v1] = component.draft().variants;
+    const names = component.presentationOptionsFor(v1).map((o) => o.name);
+
+    expect(names).toContain('Grande'); // la propia
+    expect(names).toContain('Mediana'); // libre
+    expect(names).not.toContain('Pequeña'); // ya la usa la fila 2
+  });
+
+  it('elegir una presentación guarda su id y su nombre en la fila', async () => {
+    await createEdit('p9', true);
     const v2 = component.draft().variants[1];
-    expect(v2.presentationId).toBeNull();
 
     component.setVariantPresentation(v2.localId, 'p-mediana');
     fixture.detectChanges();
 
-    expect(component.draft().variants[1].name).toBe('Mediana');
     expect(component.draft().variants[1].presentationId).toBe('p-mediana');
-    expect(variantRowNameInput(v2.localId).readOnly).toBe(true);
+    expect(component.draft().variants[1].presentationName).toBe('Mediana');
   });
 
-  it('elegir otra presentación para una variante ya asociada actualiza el nombre (FR-003)', async () => {
-    await createEdit('p9', true);
-    const v1 = component.draft().variants[0];
-    component.setVariantPresentation(v1.localId, 'p-grande');
-    fixture.detectChanges();
-    expect(component.draft().variants[0].name).toBe('Grande');
-
-    component.setVariantPresentation(v1.localId, 'p-mediana');
-    fixture.detectChanges();
-
-    expect(component.draft().variants[0].name).toBe('Mediana');
-  });
-
-  it('"Sin presentación" deja el nombre editable, conservando el texto que tenía (FR-005)', async () => {
-    await createEdit('p9', true);
-    const v1 = component.draft().variants[0];
-    component.setVariantPresentation(v1.localId, 'p-grande');
-    fixture.detectChanges();
-    expect(variantRowNameInput(v1.localId).readOnly).toBe(true);
-
-    component.setVariantPresentation(v1.localId, null);
-    fixture.detectChanges();
-
-    expect(component.draft().variants[0].presentationId).toBeNull();
-    expect(component.draft().variants[0].name).toBe('Grande'); // conserva el texto, no lo borra
-    expect(variantRowNameInput(v1.localId).readOnly).toBe(false);
-  });
-
-  it('el select de la fila refleja la elección al cambiarlo desde el DOM', async () => {
+  it('el select refleja la elección al cambiarlo desde el DOM', async () => {
     await createEdit('p9', true);
     const v1 = component.draft().variants[0];
     const select = variantRowSelect(v1.localId);
 
-    select.value = 'p-grande';
+    select.value = 'p-mediana';
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
 
-    expect(component.draft().variants[0].presentationId).toBe('p-grande');
-    expect(component.draft().variants[0].name).toBe('Grande');
+    expect(component.draft().variants[0].presentationId).toBe('p-mediana');
+    expect(component.draft().variants[0].presentationName).toBe('Mediana');
   });
 
-  it('el guardado envía presentation_id en el payload de cada variante', async () => {
+  it('una fila nueva sin presentación bloquea el guardado y se señala en la fila', async () => {
+    await createEdit('p9', true);
+    component.addVariant();
+    fixture.detectChanges();
+    const nueva = component.draft().variants[2];
+
+    expect(nueva.presentationId).toBeNull();
+    expect(component.canSave()).toBe(false);
+    expect(component.isPresentationMissing(nueva)).toBe(true);
+    expect(text()).toContain('Elige una presentación');
+
+    component.setVariantPresentation(nueva.localId, 'p-mediana');
+    expect(component.canSave()).toBe(true);
+  });
+
+  it('el guardado envía presentation_id y ningún name en cada variante', async () => {
     await createEdit('p9', true);
     const [v1, v2] = component.draft().variants;
-    component.setVariantPresentation(v1.localId, 'p-grande');
+    component.setVariantPresentation(v1.localId, 'p-mediana');
     fixture.detectChanges();
 
     const savePromise = component.save();
 
     const req = http.expectOne(`${PRODUCTS}/p9`);
-    const variants = req.request.body.variants as Array<{ id?: string; presentation_id: string | null }>;
-    expect(variants.find((v) => v.id === v1.id)?.presentation_id).toBe('p-grande');
-    expect(variants.find((v) => v.id === v2.id)?.presentation_id).toBeNull();
+    const variants = req.request.body.variants as Array<Record<string, unknown>>;
+    expect(variants.find((v) => v['id'] === v1.id)?.['presentation_id']).toBe('p-mediana');
+    expect(variants.find((v) => v['id'] === v2.id)?.['presentation_id']).toBe('p-pequena');
+    expect(variants.every((v) => !('name' in v))).toBe(true);
     req.flush({
       id: 'p9', category_id: 'c1', name: 'Cono doble', description: null,
       preparation_type: 'prepared', image_url: null, active: true, available: true,
@@ -669,15 +685,70 @@ describe('ProductFormComponent', () => {
     await savePromise;
   });
 
-  it('cambiar de "con tamaños" a "único" suelta la presentación asociada, para no dejar nombre y presentación desalineados', async () => {
+  it('encender tamaños preselecciona Grande/Mediana/Pequeña si el catálogo las tiene', async () => {
+    await createNew();
+    component.toggleHasSizes();
+    fixture.detectChanges();
+
+    expect(component.draft().variants.map((v) => v.presentationName)).toEqual([
+      'Grande', 'Mediana', 'Pequeña',
+    ]);
+    expect(component.canSave()).toBe(false); // sin nombre ni categoría: solo verifica que no explote
+  });
+
+  it('apagar tamaños deja la única variante en "Presentación única" (id nulo, lo resuelve el backend)', async () => {
     await createEdit('p9', true);
-    const v1 = component.draft().variants[0];
-    component.setVariantPresentation(v1.localId, 'p-grande');
+    component.toggleHasSizes(); // colapsa a una sola variante (la primera)
     fixture.detectChanges();
 
-    component.toggleHasSizes(); // colapsa a una sola variante "Único" (la primera)
-    fixture.detectChanges();
-
+    expect(component.draft().variants.length).toBe(1);
     expect(component.draft().variants[0].presentationId).toBeNull();
+    expect(component.draft().variants[0].presentationName).toBe('Presentación única');
+  });
+
+  it('restaurar una variante cuya presentación ya usa otra fila se rechaza', async () => {
+    await createEdit('p9', true);
+    component.draft.update((d) => ({
+      ...d,
+      deactivated: [{ id: 'v9', price: 1, presentationId: 'p-grande', presentationName: 'Grande' }],
+    }));
+
+    await component.restoreVariant({
+      id: 'v9', price: 1, presentationId: 'p-grande', presentationName: 'Grande',
+    });
+
+    expect(component.service.otherError()).toContain('Grande');
+    expect(component.draft().deactivated.length).toBe(1);
+  });
+
+  // ── Orden de la tarjeta "Tamaños del producto" (spec 084, US8) ───────────
+
+  it('con tamaños, la tabla va antes de "Maneja inventario" y este antes del detalle', async () => {
+    await createEdit('p9', false);
+
+    const tabla = position('+ Agregar tamaño');
+    const inventario = position('Maneja inventario');
+    const detalle = position('Insumos fijos') === -1
+      ? position('Activa "Maneja inventario" arriba')
+      : position('Insumos fijos');
+
+    expect(tabla).toBeGreaterThan(-1);
+    expect(inventario).toBeGreaterThan(tabla);
+    expect(detalle).toBeGreaterThan(inventario);
+  });
+
+  it('con "Maneja inventario" apagado, la tabla de tamaños sigue visible y editable', async () => {
+    await createEdit('p9', false);
+
+    expect(component.draft().tracks_inventory).toBe(false);
+    expect(variantRow(component.draft().variants[0].localId)).toBeTruthy();
+    expect(variantRowSelect(component.draft().variants[0].localId).disabled).toBe(false);
+  });
+
+  it('sin tamaños no hay tabla y "Maneja inventario" queda bajo el encabezado', async () => {
+    await createNew();
+
+    expect(fixture.nativeElement.querySelectorAll('[cdkDrag]').length).toBe(0);
+    expect(position('Maneja inventario')).toBeGreaterThan(position('Tamaños del producto'));
   });
 });

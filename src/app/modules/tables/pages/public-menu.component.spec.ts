@@ -406,23 +406,26 @@ describe('PublicMenuComponent', () => {
     ]);
 
     expect(el.textContent).toContain('🎉 Promo');
-    expect(el.textContent).toContain('2 x $12.000 · $6.000 c/u');
+    // spec 084 (A-82): solo la condición; el equivalente por unidad (`· $6.000 c/u`) se quitó.
+    expect(el.textContent).toContain('2 x $12.000');
+    expect(el.textContent).not.toContain('c/u');
   });
 
   it('FR-013: dos variantes cubiertas con precios distintos → la tarjeta muestra "Desde " + el más barato por unidad', async () => {
     const el = await carta([
       {
         id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
-        promotion: promocion({ unit_equivalent: 6000, display_text: '2 x $12.000 · $6.000 c/u' }),
+        promotion: promocion({ unit_equivalent: 6000, short_condition: '2 x $12.000' }),
       },
       {
         id: 'v2', name: 'Grande 16oz', price: 12000, option_groups: [], available: true,
-        promotion: promocion({ unit_equivalent: 4500, display_text: '2 x $9.000 · $4.500 c/u' }),
+        promotion: promocion({ unit_equivalent: 4500, short_condition: '2 x $9.000' }),
       },
     ]);
 
-    expect(el.textContent).toContain('Desde 2 x $9.000 · $4.500 c/u');
-    expect(el.textContent).not.toContain('$6.000 c/u');
+    expect(el.textContent).toContain('Desde 2 x $9.000');
+    expect(el.textContent).not.toContain('2 x $12.000');
+    expect(el.textContent).not.toContain('c/u');
   });
 
   it('FR-014 (spec 066 FR-015, sin cambio): con min_qty 1 sigue mostrando el precio tachado, sin el texto de "N x"', async () => {

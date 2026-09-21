@@ -150,6 +150,8 @@ export interface PromotionStatusPayload {
 
 export interface PromotionDuplicatePayload {
   name: string;
+  /** spec 084 (A-83): reemplazar la promoción que ya usa ese nombre (se elimina con sus reglas). */
+  replace_existing?: boolean;
 }
 
 /**

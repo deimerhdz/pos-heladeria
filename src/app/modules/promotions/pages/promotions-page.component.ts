@@ -1,11 +1,14 @@
 import {
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   HostListener,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
@@ -16,6 +19,7 @@ import {
 } from '@angular/cdk/overlay';
 import { CategoryService } from '../../categories/services/category.service';
 import { MenuService } from '../../../core/services/menu.service';
+import { PresentationService } from '../../presentations/services/presentation.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { ToastService } from '../../../shared/feedback/toast.service';
 import { PaginationBarComponent } from '../../../shared/pagination/pagination-bar.component';
@@ -77,7 +81,10 @@ interface CatalogVariant {
   productName: string;
   categoryId: string;
   categoryName: string;
+  /** Nombre de la variante = el de su presentación (spec 084, A-79). */
   variantName: string;
+  /** Presentación del catálogo de la variante: con ella se empareja la regla (A-80). */
+  presentationId: string;
   price: number;
 }
 
@@ -91,14 +98,14 @@ interface CatalogProduct {
   variants: CatalogVariant[];
 }
 
-/** spec 084 (FR-016 a FR-019, A-77): una fila de la lista de confirmación de
- *  aplicación masiva -- un producto candidato, su variante para la presentación
- *  elegida, y si quedará marcado al confirmar (premarcado por defecto). */
-interface BulkApplyCandidate {
-  productId: string;
-  productName: string;
-  variantId: string;
-  checked: boolean;
+/** spec 084 (A-81): una regla de precio por **presentación** — «8 onzas · 2 unidades × $12.000».
+ *  No guarda variantes: al guardar se expande a una regla de backend por cada producto
+ *  seleccionado que tenga esa presentación (una variante por regla, A-77), de modo que
+ *  cambiar los productos del Paso 1 no obliga a rehacer las reglas. */
+interface PresentationRule {
+  presentationId: string;
+  min_qty: number;
+  value: number;
 }
 
 /** Filtro de ayuda para poblar el Paso 1 — nunca se guarda (FR-012). */
@@ -134,6 +141,9 @@ function fmtTime(hhmm: string): string {
 }
 
 const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
+
+/** `detail` del 409 del backend cuando el nombre de la promoción ya existe. */
+const NAME_TAKEN_MESSAGE = 'Ya existe una promoción con ese nombre';
 
 @Component({
   selector: 'app-promotions-page',
@@ -579,24 +589,6 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 {{ editingId() ? 'Configurar precios de la promoción' : 'Configurar precios' }}
               </h1>
             </div>
-            @if (!isReadOnly()) {
-              <button
-                type="button"
-                [disabled]="svc.isSubmitting() || !formValid()"
-                (click)="saveConfigure()"
-                class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                {{ svc.isSubmitting() ? 'Guardando…' : 'Guardar y sincronizar' }}
-              </button>
-            }
           </div>
 
           @if (isReadOnly()) {
@@ -998,13 +990,13 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                     >Presentación / Tamaño</span
                   >
                   <select
-                    [ngModel]="pickerLabel()"
-                    (ngModelChange)="pickerLabel.set($event)"
+                    [ngModel]="pickerPresentationId()"
+                    (ngModelChange)="pickerPresentationId.set($event)"
                     class="w-full text-xs border-gray-300 rounded-lg py-2 pl-2.5 pr-8 text-gray-700 bg-white font-medium"
                   >
                     <option [ngValue]="null">Elige una presentación</option>
-                    @for (l of availableLabels(); track l) {
-                      <option [ngValue]="l">{{ l }}</option>
+                    @for (p of availablePresentations(); track p.id) {
+                      <option [ngValue]="p.id">{{ p.name }}</option>
                     }
                   </select>
                 </label>
@@ -1067,45 +1059,24 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                 <p class="mt-2 text-xs text-red-600">{{ pickerError() }}</p>
               }
 
-              <!-- spec 084 (FR-016 a FR-019, A-77): confirmación de aplicación masiva --
-                   más de un producto coincidente, casilla por producto, premarcadas. -->
-              @if (pendingBulkApply(); as candidates) {
-                <div class="mt-3 bg-indigo-50/60 border border-indigo-200 rounded-lg p-3">
-                  <p class="text-xs font-semibold text-indigo-900 mb-2">
-                    {{ candidates.length }} productos seleccionados comparten esta presentación
-                    — se agregará una fila de regla independiente por cada uno que quede marcado.
-                  </p>
-                  <ul class="space-y-1 max-h-40 overflow-y-auto">
-                    @for (c of candidates; track c.productId) {
-                      <li class="flex items-center gap-2 text-xs text-gray-700">
-                        <input
-                          type="checkbox"
-                          [checked]="c.checked"
-                          (change)="toggleBulkApplyCandidate(c.productId)"
-                          class="rounded border-gray-300"
-                        />
-                        {{ c.productName }}
-                      </li>
-                    }
-                  </ul>
-                  <div class="mt-3 flex gap-2 justify-end">
-                    <button
-                      type="button"
-                      (click)="cancelBulkApply()"
-                      class="px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      [disabled]="!candidates.some(c => c.checked)"
-                      (click)="confirmBulkApply()"
-                      class="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Confirmar y agregar
-                    </button>
-                  </div>
-                </div>
+              <!-- spec 084 (A-80): la presentación es independiente de los productos; este
+                   aviso dice a cuántos de los ya seleccionados se aplicaría. -->
+              @if (pickerMatchSummary(); as summary) {
+                <p
+                  class="mt-2 text-xs"
+                  [class]="summary.matching > 0 ? 'text-gray-500' : 'text-amber-700'"
+                >
+                  @if (summary.selected === 0) {
+                    Aún no hay productos seleccionados: la regla se aplicará a los que elijas en el Paso 1.
+                  } @else if (summary.matching === 0) {
+                    Ninguno de los {{ summary.selected }} productos seleccionados tiene esta presentación.
+                  } @else {
+                    Se aplicará a {{ summary.matching }} de {{ summary.selected }}
+                    producto{{ summary.selected === 1 ? '' : 's' }} seleccionado{{
+                      summary.selected === 1 ? '' : 's'
+                    }}.
+                  }
+                </p>
               }
 
               @if (sharedVariantConflict(); as sc) {
@@ -1125,10 +1096,10 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                   <span
                     class="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60"
                   >
-                    {{ form.rules.length }} regla{{
-                      form.rules.length === 1 ? '' : 's'
+                    {{ presentationRules().length }} regla{{
+                      presentationRules().length === 1 ? '' : 's'
                     }}
-                    configurada{{ form.rules.length === 1 ? '' : 's' }}
+                    configurada{{ presentationRules().length === 1 ? '' : 's' }}
                   </span>
                 </div>
                 <div class="overflow-hidden border border-gray-200 rounded-xl">
@@ -1146,7 +1117,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100 bg-white">
-                      @for (rule of form.rules; track $index) {
+                      @for (rule of presentationRules(); track rule.presentationId) {
                         <tr class="hover:bg-gray-50/50 transition-colors">
                           <td class="p-3 font-bold text-gray-800">
                             <span
@@ -1161,7 +1132,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                             <td class="p-3 text-gray-400 line-through">{{ money(pv.regular) }}</td>
                             <td class="p-3 font-bold text-indigo-700">
                               {{
-                                rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
+                                form.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
                               }}
                             </td>
                             <td class="p-3">
@@ -1179,7 +1150,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                             <td class="p-3 text-gray-400">—</td>
                             <td class="p-3 font-bold text-indigo-700">
                               {{
-                                rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
+                                form.type === 'percent' ? rule.value + '% dto.' : money(rule.value)
                               }}
                             </td>
                             <td class="p-3 text-gray-400">—</td>
@@ -1217,6 +1188,14 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                     </tbody>
                   </table>
                 </div>
+                @if (unresolvedRuleCount() > 0) {
+                  <p class="text-xs text-amber-700">
+                    {{ unresolvedRuleCount() }} regla{{ unresolvedRuleCount() === 1 ? '' : 's' }}
+                    no se aplica{{ unresolvedRuleCount() === 1 ? '' : 'n' }} a ninguno de los productos
+                    seleccionados y no se guardará{{ unresolvedRuleCount() === 1 ? '' : 'n' }}
+                    mientras siga así.
+                  </p>
+                }
               </div>
             </div>
           } @else {
@@ -1237,14 +1216,14 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100 bg-white">
-                    @for (rule of form.rules; track $index) {
+                    @for (rule of presentationRules(); track rule.presentationId) {
                       <tr>
                         <td class="p-3 font-bold text-gray-800">{{ ruleProductsLabel(rule) }}</td>
                         <td class="p-3 text-gray-600 font-medium">
                           {{ rule.min_qty }} unidad{{ rule.min_qty === 1 ? '' : 'es' }}
                         </td>
                         <td class="p-3 font-bold text-indigo-700">
-                          {{ rule.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}
+                          {{ form.type === 'percent' ? rule.value + '% dto.' : money(rule.value) }}
                         </td>
                       </tr>
                     } @empty {
@@ -1297,6 +1276,34 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               <p class="font-semibold">{{ pk.error }}</p>
             </div>
           }
+
+          <!-- El guardado vive al final del formulario y solo se habilita cuando hay un
+               cambio respecto de lo cargado (o recién guardado). -->
+          @if (!isReadOnly()) {
+            <div
+              class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 pt-2 pb-8"
+            >
+              @if (!hasChanges() && !svc.isSubmitting()) {
+                <span class="text-xs text-gray-400 sm:mr-2">No hay cambios por guardar.</span>
+              }
+              <button
+                type="button"
+                [disabled]="svc.isSubmitting() || !hasChanges() || !formValid()"
+                (click)="saveConfigure()"
+                class="px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                {{ svc.isSubmitting() ? 'Guardando…' : 'Guardar y sincronizar' }}
+              </button>
+            </div>
+          }
         }
       }
     </div>
@@ -1309,10 +1316,19 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
             La copia nace en Borrador con las mismas reglas y la misma vigencia.
           </p>
           <input
-            [(ngModel)]="duplicateName"
+            [ngModel]="duplicateName()"
+            (ngModelChange)="onDuplicateNameChange($event)"
             placeholder="Nombre de la copia"
             class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
           />
+          @if (duplicateNameTaken()) {
+            <div
+              class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              Ya existe una promoción llamada «{{ duplicateName().trim() }}». Si continúas, se
+              <strong>eliminará</strong> con todas sus reglas y la copia ocupará su lugar.
+            </div>
+          }
           <div class="mt-4 flex justify-end gap-2">
             <button
               type="button"
@@ -1327,7 +1343,7 @@ const DISMISS_KEY = 'promos-063-migration-banner-dismissed';
               (click)="confirmDuplicate()"
               class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
             >
-              Duplicar
+              {{ duplicateNameTaken() ? 'Reemplazar y duplicar' : 'Duplicar' }}
             </button>
           </div>
         </div>
@@ -1339,6 +1355,7 @@ export class PromotionsPageComponent implements OnInit {
   readonly svc = inject(PromotionService);
   private readonly categories = inject(CategoryService);
   private readonly menu = inject(MenuService);
+  private readonly presentations = inject(PresentationService);
   private readonly confirm = inject(ConfirmService);
   private readonly toast = inject(ToastService);
   private readonly overlay = inject(Overlay);
@@ -1364,6 +1381,9 @@ export class PromotionsPageComponent implements OnInit {
 
   readonly duplicating = signal<Promotion | null>(null);
   readonly duplicateName = signal('');
+  /** El nombre elegido ya lo usa otra promoción (el backend respondió 409): el siguiente
+   *  intento pide reemplazarla, con aviso visible en el diálogo (spec 084, A-83). */
+  readonly duplicateNameTaken = signal(false);
 
   /** Pantalla 1: menú de acciones desplegable, una fila a la vez. */
   readonly openActionsId = signal<string | null>(null);
@@ -1373,6 +1393,9 @@ export class PromotionsPageComponent implements OnInit {
   readonly createType = signal<PromotionType>('package_price');
 
   form: PromotionForm = emptyForm();
+  /** Foto normalizada del formulario al abrir la configuración: `hasChanges()` la compara con
+   *  el estado actual para habilitar «Guardar y sincronizar» solo cuando algo cambió. */
+  private formBaseline = '';
 
   /** Pantalla 3, Paso 1: productos candidatos elegidos (persisten entre altas
    *  de filas, FR-014 — solo se limpian al abrir/cerrar la pantalla). */
@@ -1384,14 +1407,30 @@ export class PromotionsPageComponent implements OnInit {
    *  planos) para que `packagePriceCheck`/`packagePriceExceedsRegularSum`
    *  (FR-026) se recalculen solos cada vez que cambian (spec 083, sesión
    *  2026-09-17). */
-  readonly pickerLabel = signal<string | null>(null);
+  /** Presentación del catálogo elegida en el Paso 2 (spec 084, A-80): id, no etiqueta. */
+  readonly pickerPresentationId = signal<string | null>(null);
   readonly pickerQty = signal(1);
   readonly pickerValue = signal(0);
 
-  /** spec 084 (FR-016, A-77): cuando `addRuleRow()` encuentra más de un producto
-   *  coincidente, la aplicación masiva queda pendiente de confirmación acá en vez
-   *  de generarse de una — `null` cuando no hay ninguna aplicación en curso. */
-  readonly pendingBulkApply = signal<BulkApplyCandidate[] | null>(null);
+  /** spec 084 (A-81): reglas de precio por presentación de la promoción en edición. Fuente
+   *  de verdad de la lista del Paso 2; `form.rules` (lo que se envía al backend) se deriva de
+   *  aquí × los productos seleccionados con `rebuildRules()`. */
+  readonly presentationRules = signal<PresentationRule[]>([]);
+  /** Reglas guardadas de una promoción abierta antes de que el menú termine de cargar: no se
+   *  pueden agrupar por presentación sin el catálogo, así que esperan a que llegue. */
+  private pendingSourceRules: Promotion['rules'] | null = null;
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  constructor() {
+    effect(() => {
+      const ready = this.catalogVariants().length > 0;
+      if (ready && this.pendingSourceRules) {
+        untracked(() => {
+          if (this.hydrateFromRules(this.pendingSourceRules!)) this.cdr.markForCheck();
+        });
+      }
+    });
+  }
   readonly pickerError = signal<string | null>(null);
 
   readonly statusTabs = STATUS_TABS;
@@ -1421,6 +1460,7 @@ export class PromotionsPageComponent implements OnInit {
             categoryId: cat.id,
             categoryName: cat.name,
             variantName: v.name,
+            presentationId: v.presentation_id ?? '',
             price: v.price,
           });
         }
@@ -1494,38 +1534,56 @@ export class PromotionsPageComponent implements OnInit {
     return this.catalogProducts().filter((p) => ids.has(p.id));
   });
 
-  /** Presentaciones disponibles para el Paso 2 (FR-013): unión de etiquetas
-   *  de las variantes de los productos candidatos del Paso 1. */
-  readonly availableLabels = computed<string[]>(() => {
-    const ids = this.candidateProductIds();
-    const labels = new Set<string>();
-    for (const p of this.catalogProducts()) {
-      if (!ids.has(p.id)) continue;
-      for (const v of p.variants) labels.add(this.variantLabel(v));
-    }
-    return [...labels].sort((a, b) => a.localeCompare(b));
+  /** Presentaciones disponibles para el Paso 2 (spec 084, A-80): todas las activas del
+   *  catálogo, independientes de los productos del Paso 1 (antes, FR-013 de spec 083,
+   *  eran la unión de las variantes de los productos seleccionados). */
+  readonly availablePresentations = computed(() =>
+    this.presentations
+      .allPresentations()
+      .filter((p) => p.active)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  );
+
+  /** Cuántos de los productos seleccionados tienen la presentación elegida, para avisar
+   *  antes de "Agregar a la lista". `null` si aún no hay presentación elegida. */
+  readonly pickerMatchSummary = computed<{ matching: number; selected: number } | null>(() => {
+    const id = this.pickerPresentationId();
+    if (!id) return null;
+    return {
+      matching: this.matchingProductsForPresentation(id).length,
+      selected: this.candidateProductIds().size,
+    };
   });
 
-  /** spec 063 (revisión 2026-09-01, FR-001a): variante repetida entre dos
-   *  reglas del formulario — validación de cliente, antes de enviar
-   *  (el servidor la revalida siempre). */
-  readonly sharedVariantConflict = computed<{ a: number; b: number; variantLabel: string } | null>(
-    () => {
-      const rules = this.form.rules;
-      const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
-      for (let i = 0; i < rules.length; i++) {
-        const setI = new Set(rules[i].variantIds);
-        for (let j = i + 1; j < rules.length; j++) {
-          const shared = rules[j].variantIds.find((id) => setI.has(id));
-          if (shared) {
-            const v = byId.get(shared);
-            return { a: i, b: j, variantLabel: v ? `${v.productName} - ${v.variantName}` : shared };
-          }
+  /** Reglas por presentación que hoy no alcanzan ningún producto seleccionado: no generan
+   *  reglas de backend, así que no se persisten hasta que un producto seleccionado las tenga. */
+  readonly unresolvedRuleCount = computed(
+    () =>
+      this.presentationRules().filter(
+        (r) => this.matchingProductsForPresentation(r.presentationId).length === 0,
+      ).length,
+  );
+
+  /** spec 063 (revisión 2026-09-01, FR-001a): variante repetida entre dos reglas del
+   *  formulario — validación de cliente, antes de enviar (el servidor la revalida siempre).
+   *  Método y no `computed`: lee `form.rules`, un objeto plano que se reemplaza y muta sin
+   *  notificar; como `computed` recordaba el conflicto de una promoción abierta antes y
+   *  bloqueaba el guardado de la siguiente. */
+  sharedVariantConflict(): { a: number; b: number; variantLabel: string } | null {
+    const rules = this.form.rules;
+    const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
+    for (let i = 0; i < rules.length; i++) {
+      const setI = new Set(rules[i].variantIds);
+      for (let j = i + 1; j < rules.length; j++) {
+        const shared = rules[j].variantIds.find((id) => setI.has(id));
+        if (shared) {
+          const v = byId.get(shared);
+          return { a: i, b: j, variantLabel: v ? `${v.productName} - ${v.variantName}` : shared };
         }
       }
-      return null;
-    },
-  );
+    }
+    return null;
+  }
 
   /** FR-025 (spec 083, sesión 2026-09-17): unidades mínimas de la fila en
    *  construcción — 2 para precio de paquete, 1 para porcentaje. Método (no
@@ -1541,9 +1599,9 @@ export class PromotionsPageComponent implements OnInit {
    *  depende). `null` si todavía no hay suficiente información para calcularlo. */
   readonly packagePriceCheck = computed<{ regularSum: number } | null>(() => {
     if (this.form.type !== 'package_price') return null;
-    const label = this.pickerLabel();
-    if (!label) return null;
-    const variantIds = this.resolvedVariantIdsForLabel(label);
+    const presentationId = this.pickerPresentationId();
+    if (!presentationId) return null;
+    const variantIds = this.resolvedVariantIdsForPresentation(presentationId);
     const cheapest = this.cheapestPrice(variantIds);
     if (cheapest === null) return null;
     return { regularSum: this.pickerQty() * cheapest };
@@ -1562,6 +1620,7 @@ export class PromotionsPageComponent implements OnInit {
     this.svc.load(1);
     this.categories.loadAllCategories();
     void this.menu.loadMenu();
+    this.presentations.loadAllPresentations();
     this.svc.loadClosedByRefactor();
     // spec 084 (FR-021, A-78): promociones `active` para resolver
     // `blockedByPromotion()` en el Paso 1 -- mismo dato que ya consume el POS.
@@ -1671,6 +1730,7 @@ export class PromotionsPageComponent implements OnInit {
     this.editingSource.set(res);
     this.form = form;
     this.resetRuleBuilder();
+    this.formBaseline = this.snapshotForm();
     this.screen.set('configure');
   }
 
@@ -1703,6 +1763,10 @@ export class PromotionsPageComponent implements OnInit {
       })),
     };
     this.resetRuleBuilder();
+    // Agrupa las reglas guardadas por presentación y recupera los productos que cubren; si el
+    // menú aún no cargó, queda pendiente (el `effect` del constructor lo reintenta).
+    if (!this.hydrateFromRules(p.rules)) this.pendingSourceRules = p.rules;
+    this.formBaseline = this.snapshotForm();
     this.screen.set('configure');
   }
 
@@ -1728,8 +1792,10 @@ export class PromotionsPageComponent implements OnInit {
 
   private resetRuleBuilder(): void {
     this.candidateProductIds.set(new Set());
+    this.presentationRules.set([]);
+    this.pendingSourceRules = null;
     this.stepOneFilter = { category: '', text: '' };
-    this.pickerLabel.set(null);
+    this.pickerPresentationId.set(null);
     this.pickerQty.set(this.minPickerQty());
     this.pickerValue.set(0);
     this.pickerError.set(null);
@@ -1769,42 +1835,42 @@ export class PromotionsPageComponent implements OnInit {
       next.add(id);
     }
     this.candidateProductIds.set(next);
-    this.pickerLabel.set(null);
+    // Las reglas son por presentación (A-81): cambiar productos solo cambia a qué variantes
+    // se expanden, no las obliga a rehacerse. La presentación del picker tampoco se reinicia.
+    this.rebuildRules();
     this.pickerError.set(null);
   }
 
   // ── Paso 2 ──
 
-  /** FR-013: nombre de la presentación si coincide con el catálogo, nombre
-   *  propio en cualquier otro caso; "Presentación única" si el producto no
-   *  maneja variaciones. */
+  /** Nombre a mostrar de una variante: el de su presentación (spec 084, A-79/A-80).
+   *  Antes (FR-013 de spec 083) un producto con una sola variante se etiquetaba siempre
+   *  "Presentación única"; ya no: la presentación de cada variante es siempre real. */
   variantLabel(v: CatalogVariant): string {
-    const product = this.catalogProducts().find((p) => p.id === v.productId);
-    if (product && product.variants.length === 1) return 'Presentación única';
     return v.variantName;
   }
 
   /**
-   * spec 084 (FR-016 a FR-019, A-77): productos ya seleccionados en el Paso 1 que
-   * tienen una variante cuyo nombre coincide con `label`, cada uno con SU PROPIA
-   * variante — reemplaza el conjunto plano que `addRuleRow()` combinaba antes en
-   * una sola regla compartida entre varios productos.
+   * spec 084 (FR-016 a FR-019, A-77, A-80): productos ya seleccionados en el Paso 1 que
+   * tienen una variante de la presentación elegida, cada uno con SU PROPIA variante —
+   * reemplaza el conjunto plano que `addRuleRow()` combinaba antes en una sola regla
+   * compartida entre varios productos. Se empareja por `presentation_id`, no por texto.
    */
-  private matchingProductsForLabel(
-    label: string,
+  private matchingProductsForPresentation(
+    presentationId: string,
   ): { productId: string; productName: string; variantId: string }[] {
     const ids = this.candidateProductIds();
     const out: { productId: string; productName: string; variantId: string }[] = [];
     for (const p of this.catalogProducts()) {
       if (!ids.has(p.id)) continue;
-      const match = p.variants.find((v) => this.variantLabel(v) === label);
+      const match = p.variants.find((v) => v.presentationId === presentationId);
       if (match) out.push({ productId: p.id, productName: p.name, variantId: match.id });
     }
     return out;
   }
 
-  resolvedVariantIdsForLabel(label: string): string[] {
-    return this.matchingProductsForLabel(label).map((m) => m.variantId);
+  resolvedVariantIdsForPresentation(presentationId: string): string[] {
+    return this.matchingProductsForPresentation(presentationId).map((m) => m.variantId);
   }
 
   private cheapestPrice(variantIds: string[]): number | null {
@@ -1816,14 +1882,8 @@ export class PromotionsPageComponent implements OnInit {
   }
 
   canAddRuleRow(): boolean {
-    if (this.pendingBulkApply()) return false;
     const minQty = this.minPickerQty();
-    if (
-      !this.pickerLabel() ||
-      this.pickerQty() < minQty ||
-      this.pickerValue() <= 0 ||
-      this.candidateProductIds().size === 0
-    ) {
+    if (!this.pickerPresentationId() || this.pickerQty() < minQty || this.pickerValue() <= 0) {
       return false;
     }
     return !(this.form.type === 'package_price' && this.packagePriceExceedsRegularSum());
@@ -1833,22 +1893,22 @@ export class PromotionsPageComponent implements OnInit {
    *  enviar; la autoritativa sigue siendo el 409 del backend
    *  (`_guard_package_is_discount`/`PromotionRuleIn`).
    *
-   *  spec 084 (FR-016 a FR-019, A-77): cuando más de un producto ya seleccionado
-   *  tiene una variante para la presentación elegida, ya NO se genera una sola
-   *  regla combinada con todas esas variantes -- queda pendiente de confirmación
-   *  en `pendingBulkApply` (lista con casilla por producto, premarcadas) y
-   *  `confirmBulkApply()` genera una fila independiente por cada uno que quede
-   *  marcado. Con un solo producto coincidente se agrega directo, como siempre. */
+   *  spec 084 (A-81): agrega UNA regla por presentación a la lista, sin importar cuántos
+   *  productos haya seleccionados (ni si ya hay alguno). Al guardar se expande a una regla
+   *  de backend por producto seleccionado que tenga la presentación. Una presentación solo
+   *  puede tener una regla por promoción: para cambiar su precio se quita y se vuelve a
+   *  agregar. */
   addRuleRow(): void {
     this.pickerError.set(null);
-    const label = this.pickerLabel();
-    if (!label) {
+    const presentationId = this.pickerPresentationId();
+    if (!presentationId) {
       this.pickerError.set('Elige una presentación.');
       return;
     }
-    const matches = this.matchingProductsForLabel(label);
-    if (matches.length === 0) {
-      this.pickerError.set('Ningún producto seleccionado tiene esa presentación.');
+    if (this.presentationRules().some((r) => r.presentationId === presentationId)) {
+      this.pickerError.set(
+        'Ya hay una regla para esta presentación. Quítala de la lista para cambiar sus unidades o su precio.',
+      );
       return;
     }
     const minQty = this.minPickerQty();
@@ -1879,59 +1939,68 @@ export class PromotionsPageComponent implements OnInit {
       }
     }
 
-    if (matches.length > 1) {
-      this.pendingBulkApply.set(matches.map((m) => ({ ...m, checked: true })));
-      return;
-    }
-    this.pushRuleRows(matches);
+    this.presentationRules.update((rules) => [
+      ...rules,
+      { presentationId, min_qty: this.pickerQty(), value: this.pickerValue() },
+    ]);
+    this.rebuildRules();
     this.resetPicker();
   }
 
-  /** Una `PromotionRuleForm` independiente por cada candidato, con el mismo
-   *  tipo/unidades/precio ya elegidos en el picker y SU PROPIA variante
-   *  (spec 084 FR-017/FR-019 — nunca variantes de más de un producto en la
-   *  misma fila). */
-  private pushRuleRows(matches: { variantId: string }[]): void {
-    for (const m of matches) {
-      const rule: PromotionRuleForm = {
-        type: this.form.type,
-        value: this.pickerValue(),
-        min_qty: this.pickerQty(),
-        variantIds: [m.variantId],
-      };
-      this.form.rules.push(rule);
+  /** `form.rules` (lo que recibe el backend) = por cada regla de presentación, una regla
+   *  por cada producto seleccionado que tenga esa presentación, con SU PROPIA variante
+   *  (spec 084 FR-017/FR-019, A-77 — nunca variantes de más de un producto en la misma
+   *  regla). Una regla de presentación sin ningún producto que la tenga no genera nada. */
+  private rebuildRules(): void {
+    const rules: PromotionRuleForm[] = [];
+    for (const pr of this.presentationRules()) {
+      for (const m of this.matchingProductsForPresentation(pr.presentationId)) {
+        rules.push({
+          type: this.form.type,
+          value: pr.value,
+          min_qty: pr.min_qty,
+          variantIds: [m.variantId],
+        });
+      }
     }
+    this.form.rules = rules;
+  }
+
+  /** Reconstruye la lista por presentación y la selección de productos a partir de las reglas
+   *  guardadas: cada variante aporta su presentación y su producto; las variantes con la
+   *  misma presentación, tipo, valor y unidades forman una sola regla. `false` si el menú
+   *  aún no cargó (se reintenta cuando llegue). Variantes que ya no están en el menú (p. ej.
+   *  de un producto inactivo) no se pueden mostrar y se descartan al guardar. */
+  private hydrateFromRules(rules: Promotion['rules']): boolean {
+    const byId = new Map(this.catalogVariants().map((v) => [v.id, v]));
+    if (rules.length > 0 && byId.size === 0) return false;
+
+    const grouped = new Map<string, PresentationRule>();
+    const products = new Set<string>();
+    for (const r of rules) {
+      for (const pv of r.variants) {
+        const cv = byId.get(pv.product_variant_id);
+        if (!cv) continue;
+        products.add(cv.productId);
+        const value = Number(r.value);
+        const key = `${cv.presentationId}|${value}|${r.min_qty}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, { presentationId: cv.presentationId, min_qty: r.min_qty, value });
+        }
+      }
+    }
+    this.candidateProductIds.set(products);
+    this.presentationRules.set([...grouped.values()]);
+    this.rebuildRules();
+    this.pendingSourceRules = null;
+    this.formBaseline = this.snapshotForm();
+    return true;
   }
 
   private resetPicker(): void {
-    this.pickerLabel.set(null);
+    this.pickerPresentationId.set(null);
     this.pickerQty.set(this.minPickerQty());
     this.pickerValue.set(0);
-  }
-
-  /** Confirma la aplicación masiva pendiente: genera una fila por cada
-   *  candidato que quedó marcado, descarta los demás sin crearles nada
-   *  (FR-017/FR-018). */
-  confirmBulkApply(): void {
-    const candidates = this.pendingBulkApply();
-    if (!candidates) return;
-    this.pushRuleRows(candidates.filter((c) => c.checked));
-    this.pendingBulkApply.set(null);
-    this.resetPicker();
-  }
-
-  /** Descarta la aplicación masiva pendiente sin generar ninguna fila —
-   *  el picker (presentación/unidades/precio) queda tal como estaba. */
-  cancelBulkApply(): void {
-    this.pendingBulkApply.set(null);
-  }
-
-  toggleBulkApplyCandidate(productId: string): void {
-    const current = this.pendingBulkApply();
-    if (!current) return;
-    this.pendingBulkApply.set(
-      current.map((c) => (c.productId === productId ? { ...c, checked: !c.checked } : c)),
-    );
   }
 
   /** FR-025: clamp del input de unidades — nunca por debajo del mínimo del
@@ -1952,34 +2021,74 @@ export class PromotionsPageComponent implements OnInit {
 
   removeRuleRow(index: number): void {
     if (!this.canEditRuleSet()) return;
-    this.form.rules.splice(index, 1);
+    this.presentationRules.update((rules) => rules.filter((_, i) => i !== index));
+    this.rebuildRules();
   }
 
-  /** "Presentación" de una fila ya agregada (tabla del Paso 2): la etiqueta
-   *  de presentación + los productos que cubre (FR-014, `setDescriptor` de
-   *  spec 066 para el orden y el tope de nombres). */
-  ruleProductsLabel(rule: PromotionRuleForm): string {
-    const set = new Set(rule.variantIds);
-    const vs = this.catalogVariants().filter((v) => set.has(v.id));
-    if (vs.length === 0) return 'Sin variantes';
-    const label = this.variantLabel(vs[0]);
-    const names = [...new Set(vs.map((v) => v.productName))];
+  /** Nombre de una presentación del catálogo (activa o no), o `''` si no se conoce. */
+  presentationName(presentationId: string): string {
+    return (
+      this.presentations.allPresentations().find((p) => p.id === presentationId)?.name ??
+      this.catalogVariants().find((v) => v.presentationId === presentationId)?.variantName ??
+      ''
+    );
+  }
+
+  /** "Presentación" de una fila ya agregada (tabla del Paso 2): su nombre + los productos
+   *  seleccionados a los que se aplica (FR-014, `setDescriptor` de spec 066 para el orden y
+   *  el tope de nombres). */
+  ruleProductsLabel(rule: PresentationRule): string {
+    const label = this.presentationName(rule.presentationId) || 'Presentación';
+    const names = this.matchingProductsForPresentation(rule.presentationId).map((m) => m.productName);
+    if (names.length === 0) return `${label} · sin productos seleccionados con esta presentación`;
     const descriptor = setDescriptor(names);
     return descriptor ? `${label} · ${descriptor.text}` : label;
   }
 
   /** Vista previa de ahorro (FR-015): mirror local del precio regular
-   *  estimado (unidades × precio más barato del conjunto) — el efectivo real
-   *  lo resuelve siempre el backend en el preview de cobro. */
-  previewSavings(rule: PromotionRuleForm): { regular: number; amountOff: number } | null {
-    const cheapest = this.cheapestPrice(rule.variantIds);
+   *  estimado (unidades × precio más barato entre los productos a los que aplica) —
+   *  el efectivo real lo resuelve siempre el backend en el preview de cobro. */
+  previewSavings(rule: PresentationRule): { regular: number; amountOff: number } | null {
+    const cheapest = this.cheapestPrice(this.resolvedVariantIdsForPresentation(rule.presentationId));
     if (cheapest === null) return null;
     const regular = rule.min_qty * cheapest;
-    const special = rule.type === 'package_price' ? rule.value : regular * (1 - rule.value / 100);
+    const special =
+      this.form.type === 'package_price' ? rule.value : regular * (1 - rule.value / 100);
     return { regular, amountOff: Math.max(0, regular - special) };
   }
 
   // ── Guardado ──
+
+  /** El formulario es un objeto plano mutado por `ngModel`, no un signal: se compara por
+   *  valor, normalizando lo que no cambia el significado (orden de días y de variantes). */
+  private snapshotForm(): string {
+    const f = this.form;
+    return JSON.stringify({
+      name: f.name.trim(),
+      starts_at: f.starts_at || null,
+      ends_at: f.ends_at || null,
+      days: [...f.days_of_week].sort((a, b) => a - b),
+      start_time: f.start_time || null,
+      end_time: f.end_time || null,
+      type: f.type,
+      rules: f.rules.map((r) => ({
+        type: r.type,
+        value: Number(r.value),
+        min_qty: Number(r.min_qty),
+        variantIds: [...r.variantIds].sort(),
+      })),
+      // spec 084 (A-81): la lista por presentación y los productos elegidos también cuentan.
+      presentationRules: this.presentationRules()
+        .map((r) => ({ p: r.presentationId, q: Number(r.min_qty), v: Number(r.value) }))
+        .sort((a, b) => a.p.localeCompare(b.p)),
+      products: [...this.candidateProductIds()].sort(),
+    });
+  }
+
+  /** `true` si el formulario difiere de como se abrió la configuración. */
+  hasChanges(): boolean {
+    return this.snapshotForm() !== this.formBaseline;
+  }
 
   formValid(): boolean {
     if (!this.form.name.trim()) return false;
@@ -2038,17 +2147,32 @@ export class PromotionsPageComponent implements OnInit {
   startDuplicate(p: Promotion): void {
     this.duplicating.set(p);
     this.duplicateName.set(`${p.name} (copia)`);
+    this.duplicateNameTaken.set(false);
   }
 
+  onDuplicateNameChange(value: string): void {
+    this.duplicateName.set(value);
+    this.duplicateNameTaken.set(false); // otro nombre: ya no hay nada que reemplazar
+  }
+
+  /** spec 084 (A-83): si el nombre ya lo usa otra promoción, el primer intento solo lo avisa
+   *  en el diálogo; el siguiente ("Reemplazar y duplicar") la elimina y crea la copia. */
   async confirmDuplicate(): Promise<void> {
     const src = this.duplicating();
     if (!src) return;
-    const res = await this.svc.duplicate(src.id, this.duplicateName().trim());
+    const replacing = this.duplicateNameTaken();
+    const res = await this.svc.duplicate(src.id, this.duplicateName().trim(), replacing);
     if (res) {
-      this.toast.success('Copia creada en Borrador');
+      this.toast.success(
+        replacing ? 'Copia creada; la promoción anterior se reemplazó' : 'Copia creada en Borrador',
+      );
       this.duplicating.set(null);
+      this.duplicateNameTaken.set(false);
       this.svc.load();
       this.openEdit(res);
+    } else if (!replacing && this.svc.otherError() === NAME_TAKEN_MESSAGE) {
+      this.svc.otherError.set(null); // se avisa en el diálogo, no como error de la lista
+      this.duplicateNameTaken.set(true);
     } else {
       this.toast.error(this.svc.otherError() ?? 'No se pudo duplicar.');
     }

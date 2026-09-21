@@ -121,26 +121,27 @@ describe('minPromoPriceForProduct (spec 084, bug 1, FR-012/013)', () => {
     expect(minPromoPriceForProduct([variant(), variant({ id: 'v2' })])).toBeNull();
   });
 
-  it('una sola variante cubierta: su display_text, sin "Desde" (isMinimum=false)', () => {
+  it('una sola variante cubierta: su condición corta (sin el "c/u"), sin "Desde" (isMinimum=false)', () => {
     const result = minPromoPriceForProduct([
       variant({ promotion: promoInfo() }),
       variant({ id: 'v2' }), // sin promoción -- no cuenta para "varias cubiertas"
     ]);
-    expect(result).toEqual({ displayText: '2 x $15.000 · $7.500 c/u', isMinimum: false });
+    expect(result).toEqual({ displayText: '2 x $15.000', isMinimum: false });
   });
 
   it('varias variantes cubiertas: elige el unit_equivalent más bajo y marca isMinimum', () => {
     const result = minPromoPriceForProduct([
       variant({
         id: 'v1',
-        promotion: promoInfo({ unit_equivalent: 7500, display_text: '2 x $15.000 · $7.500 c/u' }),
+        promotion: promoInfo({ unit_equivalent: 7500, short_condition: '2 x $15.000' }),
       }),
       variant({
         id: 'v2',
-        promotion: promoInfo({ unit_equivalent: 6000, display_text: '2 x $12.000 · $6.000 c/u' }),
+        promotion: promoInfo({ unit_equivalent: 6000, short_condition: '2 x $12.000' }),
       }),
     ]);
-    expect(result).toEqual({ displayText: '2 x $12.000 · $6.000 c/u', isMinimum: true });
+    // spec 084 (A-82): la tarjeta muestra solo la condición, sin el equivalente por unidad.
+    expect(result).toEqual({ displayText: '2 x $12.000', isMinimum: true });
   });
 
   it('caso ya cubierto por spec 066 FR-015 (min_qty=1): también se puede resolver aquí, sin cambio de comportamiento aguas arriba', () => {

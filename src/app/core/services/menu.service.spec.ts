@@ -54,7 +54,9 @@ describe('MenuService — la terminal gana la condición, ningún importe (spec 
             variants: [
               {
                 id: 'v1',
-                name: 'Pequeño 8oz',
+                // spec 084 (A-79): la variante no trae `name`, sino el de su presentación.
+                presentation_id: 'pr1',
+                presentation_name: 'Pequeño 8oz',
                 price: '8000',
                 // El backend los envía; la terminal debe descartarlos.
                 discounted_price: '6000',
@@ -88,6 +90,14 @@ describe('MenuService — la terminal gana la condición, ningún importe (spec 
     const variant = service.categories()[0].products[0].variants[0];
     expect(variant.promotion?.condition_text).toBe('Cada Pequeño 8oz a $6.000');
     expect(variant.promotion?.display_text).toBe('1 x $6.000 · $6.000 c/u');
+  });
+
+  it('el nombre de la variante sale de `presentation_name` (spec 084, A-79)', async () => {
+    const cargando = service.loadMenu();
+    responderConPromocionYDescuento();
+    await cargando;
+
+    expect(service.categories()[0].products[0].variants[0].name).toBe('Pequeño 8oz');
   });
 
   it('NO mapea `discounted_price` ni `discount_kind`: el modal sigue mostrando $8.000 (FR-017)', async () => {
