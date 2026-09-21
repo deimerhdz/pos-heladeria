@@ -35,10 +35,11 @@ function variantResponse(partial: Partial<Record<string, unknown>>) {
   return {
     id: 'v1',
     product_id: PID,
-    name: 'Única',
     sku: null,
     price: '10000',
     active: true,
+    presentation_id: 'pr-unica',
+    presentation_name: 'Única',
     ...partial,
   };
 }
@@ -97,8 +98,8 @@ describe('ProductService', () => {
       const list = http.expectOne(`${PRODUCTS}/${PID}/variants`);
       expect(list.request.params.has('active')).toBe(false);
       list.flush([
-        variantResponse({ id: 'viva', name: 'Mediana', price: '9000', active: true }),
-        variantResponse({ id: 'muerta', name: 'Pequeña', price: '6000', active: false }),
+        variantResponse({ id: 'viva', presentation_id: 'pr-mediana', presentation_name: 'Mediana', price: '9000', active: true }),
+        variantResponse({ id: 'muerta', presentation_id: 'pr-pequeña', presentation_name: 'Pequeña', price: '6000', active: false }),
       ]);
       await tick();
 
@@ -108,8 +109,10 @@ describe('ProductService', () => {
       http.expectOne(`${API}/option-groups`).flush([]);
 
       const result = await promise;
-      expect(result!.variants.map((v) => v.name)).toEqual(['Mediana']);
-      expect(result!.deactivated).toEqual([{ id: 'muerta', name: 'Pequeña', price: 6000 }]);
+      expect(result!.variants.map((v) => v.presentationName)).toEqual(['Mediana']);
+      expect(result!.deactivated).toEqual([
+        { id: 'muerta', price: 6000, presentationId: 'pr-pequeña', presentationName: 'Pequeña' },
+      ]);
       // Una sola presentación viva: el toggle de tamaños queda apagado.
       expect(result!.hasSizes).toBe(false);
     });
@@ -121,8 +124,8 @@ describe('ProductService', () => {
         draft({
           id: null,
           variants: [
-            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, recipe: [], optionGroups: [] },
-            { id: null, localId: 'l2', name: 'Grande', price: 9000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'l1', price: 6000, presentationId: 'pr-pequeña', presentationName: 'Pequeña', recipe: [], optionGroups: [] },
+            { id: null, localId: 'l2', price: 9000, presentationId: 'pr-grande', presentationName: 'Grande', recipe: [], optionGroups: [] },
           ],
         }),
       );
@@ -130,8 +133,8 @@ describe('ProductService', () => {
       const req = http.expectOne(PRODUCTS);
       expect(req.request.method).toBe('POST');
       expect(req.request.body.variants).toEqual([
-        { name: 'Pequeña', price: 6000, recipe: [], option_groups: [] },
-        { name: 'Grande', price: 9000, recipe: [], option_groups: [] },
+        { price: 6000, presentation_id: 'pr-pequeña', recipe: [], option_groups: [] },
+        { price: 9000, presentation_id: 'pr-grande', recipe: [], option_groups: [] },
       ]);
       req.flush({ ...productResponse(), variants: [] });
 
@@ -144,16 +147,16 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: 'viva', localId: 'viva', name: 'Mediana', price: 9000, recipe: [], optionGroups: [] },
+            { id: 'viva', localId: 'viva', price: 9000, presentationId: 'pr-mediana', presentationName: 'Mediana', recipe: [], optionGroups: [] },
           ],
-          deactivated: [{ id: 'muerta', name: 'Pequeña', price: 6000 }],
+          deactivated: [{ id: 'muerta', price: 6000, presentationId: 'pr-pequeña', presentationName: 'Pequeña' }],
         }),
       );
 
       const req = http.expectOne(`${PRODUCTS}/${PID}`);
       expect(req.request.method).toBe('PATCH');
       expect(req.request.body.variants).toEqual([
-        { id: 'viva', name: 'Mediana', price: 9000, recipe: [], option_groups: [] },
+        { id: 'viva', price: 9000, presentation_id: 'pr-mediana', recipe: [], option_groups: [] },
       ]);
       req.flush({ ...productResponse(), variants: [] });
 
@@ -168,7 +171,7 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: null, localId: 'l1', name: 'Pequeña', price: 6000, recipe: [], optionGroups: [] },
+            { id: null, localId: 'l1', price: 6000, presentationId: 'pr-pequeña', presentationName: 'Pequeña', recipe: [], optionGroups: [] },
           ],
         }),
       );
@@ -198,9 +201,9 @@ describe('ProductService', () => {
       const promise = service.saveProduct(
         draft({
           variants: [
-            { id: 'v2', localId: 'v2', name: 'Grande', price: 8000, recipe: [], optionGroups: [] },
-            { id: null, localId: 'nueva', name: 'Mediana', price: 6500, recipe: [], optionGroups: [] },
-            { id: 'v1', localId: 'v1', name: 'Pequeña', price: 5000, recipe: [], optionGroups: [] },
+            { id: 'v2', localId: 'v2', price: 8000, presentationId: 'pr-grande', presentationName: 'Grande', recipe: [], optionGroups: [] },
+            { id: null, localId: 'nueva', price: 6500, presentationId: 'pr-mediana', presentationName: 'Mediana', recipe: [], optionGroups: [] },
+            { id: 'v1', localId: 'v1', price: 5000, presentationId: 'pr-pequeña', presentationName: 'Pequeña', recipe: [], optionGroups: [] },
           ],
         }),
       );
@@ -227,8 +230,10 @@ describe('ProductService', () => {
     const promise = service.loadDeactivated(PID);
     const req = http.expectOne((r) => r.url === `${PRODUCTS}/${PID}/variants`);
     expect(req.request.params.get('active')).toBe('false');
-    req.flush([variantResponse({ id: 'muerta', name: 'Pequeña', price: '6000', active: false })]);
-    expect(await promise).toEqual([{ id: 'muerta', name: 'Pequeña', price: 6000 }]);
+    req.flush([variantResponse({ id: 'muerta', presentation_id: 'pr-pequeña', presentation_name: 'Pequeña', price: '6000', active: false })]);
+    expect(await promise).toEqual([
+      { id: 'muerta', price: 6000, presentationId: 'pr-pequeña', presentationName: 'Pequeña' },
+    ]);
   });
 
   describe('mensajes de error del backend', () => {

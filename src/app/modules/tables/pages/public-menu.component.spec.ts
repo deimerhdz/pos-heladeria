@@ -389,6 +389,70 @@ describe('PublicMenuComponent', () => {
     expect(el.querySelector('.line-through')).not.toBeNull();
   });
 
+  // ── spec 084 (bug 1, FR-012 a FR-015) — precio de promoción en la tarjeta ─
+  //
+  // CA1 arriba ("hoy no produce ninguna señal") describe exactamente el vacío
+  // que esta spec cierra: una regla de paquete con min_qty >= 2 (la norma
+  // desde spec 083 FR-025) solo dejaba la insignia genérica, sin ningún
+  // precio — el comensal tenía que abrir el producto para saber cuánto
+  // costaba o cuántas unidades necesitaba.
+
+  it('FR-012: además de la insignia, la tarjeta ahora muestra el precio de la regla vigente (min_qty >= 2)', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
+        promotion: promocion(), // 2 x $12.000 · $6.000 c/u, min_qty 2
+      },
+    ]);
+
+    expect(el.textContent).toContain('🎉 Promo');
+    // spec 084 (A-82): solo la condición; el equivalente por unidad (`· $6.000 c/u`) se quitó.
+    expect(el.textContent).toContain('2 x $12.000');
+    expect(el.textContent).not.toContain('c/u');
+  });
+
+  it('FR-013: dos variantes cubiertas con precios distintos → la tarjeta muestra "Desde " + el más barato por unidad', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true,
+        promotion: promocion({ unit_equivalent: 6000, short_condition: '2 x $12.000' }),
+      },
+      {
+        id: 'v2', name: 'Grande 16oz', price: 12000, option_groups: [], available: true,
+        promotion: promocion({ unit_equivalent: 4500, short_condition: '2 x $9.000' }),
+      },
+    ]);
+
+    expect(el.textContent).toContain('Desde 2 x $9.000');
+    expect(el.textContent).not.toContain('2 x $12.000');
+    expect(el.textContent).not.toContain('c/u');
+  });
+
+  it('FR-014 (spec 066 FR-015, sin cambio): con min_qty 1 sigue mostrando el precio tachado, sin el texto de "N x"', async () => {
+    const el = await carta([
+      {
+        id: 'v1', name: 'Pequeño 8oz', price: 8000, discounted_price: 7200,
+        discount_kind: 'percent', option_groups: [], available: true,
+        promotion: promocion({
+          type: 'percent', min_qty: 1, value: 10,
+          short_condition: '1 x -10%', display_text: '1 x -10% · $7.200 c/u',
+        }),
+      },
+    ]);
+
+    expect(el.querySelector('.line-through')?.textContent).toContain('8.000');
+    expect(el.textContent).not.toContain('1 x -10% · $7.200 c/u');
+  });
+
+  it('FR-015 (sin cambio): sin ninguna variante cubierta, la tarjeta no muestra precio de promoción', async () => {
+    const el = await carta([
+      { id: 'v1', name: 'Pequeño 8oz', price: 8000, option_groups: [], available: true },
+    ]);
+
+    expect(el.textContent).not.toContain('🎉 Promo');
+    expect(el.textContent).not.toContain(' x $');
+  });
+
   // ── spec 081 (US1) — pestaña dedicada de "Promociones" ────────────────────
 
   it('FR-001/FR-008: la pestaña "Promociones" aparece en la navegación aunque no haya ninguna promoción vigente', async () => {

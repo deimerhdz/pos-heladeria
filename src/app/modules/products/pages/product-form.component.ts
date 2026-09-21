@@ -24,7 +24,9 @@ import { OptionGroupService } from '../../option-groups/services/option-group.se
 import { UnitMeasureService } from '../../../core/services/unit-measure.service';
 import { ConfirmService } from '../../../shared/feedback/confirm.service';
 import { PlanSummaryService } from '../../plan/services/plan-summary.service';
+import { PresentationService } from '../../presentations/services/presentation.service';
 import {
+  DEFAULT_PRESENTATION_NAME,
   DeactivatedVariant,
   PreparationType,
   ProductDraft,
@@ -173,6 +175,85 @@ interface SlotBreakdown {
             </button>
           </div>
 
+          @if (draft().hasSizes) {
+            <div class="mt-4 rounded-xl border border-gray-200 overflow-hidden">
+              <div class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                <span></span>
+                <span class="text-center">#</span>
+                <span>Presentación</span>
+                <span>Precio</span>
+                <span></span>
+              </div>
+              <div cdkDropList [cdkDropListData]="draft().variants" (cdkDropListDropped)="onVariantDrop($event)"
+                class="divide-y divide-gray-100">
+                @for (v of draft().variants; track v.localId; let i = $index) {
+                  <div cdkDrag (click)="activeLocalId.set(v.localId)"
+                    class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 cursor-pointer transition-colors"
+                    [class]="v.localId === activeLocalId() ? 'bg-indigo-50' : 'hover:bg-gray-50'">
+                    <span cdkDragHandle (click)="$event.stopPropagation()"
+                      class="text-center text-gray-300 hover:text-gray-500 cursor-move">⠿</span>
+                    <span class="text-center text-xs text-gray-400">{{ i + 1 }}</span>
+                    <div class="min-w-0">
+                      <select [ngModel]="v.presentationId ?? ''"
+                        (ngModelChange)="setVariantPresentation(v.localId, $event || null)"
+                        (click)="$event.stopPropagation()"
+                        [attr.aria-invalid]="isPresentationMissing(v)"
+                        class="w-full min-w-0 px-2 py-1.5 border rounded-lg text-sm font-semibold text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        [class]="isPresentationMissing(v) ? 'border-red-300' : 'border-gray-200'">
+                        <option value="" disabled>Elige una presentación</option>
+                        @for (p of presentationOptionsFor(v); track p.id) {
+                          <option [value]="p.id">{{ p.name }}</option>
+                        }
+                      </select>
+                      @if (isPresentationMissing(v)) {
+                        <p class="text-xs text-red-600 mt-1">
+                          @if (hasFreePresentations()) { Elige una presentación } @else { No hay más presentaciones disponibles: créalas en Presentaciones }
+                        </p>
+                      }
+                    </div>
+                    <div class="flex items-center gap-1 border border-gray-200 rounded-lg px-2 py-1 bg-white">
+                      <span class="text-gray-400 text-sm">$</span>
+                      <app-money-input [ngModel]="v.price"
+                        (ngModelChange)="setVariantField(v.localId, 'price', $event ?? 0)"
+                        [bordered]="false" sizeClass="text-sm" />
+                    </div>
+                    @if (draft().variants.length > 1) {
+                      <button type="button" (click)="removeVariant(v.localId); $event.stopPropagation()"
+                        class="justify-self-end px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        Eliminar
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+              <button type="button" (click)="addVariant()"
+                class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors border-t border-dashed border-gray-200">
+                + Agregar tamaño
+              </button>
+            </div>
+          }
+
+          <!-- Presentaciones retiradas: siguen ocupando su presentación, así que la salida es
+               restaurarlas, no volver a crearlas. -->
+          @if (draft().deactivated.length) {
+            <div class="mt-4 border-t border-gray-100 pt-4">
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Presentaciones desactivadas</h4>
+              <p class="text-xs text-gray-400 mt-0.5 mb-2">No se venden ni salen en la carta. Restaurar se aplica de inmediato.</p>
+              <ul class="space-y-1.5">
+                @for (dv of draft().deactivated; track dv.id) {
+                  <li class="flex items-center gap-3 text-sm">
+                    <span class="text-gray-700">{{ dv.presentationName }}</span>
+                    <span class="text-gray-400">$ {{ dv.price | number: '1.0-0' }}</span>
+                    <button type="button" (click)="restoreVariant(dv)" [disabled]="service.isSubmitting()"
+                      class="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50">
+                      Restaurar
+                    </button>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+
           <!-- ===== Maneja inventario (spec 027) =====
                Apagado por defecto. Habilita/deshabilita "Insumos fijos" (siempre) y la
                parte de inventario de "Sabores a elegir" (cantidad de consumo, detalle de
@@ -204,69 +285,6 @@ interface SlotBreakdown {
           @if (showsInventoryWarning()) {
             <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3 text-sm text-amber-700">
               <app-mi-icon name="warning" [size]="16" class="inline-flex align-text-bottom" /> Este producto no podrá venderse hasta que se le configure al menos un insumo en alguna presentación.
-            </div>
-          }
-
-          @if (draft().hasSizes) {
-            <div class="mt-4 rounded-xl border border-gray-200 overflow-hidden">
-              <div class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 bg-gray-50 text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
-                <span></span>
-                <span class="text-center">#</span>
-                <span>Nombre</span>
-                <span>Precio</span>
-                <span></span>
-              </div>
-              <div cdkDropList [cdkDropListData]="draft().variants" (cdkDropListDropped)="onVariantDrop($event)"
-                class="divide-y divide-gray-100">
-                @for (v of draft().variants; track v.localId; let i = $index) {
-                  <div cdkDrag (click)="activeLocalId.set(v.localId)"
-                    class="grid grid-cols-[28px_28px_1fr_140px_88px] gap-x-3 items-center px-3 py-2 cursor-pointer transition-colors"
-                    [class]="v.localId === activeLocalId() ? 'bg-indigo-50' : 'hover:bg-gray-50'">
-                    <span cdkDragHandle (click)="$event.stopPropagation()"
-                      class="text-center text-gray-300 hover:text-gray-500 cursor-move">⠿</span>
-                    <span class="text-center text-xs text-gray-400">{{ i + 1 }}</span>
-                    <input [value]="v.name" (input)="setVariantField(v.localId, 'name', $any($event.target).value)"
-                      class="min-w-0 px-2 py-1.5 border border-transparent rounded-lg text-sm font-semibold text-gray-800 bg-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-gray-200" />
-                    <div class="flex items-center gap-1 border border-gray-200 rounded-lg px-2 py-1 bg-white">
-                      <span class="text-gray-400 text-sm">$</span>
-                      <app-money-input [ngModel]="v.price"
-                        (ngModelChange)="setVariantField(v.localId, 'price', $event ?? 0)"
-                        [bordered]="false" sizeClass="text-sm" />
-                    </div>
-                    @if (draft().variants.length > 1) {
-                      <button type="button" (click)="removeVariant(v.localId); $event.stopPropagation()"
-                        class="justify-self-end px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                        Eliminar
-                      </button>
-                    }
-                  </div>
-                }
-              </div>
-              <button type="button" (click)="addVariant()"
-                class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-indigo-600 transition-colors border-t border-dashed border-gray-200">
-                + Agregar tamaño
-              </button>
-            </div>
-          }
-
-          <!-- Presentaciones retiradas: siguen ocupando su nombre, así que la salida es
-               restaurarlas, no volver a crearlas. -->
-          @if (draft().deactivated.length) {
-            <div class="mt-4 border-t border-gray-100 pt-4">
-              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Presentaciones desactivadas</h4>
-              <p class="text-xs text-gray-400 mt-0.5 mb-2">No se venden ni salen en la carta. Restaurar se aplica de inmediato.</p>
-              <ul class="space-y-1.5">
-                @for (dv of draft().deactivated; track dv.id) {
-                  <li class="flex items-center gap-3 text-sm">
-                    <span class="text-gray-700">{{ dv.name }}</span>
-                    <span class="text-gray-400">$ {{ dv.price | number: '1.0-0' }}</span>
-                    <button type="button" (click)="restoreVariant(dv)" [disabled]="service.isSubmitting()"
-                      class="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50">
-                      Restaurar
-                    </button>
-                  </li>
-                }
-              </ul>
             </div>
           }
 
@@ -445,7 +463,7 @@ interface SlotBreakdown {
               @if (draft().hasSizes && draft().variants.length > 1) {
                 <button type="button" (click)="copyConfigToOthers(av.localId)"
                   class="text-xs font-medium text-gray-500 hover:text-indigo-600 border border-dashed border-gray-300 hover:border-indigo-400 rounded-lg px-3 py-2 transition-colors">
-                  Copiar insumos y sabores de «{{ av.name }}» a los otros tamaños
+                  Copiar insumos y sabores de «{{ variantLabel(av) }}» a los otros tamaños
                 </button>
               }
             </div>
@@ -471,6 +489,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
   readonly service = inject(ProductService);
   readonly categoryService = inject(CategoryService);
   readonly inventoryService = inject(InventoryService);
+  readonly presentationService = inject(PresentationService);
   private readonly optionGroupService = inject(OptionGroupService);
   private readonly unitMeasureService = inject(UnitMeasureService);
   private readonly confirm = inject(ConfirmService);
@@ -534,6 +553,57 @@ export class ProductFormComponent implements OnInit, OnDestroy {
    * Grupos elegibles en una fila: los activos, menos los que ya usa **esta misma
    * presentación** (salvo el de la propia fila, que debe seguir seleccionable).
    */
+  /**
+   * Opciones del selector de presentación de una fila (spec 084, A-79): las activas que
+   * ninguna **otra** fila del producto ya eligió (sin la columna «Nombre», el selector es la
+   * única pista visual de un duplicado; el 409 del backend queda de respaldo), más la que esta
+   * fila ya tenga aunque se haya desactivado después o aún no esté cargado el catálogo.
+   */
+  presentationOptionsFor(v: VariantDraft): { id: string; name: string }[] {
+    const takenByOthers = new Set(
+      this.draft()
+        .variants.filter((o) => o.localId !== v.localId && o.presentationId)
+        .map((o) => o.presentationId as string),
+    );
+    const options: { id: string; name: string }[] = this.presentationService
+      .allPresentations()
+      .filter((p) => (p.active && !takenByOthers.has(p.id)) || p.id === v.presentationId)
+      .map((p) => ({ id: p.id, name: p.name }));
+    if (v.presentationId && !options.some((o) => o.id === v.presentationId)) {
+      options.push({ id: v.presentationId, name: v.presentationName });
+    }
+    return options.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Cuántas presentaciones activas quedan sin usar en el producto (para el aviso de lista vacía). */
+  readonly hasFreePresentations = computed(() => {
+    const used = new Set(this.draft().variants.map((v) => v.presentationId));
+    return this.presentationService.allPresentations().some((p) => p.active && !used.has(p.id));
+  });
+
+  /** Filas de tamaño que aún no eligieron presentación (bloquean el guardado). */
+  isPresentationMissing(v: VariantDraft): boolean {
+    return this.draft().hasSizes && !v.presentationId;
+  }
+
+  /**
+   * Asocia la presentación de una fila (spec 084, A-79). La variante no tiene nombre propio:
+   * solo se guarda el id (y el nombre, para pintar la fila sin esperar al catálogo).
+   */
+  setVariantPresentation(localId: string, presentationId: string | null): void {
+    const chosen = presentationId
+      ? this.presentationService.allPresentations().find((p) => p.id === presentationId)
+      : null;
+    this.draft.update((d) => ({
+      ...d,
+      variants: d.variants.map((v) =>
+        v.localId === localId
+          ? { ...v, presentationId, presentationName: chosen ? chosen.name : '' }
+          : v,
+      ),
+    }));
+  }
+
   groupOptionsFor(localId: string, index: number) {
     const variant = this.draft().variants.find((v) => v.localId === localId);
     const usados = new Set(
@@ -554,6 +624,9 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       !!d.category_id &&
       d.variants.length > 0 &&
       d.variants.every((v) => Number(v.price) >= 0) &&
+      // Con tamaños, cada fila necesita presentación: es lo que la nombra (spec 084, A-79).
+      // Sin tamaños, la única variante va con `null` y el backend usa «Presentación única».
+      (!d.hasSizes || d.variants.every((v) => !!v.presentationId)) &&
       // Una fila sin grupo o con min/max incoherentes la rechaza el backend con 422;
       // mejor bloquear el botón que perder el guardado a medias.
       d.variants.every((v) => v.optionGroups.every((g) => !this.groupError(g)))
@@ -776,6 +849,9 @@ export class ProductFormComponent implements OnInit, OnDestroy {
         ? this.unitMeasureService.loadUnitMeasures()
         : null,
       this.optionGroupService.groups().length === 0 ? this.optionGroupService.loadGroups() : null,
+      this.presentationService.allPresentations().length === 0
+        ? this.presentationService.loadAllPresentations()
+        : null,
     ]);
 
     const id = this.route.snapshot.paramMap.get('id');
@@ -808,17 +884,18 @@ export class ProductFormComponent implements OnInit, OnDestroy {
       active: true,
       hasSizes: false,
       tracks_inventory: false,
-      variants: [this.newVariant('Único')],
+      variants: [this.newVariant()],
       deactivated: [],
     };
   }
 
-  private newVariant(name: string, price = 0): VariantDraft {
+  private newVariant(price = 0, presentation?: { id: string; name: string } | null): VariantDraft {
     return {
       id: null,
       localId: this.nextLid(),
-      name,
       price,
+      presentationId: presentation?.id ?? null,
+      presentationName: presentation?.name ?? '',
       recipe: [],
       optionGroups: [],
     };
@@ -876,21 +953,51 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     this.draft.update((d) => {
       if (!d.hasSizes) {
         const base = d.variants[0];
+        // La variante única de un producto sin tamaños se llama «Presentación única»: al
+        // pasar a tener tamaños esa presentación ya no aplica y hay que elegir una real.
+        const baseKeeps = !!base.presentationId && base.presentationName !== DEFAULT_PRESENTATION_NAME;
+        const taken = new Set<string>(baseKeeps ? [base.presentationId as string] : []);
         // Los tamaños nuevos heredan también los grupos, no solo los insumos: si no,
-        // habría que volver a elegirlos uno por uno en cada tamaño.
-        const copy = (name: string): VariantDraft => ({
-          ...this.newVariant(name, base.price),
+        // habría que volver a elegirlos uno por uno en cada tamaño. Se preseleccionan las
+        // presentaciones típicas si el catálogo las tiene (antes se sembraban por nombre).
+        const pick = (...names: string[]) => {
+          const found = this.presentationService
+            .allPresentations()
+            .find((p) => p.active && !taken.has(p.id) && names.includes(p.name.trim().toLowerCase()));
+          if (found) taken.add(found.id);
+          return found ? { id: found.id, name: found.name } : null;
+        };
+        const copy = (presentation: { id: string; name: string } | null): VariantDraft => ({
+          ...this.newVariant(base.price, presentation),
           recipe: base.recipe.map((r) => ({ ...r })),
           optionGroups: base.optionGroups.map((g) => ({ ...g })),
         });
-        const variants = [{ ...base, name: 'Grande' }, copy('Mediana'), copy('Pequeña')];
+        const first = baseKeeps
+          ? base
+          : { ...base, ...this.presentationFields(pick('grande')) };
+        const variants = [
+          first,
+          copy(pick('mediana', 'mediano')),
+          copy(pick('pequeña', 'pequeño', 'pequena', 'pequeno')),
+        ];
         this.activeLocalId.set(variants[0].localId);
         return { ...d, hasSizes: true, variants };
       }
-      const only = { ...d.variants[0], name: 'Único' };
+      // Sin tamaños: se conserva la primera fila y pasa a «Presentación única» (el backend
+      // la resuelve cuando `presentation_id` va nulo).
+      const only = { ...d.variants[0], presentationId: null, presentationName: DEFAULT_PRESENTATION_NAME };
       this.activeLocalId.set(only.localId);
       return { ...d, hasSizes: false, variants: [only] };
     });
+  }
+
+  /** Nombre a mostrar de una fila: el de su presentación, o «este tamaño» si aún no eligió. */
+  variantLabel(v: VariantDraft): string {
+    return v.presentationName || 'este tamaño';
+  }
+
+  private presentationFields(p: { id: string; name: string } | null) {
+    return { presentationId: p?.id ?? null, presentationName: p?.name ?? '' };
   }
 
   /**
@@ -930,7 +1037,7 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     // cantidades, no se empieza de cero.
     const base = this.activeVariant();
     const nv: VariantDraft = {
-      ...this.newVariant('Nuevo tamaño', base?.price ?? 0),
+      ...this.newVariant(base?.price ?? 0),
       recipe: (base?.recipe ?? []).map((r) => ({ ...r })),
       optionGroups: (base?.optionGroups ?? []).map((g) => ({ ...g })),
     };
@@ -945,8 +1052,8 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     const otros = this.draft().variants.filter((v) => v.localId !== localId);
     if (otros.length === 0) return;
     const ok = confirm(
-      `Se reemplazarán los insumos y los sabores de ${otros.map((v) => v.name).join(', ')} ` +
-        `por los de «${source.name}». Los precios no cambian. ¿Continuar?`,
+      `Se reemplazarán los insumos y los sabores de ${otros.map((v) => this.variantLabel(v)).join(', ')} ` +
+        `por los de «${this.variantLabel(source)}». Los precios no cambian. ¿Continuar?`,
     );
     if (!ok) return;
     this.draft.update((d) => ({
@@ -974,12 +1081,10 @@ export class ProductFormComponent implements OnInit, OnDestroy {
    * los cambios (igual que agregar cualquier otra presentación nueva).
    */
   async restoreVariant(dv: DeactivatedVariant): Promise<void> {
-    const enUso = this.draft().variants.some(
-      (v) => v.name.trim().toLowerCase() === dv.name.trim().toLowerCase(),
-    );
+    const enUso = this.draft().variants.some((v) => v.presentationId === dv.presentationId);
     if (enUso) {
       this.service.otherError.set(
-        `Ya tienes un tamaño llamado «${dv.name}». Renómbralo o quítalo antes de restaurar este.`,
+        `Ya tienes un tamaño «${dv.presentationName}». Cámbiale la presentación o quítalo antes de restaurar este.`,
       );
       return;
     }
@@ -991,8 +1096,9 @@ export class ProductFormComponent implements OnInit, OnDestroy {
     const restored: VariantDraft = {
       id: dv.id,
       localId: dv.id,
-      name: dv.name,
       price: dv.price,
+      presentationId: dv.presentationId,
+      presentationName: dv.presentationName,
       recipe,
       optionGroups,
     };

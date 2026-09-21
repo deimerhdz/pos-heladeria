@@ -98,11 +98,17 @@ export function conditionText(
   const descriptor = setDescriptor(names);
   const d = descriptor ? descriptor.text : `estas ${variantCount} variantes`;
   const e = descriptor?.multiple ? 'entre ' : '';
+  // spec 084 (A-82): con UN solo nombre (una presentación) la cantidad va después:
+  // «Llevando 8 onzas x 2 pagas $12.000». Igual que `variant_set_condition_text` (backend).
+  const single = descriptor !== null && !descriptor.multiple;
 
   if (rule.type === 'package_price') {
     if (rule.min_qty > 1) {
-      return descriptor === null
-        ? `Llevando ${rule.min_qty} de ${d} pagas ${money(rule.value)}`
+      if (descriptor === null) {
+        return `Llevando ${rule.min_qty} de ${d} pagas ${money(rule.value)}`;
+      }
+      return single
+        ? `Llevando ${d} x ${rule.min_qty} pagas ${money(rule.value)}`
         : `Llevando ${rule.min_qty} ${e}${d} pagas ${money(rule.value)}`;
     }
     return descriptor === null
@@ -115,7 +121,8 @@ export function conditionText(
     // `percent` con cantidad mínima 1 es la única de las cuatro que no lleva `e`.
     return `${pct}% en ${d}`;
   }
-  return descriptor === null
-    ? `${pct}% llevando ${rule.min_qty} de ${d}`
+  if (descriptor === null) return `${pct}% llevando ${rule.min_qty} de ${d}`;
+  return single
+    ? `${pct}% llevando ${d} x ${rule.min_qty}`
     : `${pct}% llevando ${rule.min_qty} ${e}${d}`;
 }

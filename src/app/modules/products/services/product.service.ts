@@ -29,7 +29,7 @@ import {
 } from '../interfaces/product.interface';
 
 /**
- * El nombre de la presentación ya está tomado dentro del producto (409 del backend).
+ * La presentación ya está tomada por otra variante del producto (409 del backend).
  *
  * Se tipa aparte del `HttpErrorResponse` porque el guardado necesita distinguir el caso
  * `active: false` — una presentación soft-borrada que hay que restaurar — del choque con
@@ -71,10 +71,11 @@ interface ProductResponse {
 interface VariantResponse {
   id: string;
   product_id: string;
-  name: string;
   sku: string | null;
   price: string;
   active: boolean;
+  presentation_id: string;
+  presentation_name: string;
 }
 
 interface RecipeItemResponse {
@@ -291,7 +292,12 @@ export class ProductService {
   /** Las presentaciones soft-borradas, para la sección «desactivadas» del editor. */
   async loadDeactivated(productId: string): Promise<DeactivatedVariant[]> {
     const variants = await this.loadVariants(productId, false);
-    return variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
+    return variants.map((v) => ({
+      id: v.id,
+      price: v.price,
+      presentationId: v.presentation_id,
+      presentationName: v.presentation_name,
+    }));
   }
 
   /** Devuelve una presentación desactivada a la carta. */
@@ -301,7 +307,7 @@ export class ProductService {
 
   async createVariant(productId: string, form: VariantForm): Promise<boolean> {
     const payload: VariantCreatePayload = {
-      name: form.name,
+      presentation_id: form.presentation_id,
       price: form.price,
       sku: form.sku,
     };
@@ -393,8 +399,9 @@ export class ProductService {
       variantDrafts.push({
         id: v.id,
         localId: v.id,
-        name: v.name,
         price: v.price,
+        presentationId: v.presentation_id,
+        presentationName: v.presentation_name,
         recipe: recipe.map((r) => ({ ...r })),
         optionGroups,
       });
@@ -413,7 +420,12 @@ export class ProductService {
       variants: variantDrafts,
       deactivated: variants
         .filter((v) => !v.active)
-        .map((v) => ({ id: v.id, name: v.name, price: v.price })),
+        .map((v) => ({
+          id: v.id,
+          price: v.price,
+          presentationId: v.presentation_id,
+          presentationName: v.presentation_name,
+        })),
     };
   }
 
@@ -528,8 +540,8 @@ export class ProductService {
 
     return {
       ...(v.id ? { id: v.id } : {}),
-      name: v.name,
       price: v.price,
+      presentation_id: v.presentationId,
       recipe,
       option_groups: optionGroups,
     };
@@ -608,10 +620,11 @@ export class ProductService {
     return {
       id: v.id,
       product_id: v.product_id,
-      name: v.name,
       sku: v.sku,
       price: Number(v.price),
       active: v.active,
+      presentation_id: v.presentation_id,
+      presentation_name: v.presentation_name,
     };
   }
 
