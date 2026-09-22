@@ -108,27 +108,28 @@ type ActiveFilter = '' | 'active' | 'inactive';
           <p class="text-2xl font-bold text-amber-800 mt-1">{{ service.lowStockItems().length }}</p>
         </button>
 
-        <!-- Filters -->
-        <div class="bg-white rounded-xl border border-gray-100 p-4 flex flex-wrap gap-3">
-          <input [ngModel]="searchSignal()" (ngModelChange)="onSearchInput($event)" type="text"
-            placeholder="Buscar por nombre..."
-            class="flex-1 min-w-48 px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <select [ngModel]="service.itemsType()" (ngModelChange)="onTypeFilterChange($event)"
-            class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">Todos los tipos</option>
-            <option value="raw_material">Materia prima</option>
-            <option value="packaged">Empacado</option>
-          </select>
-          <select [ngModel]="service.itemsActive()" (ngModelChange)="onActiveFilterChange($event)"
-            class="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <option value="">Activos e inactivos</option>
-            <option value="active">Solo activos</option>
-            <option value="inactive">Solo inactivos</option>
-          </select>
-        </div>
-
         <!-- Table -->
-        <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200/80 overflow-hidden">
+          <div class="flex items-center justify-between gap-4 p-4 border-b border-gray-200 bg-gray-50/50 flex-wrap">
+            <div class="relative flex-1 min-w-48">
+              <app-mi-icon name="search" [size]="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input [ngModel]="searchSignal()" (ngModelChange)="onSearchInput($event)" type="text"
+                placeholder="Buscar por nombre..."
+                class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <select [ngModel]="service.itemsType()" (ngModelChange)="onTypeFilterChange($event)"
+              class="px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Todos los tipos</option>
+              <option value="raw_material">Materia prima</option>
+              <option value="packaged">Empacado</option>
+            </select>
+            <select [ngModel]="service.itemsActive()" (ngModelChange)="onActiveFilterChange($event)"
+              class="px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Activos e inactivos</option>
+              <option value="active">Solo activos</option>
+              <option value="inactive">Solo inactivos</option>
+            </select>
+          </div>
           @if (service.isLoading()) {
             <div class="flex items-center justify-center py-12"><p class="text-sm text-gray-400">Cargando insumos...</p></div>
           } @else if (service.items().length === 0) {
