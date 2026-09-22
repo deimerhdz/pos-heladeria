@@ -136,6 +136,11 @@ type ActiveFilter = '' | 'active' | 'inactive';
                 </select>
                 <app-mi-icon name="expand_more" [size]="16" class="pointer-events-none absolute inset-y-0 right-2.5 text-slate-400" />
               </div>
+              <button type="button" (click)="exportInventory()"
+                class="flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white hover:bg-slate-50 text-slate-700 font-medium rounded-lg text-sm transition-colors">
+                <app-mi-icon name="download" [size]="16" />
+                Exportar Inventario
+              </button>
             </div>
           </div>
           @if (service.isLoading()) {
@@ -494,6 +499,30 @@ export class InventoryPageComponent implements OnInit, OnDestroy {
 
   toggleLowFilter(): void {
     this.service.setItemsLowStock(!this.service.itemsLowStock());
+  }
+
+  /** Descarga el respaldo completo del inventario en `.xlsx` (spec 086). */
+  exportInventory(): void {
+    this.service.exportItems().subscribe({
+      next: (resp) => {
+        const blob = resp.body;
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = this.exportFilename(resp.headers.get('content-disposition'));
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => this.toast.error('No se pudo exportar el inventario'),
+    });
+  }
+
+  private exportFilename(contentDisposition: string | null): string {
+    const match = contentDisposition ? /filename="?([^"]+)"?/.exec(contentDisposition) : null;
+    if (match) return match[1];
+    const today = new Date().toISOString().slice(0, 10);
+    return `inventario_${today}.xlsx`;
   }
   toggleExpanded(id: string): void {
     this.expandedId.update(current => (current === id ? null : id));
